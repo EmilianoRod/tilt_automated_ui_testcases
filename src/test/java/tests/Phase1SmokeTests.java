@@ -9,7 +9,7 @@ import com.mailslurp.models.InboxDto;
 import org.openqa.selenium.JavascriptExecutor;
 import org.testng.Assert;
 import org.testng.annotations.Test;
-import pages.DashboardPage;
+import pages.menuPages.DashboardPage;
 import pages.LoginPage;
 import org.json.JSONObject;
 

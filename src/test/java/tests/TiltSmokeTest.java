@@ -3,9 +3,8 @@ package tests;
 import base.BaseTest;
 import org.testng.Assert;
 import org.testng.annotations.Test;
-import pages.LandingPage;
 import pages.LoginPage;
-import pages.SettingsPage;
+import pages.menuPages.SettingsPage;
 
 public class TiltSmokeTest extends BaseTest {
 

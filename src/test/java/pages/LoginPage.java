@@ -1,10 +1,10 @@
 package pages;
 
 import Utils.Config;
-import Utils.WaitUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
+import pages.menuPages.DashboardPage;
 
 public class LoginPage extends BasePage {
 

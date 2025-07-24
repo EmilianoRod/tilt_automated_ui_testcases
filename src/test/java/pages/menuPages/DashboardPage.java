@@ -1,8 +1,10 @@
-package pages;
+package pages.menuPages;
 
 import Utils.WaitUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import pages.BasePage;
 
 public class DashboardPage extends BasePage {
 
@@ -41,7 +43,9 @@ public class DashboardPage extends BasePage {
     }
 
 
-    public void goToIndividuals() {
-
+    public IndividualsPage goToIndividuals() {
+        WebElement individualsButtonSideBarMenu = wait.waitForElementClickable(individualsButton);
+        individualsButtonSideBarMenu.click();
+        return new IndividualsPage(driver);
     }
 }
