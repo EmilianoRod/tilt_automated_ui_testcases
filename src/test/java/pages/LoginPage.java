@@ -9,13 +9,11 @@ import org.openqa.selenium.WebElement;
 public class LoginPage extends BasePage {
 
 
-
-
     // Locators for login form elements
     private By emailField = By.xpath("//input[@id='email']");
     private By passwordField = By.xpath("//input[@id='password']");
-    private By loginButton  = By.xpath("//button[normalize-space()='Sign In']");
-    private By errorMsg     = By.xpath("//span[@class='sc-d0ff2b78-4 kgDJIq']");
+    private By loginButton = By.xpath("//button[normalize-space()='Sign In']");
+    private By errorMsg = By.xpath("//span[@class='sc-d0ff2b78-4 kgDJIq']");
 
     public LoginPage(WebDriver driver) {
         super(driver); // Call the constructor of BasePage
@@ -46,4 +44,11 @@ public class LoginPage extends BasePage {
     public String getErrorMessage() {
         return wait.waitForElementVisible(errorMsg).getText();
     }
+
+
+    public boolean isEmailFieldVisible() {
+        return isVisible(emailField);
+    }
+
+
 }

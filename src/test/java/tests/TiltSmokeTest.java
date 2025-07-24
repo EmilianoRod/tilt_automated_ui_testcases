@@ -14,7 +14,7 @@ public class TiltSmokeTest extends BaseTest {
     @Test
     public void testLandingLoginSettings() throws InterruptedException {
 
-        // 2. Navigate to Login Page and perform login
+        // Navigate to Login Page and perform login
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
         loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
@@ -27,8 +27,8 @@ public class TiltSmokeTest extends BaseTest {
 
 
 //         3. Navigate to Settings page (after login) and verify it loads
-        SettingsPage settingsPage =
-        settingsPage.open();  // or if there is a UI link to settings, use that instead
+        SettingsPage settingsPage = new SettingsPage(driver);
+        settingsPage.open();  // Now it's initialized
         Assert.assertTrue(settingsPage.isLoaded(), "Settings page did not load for logged-in user");
     }
 

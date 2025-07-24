@@ -36,6 +36,21 @@
             <version>5.9.2</version>
         </dependency>
 
-        
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>20231013</version>
+        </dependency>
+
+
+        <!-- https://mvnrepository.com/artifact/com.mailslurp/mailslurp-client-java -->
+        <dependency>
+            <groupId>com.mailslurp</groupId>
+            <artifactId>mailslurp-client-java</artifactId>
+            <version>16.2.1</version>
+        </dependency>
+
+
+
     </dependencies>
 </project>
