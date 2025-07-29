@@ -40,11 +40,11 @@ public class Config {
     }
 
     public static String getBaseUrl() {
-        return get("baseUrl");
+        return System.getProperty("baseUrl", props.getProperty("baseUrl", "https://tilt-dashboard-dev.tilt365.com/"));
     }
 
     public static int getTimeout() {
-        return getInt("timeout");
+        return Integer.parseInt(System.getProperty("timeout", props.getProperty("timeout", "10")));
     }
 
     public static boolean isHeadless() {
@@ -52,7 +52,7 @@ public class Config {
     }
 
     public static String getBrowser() {
-        return get("browser");
+        return System.getProperty("browser", props.getProperty("browser", "chrome"));
     }
 
     public static String getScreenshotPath() {

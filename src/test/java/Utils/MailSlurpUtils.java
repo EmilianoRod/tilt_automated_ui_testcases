@@ -49,10 +49,16 @@ public class MailSlurpUtils {
      * @return Email received
      * @throws ApiException if no email arrives or call fails
      */
-    public static Email waitForLatestEmail(UUID inboxId, long timeoutMillis, boolean unreadOnly) throws ApiException {
-        return waitForController.waitForLatestEmail().execute();
+    public static Email waitForLatestEmail(UUID inboxId, long timeoutMillis, boolean unreadOnly) throws InterruptedException {
+        for (int i = 0; i < 5; i++) { // Retry 5 times with 5 seconds each
+            Email email = waitForLatestEmail(inboxId, timeoutMillis, unreadOnly);
+            if (email != null) {
+                return email;
+            }
+            Thread.sleep(5000); // Wait before retry
+        }
+        throw new AssertionError("❌ No email received within the timeout");
     }
-
     /**
      * Extract a numeric OTP code from the email body.
      * @param email the Email object

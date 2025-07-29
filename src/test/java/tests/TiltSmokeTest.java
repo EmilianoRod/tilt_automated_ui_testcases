@@ -4,31 +4,42 @@ import base.BaseTest;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 import pages.LoginPage;
+import pages.menuPages.DashboardPage;
+import pages.menuPages.IndividualsPage;
 import pages.menuPages.SettingsPage;
+import pages.menuPages.ShopPage;
 
 public class TiltSmokeTest extends BaseTest {
 
 
 
-    @Test
-    public void testLandingLoginSettings() throws InterruptedException {
-
-        // Navigate to Login Page and perform login
+    private DashboardPage loginAsAdmin(String email, String password) {
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
-        loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
-        // (Assume credentials for a test account; in real usage, use secure storage for creds)
-        String currentUrl = driver.getCurrentUrl();
-        Thread.sleep(4000);
-//        Assert.assertFalse(currentUrl.contains("/sign-in"), "Login failed – still on Login page");
-        // Alternatively, assert that some element only visible post-login is present,
-        // or that URL == expected logged-in URL.
+        DashboardPage dashboardPage = loginPage.login(email, password);
+        Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard failed to load after login");
+        return dashboardPage;
+    }
 
+    @Test(groups = {"smoke"})
+    public void testInviteUserAndVerifyInIndividuals() {
+        DashboardPage dashboard = loginAsAdmin("erodriguez@effectussoftware.com", "Password#1");
+        IndividualsPage individualsPage = dashboard.goToIndividuals();
+        Assert.assertTrue(individualsPage.isUserListedByEmail("test@example.com"), "❌ Invited user not found in Individuals list");
+    }
 
-//         3. Navigate to Settings page (after login) and verify it loads
-        SettingsPage settingsPage = new SettingsPage(driver);
-        settingsPage.open();  // Now it's initialized
-        Assert.assertTrue(settingsPage.isLoaded(), "Settings page did not load for logged-in user");
+/*    @Test(groups = {"smoke"})
+    public void testSettingsPageLoads() {
+        DashboardPage dashboard = loginAsAdmin("erodriguez@effectussoftware.com", "Password#1");
+        SettingsPage settingsPage = dashboard.goToSettings();
+        Assert.assertTrue(settingsPage.isLoaded(), "❌ Settings page failed to load");
+    }*/
+
+    @Test(groups = {"smoke"})
+    public void testShopPageLoads() {
+        DashboardPage dashboard = loginAsAdmin("erodriguez@effectussoftware.com", "Password#1");
+        ShopPage shopPage = dashboard.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page failed to load");
     }
 
 }

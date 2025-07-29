@@ -21,6 +21,8 @@ public class IndividualsPage extends BasePage {
 //    private final By firstRowEmail = By.xpath("//tbody/tr[1]/td[2]");
 //    private final By firstRowReportTag = By.xpath("//tbody/tr[1]/td[3]/span[contains(@class, 'Tag')]");
 //    private final By downloadDataBtn = By.xpath("//button[contains(.,'Download Data')]");
+    private final By tableRows = By.xpath("//table//tr");
+
 
     // Actions
     public boolean isLoaded() {
@@ -56,6 +58,7 @@ public class IndividualsPage extends BasePage {
 //    }
 
 
+/*
     public boolean isUserListedByEmail(String email) {
         List<WebElement> rows = driver.findElements(By.xpath("//table//tr"));
         for (WebElement row : rows) {
@@ -64,6 +67,27 @@ public class IndividualsPage extends BasePage {
             }
         }
         return false;
+    }
+*/
+
+
+    public boolean isUserListedByEmail(String email) {
+        return driver.findElements(By.xpath("//table//tr[td[contains(text(),'" + email + "')]]")).size() > 0;
+    }
+
+    public void waitUntilUserInviteAppears(String email) {
+        for (int i = 0; i < 10; i++) { // Retry up to 10 times
+            if (isUserListedByEmail(email)) {
+                return;
+            }
+            try {
+                Thread.sleep(1000); // 1-second polling
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("❌ Waiting for user invite was interrupted", e);
+            }
+        }
+        throw new AssertionError("❌ User with email " + email + " not listed in Individuals table");
     }
 
 }

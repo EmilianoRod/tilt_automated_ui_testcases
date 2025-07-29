@@ -1,6 +1,7 @@
 package Utils;
 
 import org.openqa.selenium.By;
+import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
@@ -18,12 +19,21 @@ public class WaitUtils {
         this.wait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
     }
 
+
     public WebElement waitForElementVisible(By locator) {
-        return wait.until(ExpectedConditions.visibilityOfElementLocated(locator));
+        try {
+            return wait.until(ExpectedConditions.visibilityOfElementLocated(locator));
+        } catch (TimeoutException e) {
+            throw new RuntimeException("❌ Timeout: Element not visible: " + locator, e);
+        }
     }
 
     public WebElement waitForElementClickable(By locator) {
-        return wait.until(ExpectedConditions.elementToBeClickable(locator));
+        try {
+            return wait.until(ExpectedConditions.elementToBeClickable(locator));
+        } catch (TimeoutException e) {
+            throw new RuntimeException("❌ Timeout: Element not clickable: " + locator, e);
+        }
     }
 
     public boolean waitForUrlContains(String partialUrl) {
@@ -36,11 +46,6 @@ public class WaitUtils {
 
     public boolean waitForElementInvisible(By locator) {
         return wait.until(ExpectedConditions.invisibilityOfElementLocated(locator));
-    }
-
-    public WebElement waitForElementVisible(By locator, int timeoutInSeconds) {
-        WebDriverWait customWait = new WebDriverWait(driver, Duration.ofSeconds(timeoutInSeconds));
-        return customWait.until(ExpectedConditions.visibilityOfElementLocated(locator));
     }
 
 }

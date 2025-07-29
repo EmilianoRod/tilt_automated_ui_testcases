@@ -11,21 +11,20 @@ public class ShopPage extends BasePage {
 
     public ShopPage(WebDriver driver) {
         super(driver);
-        this.driver = driver;
-        this.wait = new WaitUtils(driver, 10);
     }
 
     // Locators
 //    private final By pageHeader = By.xpath("//h2[contains(text(),'Shop - Assessments')]");
-    private final By pageTitle = By.xpath("//h1");
-
+    private final By pageTitle = By.xpath("//h1[normalize-space()='Shop - Assessments']");
 
     // Product cards
     private final By trueTiltCard = By.xpath("");
     private final By agilityGrowthCard = By.xpath("/");
 
     // Buy Now buttons
-    private final By buyNowTrueTilt = By.xpath("//h3[contains(text(), 'True Tilt Personality Profile™')]/following::button[contains(text(), 'BUY NOW')][1]");
+    private final By buyNowTrueTilt = By.xpath(
+            "//h3[normalize-space()='True Tilt Personality Profile™']/ancestor::div[contains(@class,'card')]//button[normalize-space()='BUY NOW']"
+    );
     private final By buyNowAgilityGrowth = By.xpath("//h3[contains(text(), 'Agility Growth Tracker')]/following::button[contains(text(), 'BUY NOW')][1]");
 
     // Price tags
@@ -47,7 +46,7 @@ public class ShopPage extends BasePage {
     }
 
     public PurchaseRecipientSelectionPage clickBuyNowForTrueTilt() {
-        wait.waitForElementClickable(buyNowTrueTilt).click();
+        click(buyNowTrueTilt);
         return new PurchaseRecipientSelectionPage(driver);
     }
 

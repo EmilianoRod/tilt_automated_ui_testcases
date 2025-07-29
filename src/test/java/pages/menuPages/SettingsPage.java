@@ -2,24 +2,37 @@ package pages.menuPages;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
+import pages.BasePage;
 
-public class SettingsPage {
+public class SettingsPage extends BasePage {
 
 
     private WebDriver driver;
     private String url = "https://tilt.com/settings";  // example URL for settings
 
     private By settingsHeader = By.xpath("//h1[text()='Settings']");
+    private final By settingsTitle = By.xpath("//h1[normalize-space()='Settings']");
+    private final By saveButton = By.xpath("//button[normalize-space()='Save']");
+
+
+
 
     public SettingsPage(WebDriver driver) {
-        this.driver = driver;
+        super(driver);
+    }
+
+    public boolean isLoaded() {
+        return isVisible(settingsTitle);
+    }
+
+    public void clickSaveButton() {
+        click(saveButton);
     }
 
     public void open() {
         driver.get(url);
     }
-    public boolean isLoaded() {
-        return driver.findElements(settingsHeader).size() > 0;
-    }
-    // Additional interactions like changing a setting can be added as needed
+
+    
+    
 }

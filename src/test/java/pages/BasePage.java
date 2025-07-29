@@ -2,35 +2,53 @@ package pages;
 
 import Utils.Config;
 import Utils.WaitUtils;
-import org.openqa.selenium.By;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
+import org.openqa.selenium.*;
+import org.openqa.selenium.io.FileHandler;
+import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
+import java.io.File;
+import java.io.IOException;
 import java.time.Duration;
 
 public abstract class BasePage {
+
 
     protected WebDriver driver;
     protected WaitUtils wait;
 
     public BasePage(WebDriver driver) {
         this.driver = driver;
-        this.wait = new WaitUtils(driver, Config.getTimeout()); // default timeout
+        this.wait = new WaitUtils(driver, Config.getTimeout());
     }
 
     // =========================
-    // 🔹 Common UI Interactions
+    // UI Interactions
     // =========================
+
+/*    protected void click(By locator) {
+        WebElement element = wait.waitForElementClickable(locator);
+        scrollIntoView(element);
+        try {
+            element.click();
+        } catch (ElementClickInterceptedException e) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
+        }
+    }*/
 
     protected void click(By locator) {
-        wait.waitForElementClickable(locator).click();
-    }
-
-    protected void type(By locator, String text) {
-        WebElement element = wait.waitForElementVisible(locator);
-        element.clear();
-        element.sendKeys(text);
+        int attempts = 0;
+        while (attempts < 2) {
+            try {
+                WebElement element = wait.waitForElementClickable(locator);
+                scrollIntoView(element);
+                element.click();
+                return;
+            } catch (ElementClickInterceptedException | StaleElementReferenceException e) {
+                attempts++;
+                if (attempts == 2) throw e;
+            }
+        }
     }
 
     protected String getText(By locator) {
@@ -40,22 +58,48 @@ public abstract class BasePage {
     protected boolean isVisible(By locator) {
         try {
             return wait.waitForElementVisible(locator).isDisplayed();
-        } catch (Exception e) {
+        } catch (TimeoutException e) {
             return false;
         }
+    }
+
+    protected void type(By locator, String text) {
+        WebElement element = wait.waitForElementVisible(locator);
+        element.clear();
+        element.sendKeys(text);
     }
 
     protected boolean isClickable(By locator) {
         try {
             wait.waitForElementClickable(locator);
             return true;
-        } catch (Exception e) {
+        } catch (TimeoutException e) {
             return false;
         }
     }
 
+    protected void scrollIntoView(WebElement element) {
+        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView(true);", element);
+    }
+
+
     // =========================
-    // 🔹 Wait Wrappers
+    // 🔹 Screenshot Utility
+    // =========================
+    protected void takeScreenshot(String name) {
+        File screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
+        try {
+            FileHandler.createDir(new File("screenshots"));
+            FileHandler.copy(screenshot, new File("screenshots/" + name + ".png"));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to save screenshot: " + name, e);
+        }
+    }
+
+
+
+    // =========================
+    // Wait Wrappers
     // =========================
 
     protected WebElement waitForElementVisible(By locator) {
@@ -67,12 +111,7 @@ public abstract class BasePage {
     }
 
     protected boolean waitForElementInvisible(By locator) {
-        wait.waitForElementInvisible(locator);
-        return true;
-    }
-
-    protected void waitForInvisibility(By locator) {
-        wait.waitForElementInvisible(locator);
+        return wait.waitForElementInvisible(locator);
     }
 
     protected boolean waitForUrlContains(String partialUrl) {
@@ -84,8 +123,8 @@ public abstract class BasePage {
     }
 
     protected void waitForAttributeToContain(By locator, String attribute, String value) {
-        new WebDriverWait(driver, Duration.ofSeconds(10))
-                .until(d -> d.findElement(locator).getAttribute(attribute).contains(value));
+        new WebDriverWait(driver, Duration.ofSeconds(Config.getTimeout()))
+                .until(ExpectedConditions.attributeContains(locator, attribute, value));
     }
 
 }

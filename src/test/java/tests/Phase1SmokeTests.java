@@ -54,6 +54,8 @@ public class Phase1SmokeTests extends BaseTest {
         Thread.sleep(3000); // Wait for the dashboard to load completely
         PurchaseRecipientSelectionPage purchaseRecipientSelectionPage = shopPage.clickBuyNowForTrueTilt();
         Thread.sleep(3000); // Wait for the dashboard to load completely
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
+        Thread.sleep(3000); // Wait for the dashboard to load completely
 //        purchaseRecipientSelectionPage.selectClientOrIndividual();
 //        Thread.sleep(3000);
 
