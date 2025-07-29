@@ -2,7 +2,10 @@ package pages.menuPages;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
 import pages.BasePage;
+
+import java.util.List;
 
 public class IndividualsPage extends BasePage {
 
@@ -51,4 +54,16 @@ public class IndividualsPage extends BasePage {
 //    public boolean isDownloadButtonVisible() {
 //        return isVisible(downloadDataBtn);
 //    }
+
+
+    public boolean isUserListedByEmail(String email) {
+        List<WebElement> rows = driver.findElements(By.xpath("//table//tr"));
+        for (WebElement row : rows) {
+            if (row.getText().contains(email)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 }

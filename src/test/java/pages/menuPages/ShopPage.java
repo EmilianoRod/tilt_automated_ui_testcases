@@ -1,14 +1,18 @@
 package pages.menuPages;
 
+import Utils.WaitUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import pages.BasePage;
+import pages.Shop.PurchaseRecipientSelectionPage;
 
 public class ShopPage extends BasePage {
 
     public ShopPage(WebDriver driver) {
         super(driver);
+        this.driver = driver;
+        this.wait = new WaitUtils(driver, 10);
     }
 
     // Locators
@@ -42,8 +46,9 @@ public class ShopPage extends BasePage {
         return isVisible(agilityGrowthCard);
     }
 
-    public void clickBuyNowTrueTilt() {
-        click(buyNowTrueTilt);
+    public PurchaseRecipientSelectionPage clickBuyNowForTrueTilt() {
+        wait.waitForElementClickable(buyNowTrueTilt).click();
+        return new PurchaseRecipientSelectionPage(driver);
     }
 
     public void clickBuyNowAgilityGrowth() {

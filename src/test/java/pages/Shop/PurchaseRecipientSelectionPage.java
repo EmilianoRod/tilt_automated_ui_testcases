@@ -46,8 +46,9 @@ public class PurchaseRecipientSelectionPage extends BasePage {
         click(cancelButton);
     }
 
-    public void clickNext() {
+    public AssessmentEntryPage clickNext() {
         click(nextButton);
+        return new AssessmentEntryPage(driver);
     }
 
     public boolean isNextButtonDisabled() {

@@ -16,8 +16,10 @@ public class DashboardPage extends BasePage {
     private By userName = By.xpath("//div[@id='__next']//div//div//main//header//div//div//a");
     private By newAssessmentBtn = By.xpath("//button[normalize-space()='New Assessment']");
     private By individualsButton = By.xpath("//nav//button[1]");
+    private By shopButton = By.xpath("//button[normalize-space()='Shop']");
 
-    
+
+
 
     public DashboardPage(WebDriver driver) {
         super(driver); // Call the constructor of BasePage
@@ -48,4 +50,10 @@ public class DashboardPage extends BasePage {
         individualsButtonSideBarMenu.click();
         return new IndividualsPage(driver);
     }
+
+    public ShopPage goToShop() {
+        wait.waitForElementClickable(shopButton).click();
+        return new ShopPage(driver);
+    }
+
 }

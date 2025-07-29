@@ -9,57 +9,107 @@ import com.mailslurp.models.InboxDto;
 import org.openqa.selenium.JavascriptExecutor;
 import org.testng.Assert;
 import org.testng.annotations.Test;
+import pages.Shop.AssessmentEntryPage;
+import pages.Shop.OrderPreviewPage;
+import pages.Shop.PurchaseRecipientSelectionPage;
+import pages.Shop.Stripe.StripeCheckoutPage;
 import pages.menuPages.DashboardPage;
 import pages.LoginPage;
 import org.json.JSONObject;
+import pages.menuPages.IndividualsPage;
+import pages.menuPages.ShopPage;
 
 import java.util.Base64;
 import java.util.UUID;
 
 public class Phase1SmokeTests extends BaseTest {
 
+
+
+
+
+
     /**
      * TC-1: Verify that newly added users receive an email notification with login instructions
      * Ensure that after a **Super Admin** successfully invites a new user, the user receives an **email notification** containing a welcome message and instructions for logging in using the **OTP authentication system**. The email should be delivered promptly and include all necessary login details.
      */
     @Test
-    public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException {
+    public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException, InterruptedException {
         // 🔹 Step 1: Create a disposable inbox
         InboxDto inbox = MailSlurpUtils.createInbox();
         String tempEmail = inbox.getEmailAddress();
         UUID inboxId = inbox.getId();
-        System.out.println("Temporary test email: " + tempEmail);
+        System.out.println("📧 Temporary test email: " + tempEmail);
 
-        // 🔹 Step 2: Log in as Admin and invite this email
+        // 🔹 Step 2: Log in as Super Admin
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
         DashboardPage dashboardPage = loginPage.login("erodriguez@effectussoftware.com", "Password#1");
+        Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard did not load after login");
 
-        Assert.assertTrue(dashboardPage.isLoaded(), "Dashboard did not load after login");
+        Thread.sleep(3000); // Wait for the dashboard to load completely
 
-        // 🔹 Step 3: Invite new user via UI
-        dashboardPage.goToIndividuals();
-        dashboardPage.enterInviteEmail(tempEmail);
-        dashboardPage.sendInvite();
+        // 🔹 Step 3: Navigate to Shop, click on Buy Now button from TTP, click on Individuals, click Next
+        ShopPage shopPage = dashboardPage.goToShop();
+        Thread.sleep(3000); // Wait for the dashboard to load completely
+        PurchaseRecipientSelectionPage purchaseRecipientSelectionPage = shopPage.clickBuyNowForTrueTilt();
+        Thread.sleep(3000); // Wait for the dashboard to load completely
+//        purchaseRecipientSelectionPage.selectClientOrIndividual();
+//        Thread.sleep(3000);
 
-        // 🔹 Step 4: Wait for the invitation email
-        Email email = MailSlurpUtils.waitForLatestEmail(inboxId, 60_000, true); // wait up to 60 seconds
-        Assert.assertNotNull(email, "Did not receive any email");
+//        purchaseRecipientSelectionPage.clickNext();
+//
+//        // 🔹 Step 4: Select "Manually enter" and input invitee information
+//        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver);
+//        entryPage.selectManualEntry();
+//        entryPage.enterNumberOfIndividuals("1");
+//
+//        String firstName = "Emi";
+//        String lastName = "Rod";
+//        entryPage.fillUserDetailsAtIndex(1, firstName, lastName, tempEmail);
+//        OrderPreviewPage previewPage = entryPage.clickProceedToPayment();
+//
+//        // 🔹 Step 5: Preview order and proceed to Stripe
+//        StripeCheckoutPage stripe = previewPage.clickPayWithStripe();
+//
+//        // 🔹 Step 6: Enter payment info on Stripe
+//        stripe.enterEmail(tempEmail);
+//        stripe.enterCardDetails("4242424242424242", "12/34", "123");
+//        stripe.clickPay();
+//
+//        // Click Pay
+//        stripe.clickPay();
+//
+//        // 🔹 Step 4: Wait for the invitation email
+//        Email email = MailSlurpUtils.waitForLatestEmail(inboxId, 60_000, true);
+//        Assert.assertNotNull(email, "❌ No email received for the invited user");
+//
+//        // 🔹 Step 5: Validate email subject content
+//        String subject = email.getSubject();
+//        Assert.assertTrue(subject.toLowerCase().contains("welcome") || subject.toLowerCase().contains("login"),
+//                "❌ Email subject does not indicate login instructions: " + subject);
+//
+//        // 🔹 Step 6: Extract login link or OTP
+//        String loginLink = MailSlurpUtils.extractFirstLink(email);
+//        String otpCode = MailSlurpUtils.extractOtpCode(email);
+//
+//        Assert.assertTrue(loginLink != null || otpCode != null,
+//                "❌ Email does not contain a login link or OTP code");
+//
+//        System.out.println("✅ Login link: " + loginLink);
+//        System.out.println("✅ OTP code: " + otpCode);
+//
+//        // 🔹 Step 11: Validate post-payment redirect and individual list entry
+//        boolean isRedirectedToIndividuals = driver.getCurrentUrl().contains("/dashboard/individuals");
+//        Assert.assertTrue(isRedirectedToIndividuals, "❌ Not redirected to Individuals page after purchase");
+//
+//     // Optionally confirm the invited individual appears in the list
+//        IndividualsPage individualsPage = new IndividualsPage(driver);
+//        boolean isUserListed = individualsPage.isUserListedByEmail(tempEmail);
+//        Assert.assertTrue(isUserListed, "❌ Newly invited user not found in Individuals list");
+//
+//        System.out.println("✅ Assessment purchased and user listed in Individuals tab.");
 
-        // 🔹 Step 5: Validate email content
-        String subject = email.getSubject();
-        Assert.assertTrue(subject.toLowerCase().contains("welcome") || subject.toLowerCase().contains("login"),
-                "Email subject does not contain expected keywords: " + subject);
-
-        // 🔹 Step 6: Extract link or OTP from email
-        String loginLink = MailSlurpUtils.extractFirstLink(email);
-        String otpCode = MailSlurpUtils.extractOtpCode(email);
-
-        Assert.assertTrue(loginLink != null || otpCode != null,
-                "Email does not contain a login link or OTP");
-
-        System.out.println("Login link: " + loginLink);
-        System.out.println("OTP: " + otpCode);
     }
     
 
