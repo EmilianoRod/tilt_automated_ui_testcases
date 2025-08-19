@@ -28,32 +28,40 @@ public class FlowUtils {
     public void inviteUser(String email) {
         DashboardPage dashboardPage = new DashboardPage(driver);
         IndividualsPage individualsPage = dashboardPage.goToIndividuals();
- /*       individualsPage.enterInviteEmail(email);
-        individualsPage.sendInvite();*/
+        // If invite logic is needed, uncomment these lines:
+        // individualsPage.enterInviteEmail(email);
+        // individualsPage.sendInvite();
         individualsPage.waitUntilUserInviteAppears(email);
     }
 
     public void purchaseAssessmentForUser(String email) {
+        // Go to Shop and start purchase flow
         DashboardPage dashboardPage = new DashboardPage(driver);
         ShopPage shopPage = dashboardPage.goToShop();
         PurchaseRecipientSelectionPage selectionPage = shopPage.clickBuyNowForTrueTilt();
         selectionPage.selectClientOrIndividual();
         selectionPage.clickNext();
 
-        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver);
-        entryPage.selectManualEntry();
-        entryPage.enterNumberOfIndividuals("1");
+        // Assessment Entry
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver)
+                .waitUntilLoaded()
+                .selectManualEntry()
+                .enterNumberOfIndividuals("1");
         entryPage.fillUserDetailsAtIndex(1, "Test", "User", email);
-        entryPage.clickProceedToPayment();
 
-        OrderPreviewPage previewPage = new OrderPreviewPage(driver);
-        previewPage.clickPayWithStripe();
+        // Order Preview
+        OrderPreviewPage previewPage = entryPage.clickProceedToPayment().waitUntilLoaded();
 
-        StripeCheckoutPage stripePage = new StripeCheckoutPage(driver);
-        stripePage.enterEmail(email);
-        stripePage.enterCardDetails("4242424242424242", "12/34", "123");
-        stripePage.clickPay();
+        // Stripe Checkout (UI-based: one iframe per field)
+        StripeCheckoutPage stripePage = previewPage.clickPayWithStripe();
+//        stripePage.waitUntilLoaded(te)
+//                .payWithTestCard("4242 4242 4242 4242", "12/34", "123", "90210");
+        // If you purposely use a 3DS test card, then also:
+        // stripePage.complete3DSIfPresent();
+
+        // (Optional) add a confirmation assertion if you’ve added the page object:
+        // OrderConfirmationPage confirm = new OrderConfirmationPage(driver).waitUntilLoaded();
+        // Assert.assertTrue(confirm.isSuccessBannerVisible(), "No success banner after payment");
     }
-
 
 }

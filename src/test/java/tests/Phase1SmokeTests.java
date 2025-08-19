@@ -1,17 +1,21 @@
 package tests;
 
+import Utils.BackendUtils;
+import Utils.Config;
 import Utils.MailSlurpUtils;
 import Utils.WaitUtils;
 import base.BaseTest;
 import com.mailslurp.clients.ApiException;
-import com.mailslurp.models.Email;
 import com.mailslurp.models.InboxDto;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 import pages.Shop.AssessmentEntryPage;
-import pages.Shop.OrderPreviewPage;
+import pages.Shop.OrderConfirmationPage;
 import pages.Shop.PurchaseRecipientSelectionPage;
+import pages.Shop.OrderPreviewPage;
+import pages.Shop.Stripe.PlaywrightStripeBridge;
 import pages.Shop.Stripe.StripeCheckoutPage;
 import pages.menuPages.DashboardPage;
 import pages.LoginPage;
@@ -19,8 +23,13 @@ import org.json.JSONObject;
 import pages.menuPages.IndividualsPage;
 import pages.menuPages.ShopPage;
 
+import java.io.File;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.UUID;
+
+import static Utils.Config.joinUrl;
+import static java.lang.String.format;
 
 public class Phase1SmokeTests extends BaseTest {
 
@@ -35,6 +44,21 @@ public class Phase1SmokeTests extends BaseTest {
      */
     @Test
     public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException, InterruptedException {
+
+
+        // ===== Config / constants =====
+        final String ADMIN_USER = System.getProperty("ADMIN_USER", Config.getAdminEmail());
+        final String ADMIN_PASS = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
+        final String PW_WORKDIR = System.getProperty("PW_WORKDIR", "/Users/test/Desktop/stripe-checkout-playwright");
+        final String PW_PROJECT = System.getProperty("PW_PROJECT", "Google Chrome");
+        final String NPX_PATH   = System.getProperty("NPX_PATH", "/usr/local/bin/npx");
+        final String CHECKOUT_EMAIL = System.getProperty("CHECKOUT_EMAIL", "qa+stripe@example.com");
+
+        final Duration EMAIL_TIMEOUT = Duration.ofSeconds(120);
+        final String CTA_TEXT       = "Accept Assessment";
+        final String SUBJECT_NEEDLE = "assessment";
+
+
         // 🔹 Step 1: Create a disposable inbox
         InboxDto inbox = MailSlurpUtils.createInbox();
         String tempEmail = inbox.getEmailAddress();
@@ -44,76 +68,132 @@ public class Phase1SmokeTests extends BaseTest {
         // 🔹 Step 2: Log in as Super Admin
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
-        DashboardPage dashboardPage = loginPage.login("erodriguez@effectussoftware.com", "Password#1");
+        Thread.sleep(2390);
+        DashboardPage dashboardPage = loginPage.login(ADMIN_USER, ADMIN_PASS);
+        new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> dashboardPage.isLoaded());
         Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard did not load after login");
 
-        Thread.sleep(3000); // Wait for the dashboard to load completely
 
         // 🔹 Step 3: Navigate to Shop, click on Buy Now button from TTP, click on Individuals, click Next
         ShopPage shopPage = dashboardPage.goToShop();
-        Thread.sleep(3000); // Wait for the dashboard to load completely
-        PurchaseRecipientSelectionPage purchaseRecipientSelectionPage = shopPage.clickBuyNowForTrueTilt();
-        Thread.sleep(3000); // Wait for the dashboard to load completely
         Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
-        Thread.sleep(3000); // Wait for the dashboard to load completely
-//        purchaseRecipientSelectionPage.selectClientOrIndividual();
-//        Thread.sleep(3000);
+        PurchaseRecipientSelectionPage purchaseRecipientSelectionPage = shopPage.clickBuyNowForTrueTilt();
+        purchaseRecipientSelectionPage.selectClientOrIndividual();
+        purchaseRecipientSelectionPage.clickNext();
 
-//        purchaseRecipientSelectionPage.clickNext();
-//
-//        // 🔹 Step 4: Select "Manually enter" and input invitee information
-//        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver);
-//        entryPage.selectManualEntry();
-//        entryPage.enterNumberOfIndividuals("1");
-//
-//        String firstName = "Emi";
-//        String lastName = "Rod";
-//        entryPage.fillUserDetailsAtIndex(1, firstName, lastName, tempEmail);
-//        OrderPreviewPage previewPage = entryPage.clickProceedToPayment();
-//
-//        // 🔹 Step 5: Preview order and proceed to Stripe
-//        StripeCheckoutPage stripe = previewPage.clickPayWithStripe();
-//
-//        // 🔹 Step 6: Enter payment info on Stripe
-//        stripe.enterEmail(tempEmail);
-//        stripe.enterCardDetails("4242424242424242", "12/34", "123");
-//        stripe.clickPay();
-//
-//        // Click Pay
-//        stripe.clickPay();
-//
-//        // 🔹 Step 4: Wait for the invitation email
-//        Email email = MailSlurpUtils.waitForLatestEmail(inboxId, 60_000, true);
-//        Assert.assertNotNull(email, "❌ No email received for the invited user");
-//
-//        // 🔹 Step 5: Validate email subject content
-//        String subject = email.getSubject();
-//        Assert.assertTrue(subject.toLowerCase().contains("welcome") || subject.toLowerCase().contains("login"),
-//                "❌ Email subject does not indicate login instructions: " + subject);
-//
-//        // 🔹 Step 6: Extract login link or OTP
-//        String loginLink = MailSlurpUtils.extractFirstLink(email);
-//        String otpCode = MailSlurpUtils.extractOtpCode(email);
-//
-//        Assert.assertTrue(loginLink != null || otpCode != null,
-//                "❌ Email does not contain a login link or OTP code");
-//
-//        System.out.println("✅ Login link: " + loginLink);
-//        System.out.println("✅ OTP code: " + otpCode);
-//
-//        // 🔹 Step 11: Validate post-payment redirect and individual list entry
-//        boolean isRedirectedToIndividuals = driver.getCurrentUrl().contains("/dashboard/individuals");
-//        Assert.assertTrue(isRedirectedToIndividuals, "❌ Not redirected to Individuals page after purchase");
-//
-//     // Optionally confirm the invited individual appears in the list
-//        IndividualsPage individualsPage = new IndividualsPage(driver);
-//        boolean isUserListed = individualsPage.isUserListedByEmail(tempEmail);
-//        Assert.assertTrue(isUserListed, "❌ Newly invited user not found in Individuals list");
-//
-//        System.out.println("✅ Assessment purchased and user listed in Individuals tab.");
 
+        // ◆ Step 4: Select "Manual entry" and input invitee information
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver)
+                .waitUntilLoaded()
+                .selectManualEntry()
+                .enterNumberOfIndividuals("1");
+        String firstName = "Emi";
+        String lastName  = "Rod";
+        entryPage.fillUserDetailsAtIndex(1, firstName, lastName, tempEmail);
+
+
+        // → Order preview
+        OrderPreviewPage preview = entryPage
+                .clickProceedToPayment()   // clicks the form's submit/Proceed button
+                .waitUntilLoaded();        // waits for the preview screen
+
+       // ◆ Step 5: Proceed to Stripe and pay (handoff to Playwright)
+        String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
+
+
+        //  configure Playwright handoff
+        //  run the checkout in Playwright
+        PlaywrightStripeBridge.Result r = PlaywrightStripeBridge.payReturning(
+                PlaywrightStripeBridge.Options.defaultOptions()
+                .setCheckoutUrl(stripeUrl)
+                .setCheckoutEmail("qa+stripe@example.com")
+                .setProject("Google Chrome")   // name from your playwright.config.ts project
+                .setHeaded(true)              // run visible so you can watch
+                .setWorkingDirectory(new File(PW_WORKDIR))
+                .setNpxExecutable("/usr/local/bin/npx")
+        );
+
+
+
+        // ===== Step 5b: Back to Selenium – verify PW success & land back in app =====
+        if (!r.isSuccess()) {
+            throw new AssertionError("❌ Stripe payment failed (Playwright exit != 0). Check [PW] logs above.");
+        }
+
+        String successUrl = r.getSuccessUrl();
+        if (successUrl != null && !successUrl.isBlank()) {
+            System.out.println("↩️ Navigating Selenium to success URL: " + successUrl);
+            driver.navigate().to(successUrl);
+        } else {
+            String fallback = joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation");
+            System.out.println("⚠️ No success URL captured by PW. Navigating to fallback: " + fallback);
+            driver.navigate().to(fallback);
+        }
+
+        // sanity: not still on Stripe
+        Assert.assertFalse(driver.getCurrentUrl().contains("checkout.stripe.com"),
+                "❌ Still on Stripe Checkout after payment.");
+
+        // ===== Step 6: Verify purchase reflected in Tilt (Individuals) =====
+        driver.navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/individuals"));
+        IndividualsPage individuals = new IndividualsPage(driver).waitUntilLoaded();
+
+        boolean listed = WaitUtils.pollFor(
+                Duration.ofSeconds(30),
+                Duration.ofMillis(700),
+                () -> individuals.isUserListedByEmail(tempEmail)
+        );
+        Assert.assertTrue(listed, "❌ Newly purchased/invited user not found in Individuals: " + tempEmail);
+        System.out.println("✅ User appears in Individuals: " + tempEmail);
+
+        // ===== Step 7: Verify invite/receipt email via MailSlurp =====
+        com.mailslurp.models.Email email =
+                MailSlurpUtils.waitForLatestEmail(inboxId, EMAIL_TIMEOUT.toMillis(), true);
+
+        Assert.assertNotNull(email, "❌ No email received for " + tempEmail + " within " + EMAIL_TIMEOUT);
+
+        final String subject = safe(email.getSubject());
+        final String from    = safe(email.getFrom());
+        final String body    = safe(email.getBody());
+
+        System.out.println(format("📨 Email — From: %s | Subject: %s", from, subject));
+
+        Assert.assertTrue(subject.toLowerCase().contains(SUBJECT_NEEDLE),
+                "❌ Subject does not mention " + SUBJECT_NEEDLE + ". Got: " + subject);
+
+        Assert.assertTrue(from.toLowerCase().contains("tilt365") || from.toLowerCase().contains("sendgrid"),
+                "❌ Unexpected sender: " + from);
+
+        Assert.assertTrue(body.toLowerCase().contains(CTA_TEXT.toLowerCase()),
+                "❌ Email body missing CTA text '" + CTA_TEXT + "'.");
+
+        Assert.assertTrue(email.getSubject().contains("Assessment"),
+                "Expected subject containing 'Assessment'");
+
+        Assert.assertTrue(email.getBody().contains("Accept Assessment"),
+                "CTA button not found in email body");
+
+        Assert.assertEquals(email.getFrom(), "no-reply@tilt365.com");
+
+
+
+        String ctaHref = MailSlurpUtils.extractLinkByAnchorText(email, CTA_TEXT);
+        if (ctaHref == null) ctaHref = MailSlurpUtils.extractFirstLink(email);
+
+        Assert.assertNotNull(ctaHref, "❌ Could not find a link in the email.");
+        System.out.println("🔗 CTA link: " + ctaHref);
+        Assert.assertTrue(ctaHref.contains("sendgrid.net") || ctaHref.contains("tilt365"),
+                "❌ CTA link host unexpected: " + ctaHref);
+
+        // (Optional) Continue to invite link:
+        // driver.navigate().to(ctaHref);
     }
-    
+
+
+
+
+    private static String safe(String s) { return s == null ? "" : s; }
+
 
     /**
      * TC-2: Store access-token after login

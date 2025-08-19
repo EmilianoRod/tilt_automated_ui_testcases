@@ -18,6 +18,9 @@ public abstract class BasePage {
     protected WaitUtils wait;
 
     public BasePage(WebDriver driver) {
+        if (driver == null) {
+            throw new IllegalArgumentException("❌ WebDriver is NULL for " + this.getClass().getSimpleName());
+        }
         this.driver = driver;
         this.wait = new WaitUtils(driver, Config.getTimeout());
     }
@@ -46,7 +49,12 @@ public abstract class BasePage {
                 return;
             } catch (ElementClickInterceptedException | StaleElementReferenceException e) {
                 attempts++;
-                if (attempts == 2) throw e;
+                           if (attempts == 2) {
+                                    // last-chance JS click
+                            WebElement element = driver.findElement(locator);
+                               ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
+                                 return;
+                              }
             }
         }
     }
@@ -65,8 +73,11 @@ public abstract class BasePage {
 
     protected void type(By locator, String text) {
         WebElement element = wait.waitForElementVisible(locator);
-        element.clear();
-        element.sendKeys(text);
+
+           // cross‑platform select-all (Control on Win/Linux, Command on macOS)
+                    Keys mod = System.getProperty("os.name").toLowerCase().contains("mac") ? Keys.COMMAND : Keys.CONTROL;
+           element.sendKeys(Keys.chord(mod, "a"), Keys.DELETE);
+           element.sendKeys(text);
     }
 
     protected boolean isClickable(By locator) {
@@ -79,7 +90,10 @@ public abstract class BasePage {
     }
 
     protected void scrollIntoView(WebElement element) {
-        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView(true);", element);
+            ((JavascriptExecutor) driver).executeScript(
+                        "arguments[0].scrollIntoView({block:'center', inline:'nearest'});",
+                        element
+                            );
     }
 
 
@@ -123,8 +137,8 @@ public abstract class BasePage {
     }
 
     protected void waitForAttributeToContain(By locator, String attribute, String value) {
-        new WebDriverWait(driver, Duration.ofSeconds(Config.getTimeout()))
-                .until(ExpectedConditions.attributeContains(locator, attribute, value));
+           wait.until(ExpectedConditions.attributeContains(locator, attribute, value));
+        ;
     }
 
 }

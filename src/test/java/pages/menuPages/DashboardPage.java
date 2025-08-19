@@ -8,8 +8,6 @@ import pages.BasePage;
 
 public class DashboardPage extends BasePage {
 
-    private WebDriver driver;
-    private WaitUtils wait;
 
     // Example element to confirm dashboard is loaded
     private By dashboardHeader = By.xpath("//header[@class='sc-742c83c9-0 bMxPLh']");
@@ -23,7 +21,6 @@ public class DashboardPage extends BasePage {
 
     public DashboardPage(WebDriver driver) {
         super(driver); // Call the constructor of BasePage
-        this.wait = new WaitUtils(driver, 10);
     }
 
     public boolean isLoaded() {
@@ -53,7 +50,8 @@ public class DashboardPage extends BasePage {
 
     public ShopPage goToShop() {
         wait.waitForElementClickable(shopButton).click();
-        return new ShopPage(driver);
+        return new ShopPage(driver); // ✅ driver comes from BasePage
     }
+
 
 }

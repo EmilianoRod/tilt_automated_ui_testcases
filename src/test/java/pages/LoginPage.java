@@ -1,12 +1,15 @@
 package pages;
 
 import Utils.Config;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import pages.menuPages.DashboardPage;
 
 public class LoginPage extends BasePage {
+    private static final Logger logger = LogManager.getLogger(LoginPage.class);
 
 
     // Locators for login form elements
@@ -36,6 +39,7 @@ public class LoginPage extends BasePage {
 
         WebElement login = wait.waitForElementClickable(loginButton);
         login.click();
+        logger.info("Logging in as admin...");
 
         return new DashboardPage(driver); // Assuming successful login redirects to Dashboard
     }

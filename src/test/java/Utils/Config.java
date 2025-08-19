@@ -59,6 +59,19 @@ public class Config {
         return get("screenshotPath");
     }
 
+    public static String getAdminEmail() {
+        return props.getProperty("admin.email");
+    }
+
+    public static String getAdminPassword() {
+        return props.getProperty("admin.password");
+    }
+
+    public static String joinUrl(String base, String path) {
+        if (base.endsWith("/")) return base + (path.startsWith("/") ? path.substring(1) : path);
+        return base + (path.startsWith("/") ? path : "/" + path);
+    }
+
 
 
 }

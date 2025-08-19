@@ -7,7 +7,6 @@ import pages.BasePage;
 public class SettingsPage extends BasePage {
 
 
-    private WebDriver driver;
     private String url = "https://tilt.com/settings";  // example URL for settings
 
     private By settingsHeader = By.xpath("//h1[text()='Settings']");
