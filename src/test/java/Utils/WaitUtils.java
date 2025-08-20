@@ -139,10 +139,6 @@ public class WaitUtils {
     }
 
     // ---------- Page / DOM readiness ----------
-    public void waitForDocumentReady() {
-        until(driver -> "complete".equals(
-                ((JavascriptExecutor) driver).executeScript("return document.readyState")));
-    }
 
     /**
      * Best-effort small idle wait for reactive UIs.
@@ -264,6 +260,56 @@ public class WaitUtils {
         new WebDriverWait(driver, Duration.ofSeconds(15)).until(d ->
                 "complete".equals(((JavascriptExecutor) d).executeScript("return document.readyState"))
         );
+    }
+
+
+    // --- Document ready ---
+    public void waitForDocumentReady() {
+        try {
+            new WebDriverWait(driver, defaultTimeout).until(d ->
+                    "complete".equals(((JavascriptExecutor) d).executeScript("return document.readyState"))
+            );
+        } catch (Exception ignored) {
+            // non-fatal
+        }
+    }
+
+    // --- URL contains with custom timeout ---
+    public boolean waitForUrlContains(String partialUrl, long timeoutSec) {
+        return new WebDriverWait(driver, Duration.ofSeconds(timeoutSec))
+                .until(ExpectedConditions.urlContains(partialUrl));
+    }
+
+
+    // --- Invisibility with default timeout ---
+    public boolean waitForInvisibility(By locator) {
+        try {
+            return new WebDriverWait(driver, defaultTimeout)
+                    .until(ExpectedConditions.invisibilityOfElementLocated(locator));
+        } catch (TimeoutException e) {
+            return false;
+        }
+    }
+
+
+
+    // --- Common overlay/backdrop/spinner guards ---
+    public void waitForLoadersToDisappear() {
+        By[] overlays = new By[] {
+                By.cssSelector("[data-testid='loading'],[data-test='loading']"),
+                By.cssSelector("[role='progressbar']"),
+                By.cssSelector(".MuiBackdrop-root,.MuiCircularProgress-root"),
+                By.cssSelector(".ant-spin,.ant-spin-spinning"),
+                By.cssSelector(".overlay,.spinner,.backdrop,[aria-busy='true']")
+        };
+        for (By overlay : overlays) {
+            try {
+                new WebDriverWait(driver, Duration.ofSeconds(3))
+                        .until(ExpectedConditions.invisibilityOfElementLocated(overlay));
+            } catch (TimeoutException | NoSuchElementException ignored) {
+                // ignore individual misses; we try several patterns
+            }
+        }
     }
 
 

@@ -44,6 +44,21 @@ public class LoginPage extends BasePage {
         return new DashboardPage(driver); // Assuming successful login redirects to Dashboard
     }
 
+    public void waitUntilLoaded() {
+        wait.waitForDocumentReady();
+        wait.waitForLoadersToDisappear();
+        wait.waitForElementVisible(emailField);
+    }
+
+    public boolean isLoaded() {
+        try {
+            return isVisible(emailField);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+
     // Check if error message is displayed (for invalid login attempts)
     public String getErrorMessage() {
         return wait.waitForElementVisible(errorMsg).getText();

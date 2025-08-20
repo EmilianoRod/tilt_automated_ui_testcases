@@ -25,6 +25,12 @@ public abstract class BasePage {
         this.wait = new WaitUtils(driver, Config.getTimeout());
     }
 
+
+    protected void pageReady() {
+        wait.waitForDocumentReady();
+        wait.waitForLoadersToDisappear();
+    }
+
     // =========================
     // UI Interactions
     // =========================

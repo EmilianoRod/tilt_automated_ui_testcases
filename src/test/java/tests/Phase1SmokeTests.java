@@ -66,7 +66,7 @@ public class Phase1SmokeTests extends BaseTest {
         // 🔹 Step 2: Log in as Super Admin
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
-        Thread.sleep(2390);
+        loginPage.waitUntilLoaded();
         DashboardPage dashboardPage = loginPage.login(ADMIN_USER, ADMIN_PASS);
         new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> dashboardPage.isLoaded());
         Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard did not load after login");
@@ -203,6 +203,7 @@ public class Phase1SmokeTests extends BaseTest {
         // --- 1) Login ---
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
         DashboardPage dashboard = loginPage.login(USER_EMAIL, System.getProperty("USER_PASS", "Password#1"));
         new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> dashboard.isLoaded());
         Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
@@ -327,10 +328,12 @@ public class Phase1SmokeTests extends BaseTest {
         // Step 1: Login
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
         DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
 
         Assert.assertTrue(dashboardPage.isLoaded(), "Dashboard page did not load after login");
-        Thread.sleep(5000); // Wait for the dashboard to load completely
+        new WebDriverWait(driver, Duration.ofSeconds(10))
+                .until(d -> dashboardPage.isLoaded());
 
         // Step 2: Access JWT from localStorage
         JavascriptExecutor js = (JavascriptExecutor) driver;
@@ -351,6 +354,7 @@ public class Phase1SmokeTests extends BaseTest {
         // Step 1: Navigate to login page
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
 
         // Step 2: Try invalid login
         loginPage.login("wronguser@example.com", "wrongPassword");
@@ -377,15 +381,21 @@ public class Phase1SmokeTests extends BaseTest {
         // Step 1: Navigate to login page
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
 
         // Step 2: Login with valid credentials
         DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
 
+        // Wait for the dashboard to load
+        new WebDriverWait(driver, Duration.ofSeconds(10))
+                .until(d -> dashboardPage.isLoaded());
+
         // Step 3: Verify the user was redirected to the dashboard
+        new WebDriverWait(driver, Duration.ofSeconds(10))
+                .until(d -> d.getCurrentUrl().contains("/dashboard"));
         Assert.assertTrue(dashboardPage.isLoaded(), "User was not redirected to dashboard after login");
 
         // Optional: Assert URL for clarity
-        Thread.sleep(5000);
         String currentUrl = driver.getCurrentUrl();
         Assert.assertTrue(currentUrl.contains("/dashboard"),
                 "Expected redirection to dashboard, but got: " + currentUrl);
@@ -404,6 +414,7 @@ public class Phase1SmokeTests extends BaseTest {
         // Navigate to Login Page
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
 
         // Perform Login with valid credentials
         DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
@@ -432,6 +443,7 @@ public class Phase1SmokeTests extends BaseTest {
         // Navigate to Login Page
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
 
         // Verify the email input field is visible
         boolean isEmailVisible = loginPage.isEmailFieldVisible();
@@ -448,6 +460,7 @@ public class Phase1SmokeTests extends BaseTest {
         // Step 1: Navigate to Login Page and login
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
         DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
 
         // Step 2: Assert that the dashboard loaded
