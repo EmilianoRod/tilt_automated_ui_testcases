@@ -1,13 +1,12 @@
 package tests;
 
-import Utils.BackendUtils;
-import Utils.Config;
-import Utils.MailSlurpUtils;
-import Utils.WaitUtils;
+import Utils.*;
 import base.BaseTest;
 import com.mailslurp.clients.ApiException;
 import com.mailslurp.models.InboxDto;
+import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -29,13 +28,12 @@ import java.util.Base64;
 import java.util.UUID;
 
 import static Utils.Config.joinUrl;
+import static Utils.EncodingUtils.decodeBase64Url;
 import static java.lang.String.format;
 
 public class Phase1SmokeTests extends BaseTest {
 
-
-
-
+    private static String safe(String s) { return s == null ? "" : s; }
 
 
     /**
@@ -191,47 +189,78 @@ public class Phase1SmokeTests extends BaseTest {
 
 
 
-
-    private static String safe(String s) { return s == null ? "" : s; }
-
-
     /**
      * TC-2: Store access-token after login
      * Verify that the frontend stores the access-token securely after a successful login (e.g., in memory or secure storage).
      */
     @Test
     public void testStoreAccessTokenAfterLogin() throws InterruptedException {
-        // Navigate to Login Page and perform login
+        // --- Config / expected ---
+        final String USER_EMAIL = System.getProperty("USER_EMAIL", "erodriguez+a@effectussoftware.com");
+        final String USER_ROLE  = System.getProperty("USER_ROLE",  "practitioner");
+        final int    USER_ID    = Integer.parseInt(System.getProperty("USER_ID", "313820"));
+
+        // --- 1) Login ---
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
-        DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
-        dashboardPage.isLoaded();
-        Thread.sleep(5000);
+        DashboardPage dashboard = loginPage.login(USER_EMAIL, System.getProperty("USER_PASS", "Password#1"));
+        new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> dashboard.isLoaded());
+        Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
 
-        // Access the access token from the dashboard or wherever it is stored
-        JavascriptExecutor js = (JavascriptExecutor) driver;
-        String jwt = (String) js.executeScript("return window.localStorage.getItem('jwt');");
-        Assert.assertNotNull(jwt, "JWT was not stored");
-        Assert.assertTrue(jwt.split("\\.").length == 3, "JWT does not appear to be well-formed");
+        // --- 2) Wait for token to exist (no sleeps) ---
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+        String jwt = wait.until(d -> (String) ((JavascriptExecutor) d)
+                .executeScript("return window.localStorage.getItem('jwt');"));
+        Assert.assertNotNull(jwt, "JWT not stored in localStorage['jwt']");
+
+        // --- 3) Validate JWT shape & claims ---
+        Assert.assertEquals(jwt.split("\\.").length, 3, "JWT should have 3 segments");
 
         String[] parts = jwt.split("\\.");
-        String payloadJson = new String(Base64.getDecoder().decode(parts[1]));
-        Assert.assertTrue(payloadJson.contains("\"sub\":\"313820\""), "JWT payload doesn't contain expected user ID");
+        String payloadJson = EncodingUtils.decodeBase64Url(parts[1]);
+        Assert.assertNotNull(payloadJson, "JWT payload couldn't be Base64URL-decoded");
 
+        JSONObject payload = new JSONObject(payloadJson);
 
-        // Validate persist:root
-        String persistRoot = (String) js.executeScript("return window.localStorage.getItem('persist:root');");
-        System.out.println("persist:root = " + persistRoot);
+        // required: subject matches expected user id
+        Assert.assertEquals(
+                payload.optString("sub"),
+                String.valueOf(USER_ID),
+                "JWT 'sub' (user id) mismatch"
+        );
+
+        // optional but great sanity checks
+        long now = System.currentTimeMillis() / 1000L;
+        long exp = payload.optLong("exp", 0L);
+        Assert.assertTrue(exp > now, "JWT already expired (exp <= now)");
+
+        // if your backend sets these, assert them (safe optString/optLong)
+        // Assert.assertEquals(payload.optString("iss"), "https://tilt365.com", "Issuer mismatch");
+        // Assert.assertEquals(payload.optString("aud"), "tilt-dashboard", "Audience mismatch");
+
+        // --- 4) Validate redux-persist root ---
+        String persistRoot = (String) ((JavascriptExecutor) driver)
+                .executeScript("return window.localStorage.getItem('persist:root');");
         Assert.assertNotNull(persistRoot, "persist:root not stored");
 
-        JSONObject persistJson = new JSONObject(persistRoot);
-        String authString = persistJson.getString("auth");
-        JSONObject authJson = new JSONObject(authString);
-        JSONObject userJson = authJson.getJSONObject("user");
+        JSONObject root = new JSONObject(persistRoot);
 
-        Assert.assertEquals(userJson.getString("email"), "erodriguez+a@effectussoftware.com");
-        Assert.assertEquals(userJson.getString("role"), "practitioner");
-        Assert.assertEquals(userJson.getInt("id"), 313820);
+        // In many redux-persist setups, each slice is stringified JSON
+        String authSliceStr = root.optString("auth", null);
+        Assert.assertNotNull(authSliceStr, "persist:root missing 'auth' slice");
+
+        JSONObject authSlice = new JSONObject(authSliceStr);
+        // Sometimes user itself is stringified too; handle both cases
+        Object userObj = authSlice.opt("user");
+        JSONObject userJson = (userObj instanceof String)
+                ? new JSONObject((String) userObj)
+                : (JSONObject) userObj;
+
+        Assert.assertNotNull(userJson, "persist:root.auth.user missing");
+
+        Assert.assertEquals(userJson.optString("email"), USER_EMAIL, "Persisted user email mismatch");
+        Assert.assertEquals(userJson.optString("role"),  USER_ROLE,  "Persisted user role mismatch");
+        Assert.assertEquals(userJson.optInt("id"),       USER_ID,    "Persisted user id mismatch");
     }
     
 
@@ -241,33 +270,53 @@ public class Phase1SmokeTests extends BaseTest {
      */
     @Test
     public void testRedirectUnauthorizedUsersToLoginPage() throws InterruptedException {
-        // Step 1: Navigate to Login Page and login with valid credentials
-        LoginPage loginPage = new LoginPage(driver);
-        loginPage.navigateTo();
-        DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
+        final String USER_EMAIL = System.getProperty("USER_EMAIL", "erodriguez+a@effectussoftware.com");
+        final String USER_PASS  = System.getProperty("USER_PASS",  "Password#1");
+        final String LOGIN_PATH = "/auth/sign-in";
+        final String PROTECTED  = "/dashboard/individuals"; //protected route
 
-        Assert.assertTrue(dashboardPage.isLoaded(), "Dashboard page did not load after login");
-        Thread.sleep(5000); // Wait for the dashboard to load completely
+        // 1) Login (valid)
+        LoginPage login = new LoginPage(driver);
+        login.navigateTo();
+        DashboardPage dashboard = login.login(USER_EMAIL, USER_PASS);
+        new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> dashboard.isLoaded());
+        Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
 
-        // Step 2: Simulate token tampering by clearing JWT & persist:root
+        // 2) Tamper auth: set an EXPIRED JWT and clear persisted state
         JavascriptExecutor js = (JavascriptExecutor) driver;
-        js.executeScript("window.localStorage.removeItem('jwt');");
+
+        // Build an expired JWT-like string (doesn't need to be signed for client-side checks)
+        long past = (System.currentTimeMillis() / 1000L) - 60; // 60s in the past
+        String header   = EncodingUtils.decodeBase64Url("{\"alg\":\"none\",\"typ\":\"JWT\"}");
+        String payload  = EncodingUtils.decodeBase64Url("{\"sub\":\"313820\",\"exp\":" + past + "}");
+        String expiredJwt = header + "." + payload + "."; // alg=none -> empty signature ok for our client check
+
+        js.executeScript("window.localStorage.setItem('jwt', arguments[0]);", expiredJwt);
         js.executeScript("window.localStorage.removeItem('persist:root');");
 
-        // Step 3: Reload page to trigger unauthorized state
-        driver.navigate().refresh();
+        // 3) Hit a protected route to trigger guards (route-change & API call)
+        driver.navigate().to(joinUrl(Config.getBaseUrl(), PROTECTED));
 
-        // Step 4: Use WaitUtils to verify redirection to login
-        WaitUtils waitUtils = new WaitUtils(driver, 10);
-        boolean redirected = waitUtils.waitForUrlContains("/sign-in");
-        Assert.assertTrue(redirected, "User was not redirected to login page after token removal.");
 
-        // Step 5: Double-check URL manually
-        String currentUrl = driver.getCurrentUrl();
-        Assert.assertTrue(currentUrl.contains("/sign-in"), "URL does not reflect redirection to login page.");
-        Thread.sleep(5000);
+        // 4) Wait for redirect
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+        boolean redirected = wait.until(d ->
+                d.getCurrentUrl().contains(LOGIN_PATH)
+        );
+        Assert.assertTrue(redirected, "User was not redirected to login page after token invalidation");
+
+
+        // 5) Sanity: verify key login UI is visible
+        boolean loginFormVisible = new WebDriverWait(driver, Duration.ofSeconds(10)).until(d -> {
+            try {
+                return d.findElement(By.cssSelector("input[type='email']")).isDisplayed()
+                        && d.findElement(By.cssSelector("input[type='password']")).isDisplayed();
+            } catch (NoSuchElementException ignored) { return false; }
+        });
+        Assert.assertTrue(loginFormVisible, "Login form not visible after redirect");
     }
-    
+
+
 
     /**
      * TC-4: Generate access-token on successful login
