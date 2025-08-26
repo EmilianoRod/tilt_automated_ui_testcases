@@ -9,6 +9,10 @@ public class Config {
     private static final Properties props = new Properties();
 
 
+    private static String envKey(String key) {
+        return key.replace('.', '_').toUpperCase(); // admin.email -> ADMIN_EMAIL
+    }
+
     public static int getDefaultTimeout() {
         String timeout = System.getProperty("timeout", "10"); // fallback to 10 if not set
         return Integer.parseInt(timeout);
@@ -27,9 +31,27 @@ public class Config {
         }
     }
 
+
     public static String get(String key) {
-        return System.getProperty(key, props.getProperty(key));
+        // 1) -Dkey=...
+        String sys = System.getProperty(key);
+        if (sys != null && !sys.isBlank()) return sys;
+
+        // 2) ENV (dots->underscores, uppercased)
+        String env = System.getenv(envKey(key));
+        if (env != null && !env.isBlank()) return env;
+
+        // 3) config.properties
+        return props.getProperty(key);
     }
+
+    public static String get(String key, String def) {
+        String v = get(key);
+        return (v == null || v.isBlank()) ? def : v;
+    }
+
+
+
 
     public static int getInt(String key) {
         return Integer.parseInt(get(key));
@@ -48,7 +70,7 @@ public class Config {
     }
 
     public static boolean isHeadless() {
-        return getBoolean("headless");
+        return Boolean.parseBoolean(get("headless", "true"));
     }
 
     public static String getBrowser() {

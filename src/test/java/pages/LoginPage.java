@@ -6,7 +6,11 @@ import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
 import pages.menuPages.DashboardPage;
+
+import java.time.Duration;
 
 public class LoginPage extends BasePage {
     private static final Logger logger = LogManager.getLogger(LoginPage.class);
@@ -22,11 +26,22 @@ public class LoginPage extends BasePage {
         super(driver); // Call the constructor of BasePage
     }
 
-    // Navigate to the login page (if not already on it)
+
+    // Navigate to the login page (explicit route, env-aware)
     public void navigateTo() {
-        driver.get(Config.getBaseUrl()); // Use Config to get the base URL
+        String url = Config.joinUrl(Config.getBaseUrl(), "/auth/sign-in");
+        driver.get(url);
+
+        new WebDriverWait(driver, Duration.ofSeconds(Config.getTimeout()))
+                .until(ExpectedConditions.or(
+                        ExpectedConditions.urlContains("/auth/sign-in"),
+                        ExpectedConditions.urlContains("/auth-sign-in") // keep if your app sometimes uses this
+                ));
+
         waitForElementVisible(emailField);
     }
+
+
 
     // Perform login action
     public DashboardPage login(String emailEntered, String passwordEntered) {

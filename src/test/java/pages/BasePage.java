@@ -3,6 +3,7 @@ package pages;
 import Utils.Config;
 import Utils.WaitUtils;
 import org.openqa.selenium.*;
+import org.openqa.selenium.interactions.MoveTargetOutOfBoundsException;
 import org.openqa.selenium.io.FileHandler;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
@@ -35,22 +36,25 @@ public abstract class BasePage {
     // UI Interactions
     // =========================
 
-/*    protected void click(By locator) {
-        WebElement element = wait.waitForElementClickable(locator);
-        scrollIntoView(element);
+
+    protected void scrollToElement(WebElement el) {
         try {
-            element.click();
-        } catch (ElementClickInterceptedException e) {
-            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
+            new org.openqa.selenium.interactions.Actions(driver)
+                    .scrollToElement(el)
+                    .pause(Duration.ofMillis(50))
+                    .perform();
+        } catch (Exception ignored) {
+            ((JavascriptExecutor) driver).executeScript(
+                    "arguments[0].scrollIntoView({block:'center', inline:'nearest'});", el);
         }
-    }*/
+    }
 
     protected void click(By locator) {
         int attempts = 0;
         while (attempts < 2) {
             try {
                 WebElement element = wait.waitForElementClickable(locator);
-                scrollIntoView(element);
+                scrollToElement(element);
                 element.click();
                 return;
             } catch (ElementClickInterceptedException | StaleElementReferenceException e) {
@@ -63,6 +67,61 @@ public abstract class BasePage {
                               }
             }
         }
+    }
+
+
+    // Click an already-found element with realistic fallbacks
+    protected void safeClick(WebElement el) {
+        // bring into view for native/actions clicks
+        scrollToElement(el);
+
+        // 1) Native click
+        try {
+            el.click();
+            return;
+        } catch (ElementClickInterceptedException | MoveTargetOutOfBoundsException e) {
+            // 2) Actions click
+            try {
+                new org.openqa.selenium.interactions.Actions(driver)
+                        .moveToElement(el, 1, 1)
+                        .click()
+                        .perform();
+                return;
+            } catch (Exception ignored) { /* fall through */ }
+            // 3) JS click (last resort)
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", el);
+        }
+    }
+
+
+    protected void safeClick(By locator) {
+        WebElement el = new WebDriverWait(driver, Duration.ofSeconds(10))
+                .until(ExpectedConditions.elementToBeClickable(locator));
+
+        scrollToElement(el);
+
+        // 1) Native click
+        try {
+            el.click();
+            return;
+        } catch (ElementClickInterceptedException | MoveTargetOutOfBoundsException e) {
+            // element may have moved / gone stale; re-find
+            try { el = driver.findElement(locator); }
+            catch (StaleElementReferenceException ignored) {
+                el = new WebDriverWait(driver, Duration.ofSeconds(5))
+                        .until(ExpectedConditions.elementToBeClickable(locator));
+            }
+        }
+
+        // 2) Actions click
+        try {
+            new org.openqa.selenium.interactions.Actions(driver)
+                    .moveToElement(el, 1, 1).click().perform();
+            return;
+        } catch (Exception ignored) { /* continue */ }
+
+        // 3) JS click (last resort)
+        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", el);
     }
 
     protected String getText(By locator) {
@@ -93,13 +152,6 @@ public abstract class BasePage {
         } catch (TimeoutException e) {
             return false;
         }
-    }
-
-    protected void scrollIntoView(WebElement element) {
-            ((JavascriptExecutor) driver).executeScript(
-                        "arguments[0].scrollIntoView({block:'center', inline:'nearest'});",
-                        element
-                            );
     }
 
 

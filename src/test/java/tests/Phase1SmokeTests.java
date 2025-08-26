@@ -92,7 +92,7 @@ public class Phase1SmokeTests extends BaseTest {
 
         // → Order preview
         OrderPreviewPage preview = entryPage
-                .clickProceedToPayment()   // clicks the form's submit/Proceed button
+                .   clickProceedToPayment()   // clicks the form's submit/Proceed button
                 .waitUntilLoaded();        // waits for the preview screen
 
        // ◆ Step 5: Proceed to Stripe and pay (handoff to Playwright)

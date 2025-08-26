@@ -1,6 +1,10 @@
 package Utils;
 
+import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
 import pages.LoginPage;
 import pages.Shop.AssessmentEntryPage;
 import pages.Shop.OrderPreviewPage;
@@ -10,6 +14,8 @@ import pages.menuPages.DashboardPage;
 import pages.menuPages.IndividualsPage;
 import pages.menuPages.ShopPage;
 
+import java.time.Duration;
+
 public class FlowUtils {
 
 
@@ -17,6 +23,39 @@ public class FlowUtils {
 
     public FlowUtils(WebDriver driver) {
         this.driver = driver;
+    }
+
+    public static IndividualsPage goToSuccessUrlEnsureAuthAndOpenIndividuals(WebDriver driver, String successUrl, String baseUrl, String adminEmail, String adminPassword) {
+
+        driver.navigate().to(successUrl);
+        waitDocReady(driver);
+
+        // If we landed on sign-in, log back in
+        if (driver.getCurrentUrl().contains("/auth/sign-in")) {
+            LoginPage login = new LoginPage(driver);
+            login.waitUntilLoaded();
+            login.login(adminEmail, adminPassword); // do the login
+            waitDocReady(driver);
+        }
+
+        // Be explicit: navigate to Individuals
+        String individualsUrl = baseUrl.replaceAll("/+$","") + "/dashboard/individuals";
+        driver.navigate().to(individualsUrl);
+        waitDocReady(driver);
+
+        IndividualsPage page = new IndividualsPage(driver).waitUntilLoaded();
+        return page;
+    }
+
+    private static void waitDocReady(WebDriver d) {
+        new WebDriverWait(d, Duration.ofSeconds(15))
+                .until(wd -> "complete".equals(
+                        ((JavascriptExecutor) wd).executeScript("return document.readyState")));
+        try {
+            By loaders = By.cssSelector("[role='progressbar'], .ant-spin-spinning, .MuiBackdrop-root, [aria-busy='true']");
+            new WebDriverWait(d, Duration.ofSeconds(5))
+                    .until(ExpectedConditions.invisibilityOfElementLocated(loaders));
+        } catch (Exception ignore) {}
     }
 
     public DashboardPage loginAsAdmin(String email, String password) {

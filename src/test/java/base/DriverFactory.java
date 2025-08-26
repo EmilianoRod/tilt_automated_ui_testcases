@@ -12,22 +12,26 @@ public class DriverFactory {
 
 
     public static WebDriver createDriver() {
-        String browser = Config.getBrowser();
-        boolean headless = Config.isHeadless();
+        String browser = Config.getBrowser().toLowerCase();
 
-        switch (browser.toLowerCase()) {
+        switch (browser) {
             case "chrome":
+            default:
                 WebDriverManager.chromedriver().setup();
                 ChromeOptions options = new ChromeOptions();
-                if (headless) options.addArguments("--headless=new");
+
+                // headless from config (defaults to true via your Config)
+                if (Config.isHeadless()) {
+                    options.addArguments("--headless=new");
+                }
+
+                // a couple of safe defaults for CI/local parity
                 options.addArguments("--window-size=1920,1080");
+                options.addArguments("--disable-dev-shm-usage");
+                options.addArguments("--no-sandbox");
+
+                options.setAcceptInsecureCerts(true);
                 return new ChromeDriver(options);
-
-            case "safari":
-                return new SafariDriver();
-
-            default:
-                throw new IllegalArgumentException("❌ Unsupported browser: " + browser);
         }
     }
 

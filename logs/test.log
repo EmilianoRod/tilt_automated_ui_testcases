@@ -486,3 +486,299 @@
 19:51:06 INFO  pages.LoginPage - Logging in as admin...
 19:51:36 INFO  base.BaseTest - ✅ TEST PASSED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
 19:51:36 INFO  base.BaseTest - Browser closed successfully.
+21:22:59 INFO  base.BaseTest - ========== STARTING TEST: testAccessTokenIsNotGeneratedOnFailedLogin ==========
+21:23:05 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:23:06 INFO  pages.LoginPage - Logging in as admin...
+21:23:12 INFO  base.BaseTest - ✅ TEST PASSED: testAccessTokenIsNotGeneratedOnFailedLogin
+21:23:12 INFO  base.BaseTest - Browser closed successfully.
+21:23:12 INFO  base.BaseTest - ========== STARTING TEST: testGenerateAccessTokenOnSuccessfulLogin ==========
+21:23:16 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:23:17 INFO  pages.LoginPage - Logging in as admin...
+21:23:19 INFO  base.BaseTest - ✅ TEST PASSED: testGenerateAccessTokenOnSuccessfulLogin
+21:23:20 INFO  base.BaseTest - Browser closed successfully.
+21:23:20 INFO  base.BaseTest - ========== STARTING TEST: testLoginSuccessRedirectsUser ==========
+21:23:23 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:23:25 INFO  pages.LoginPage - Logging in as admin...
+21:23:27 INFO  base.BaseTest - ✅ TEST PASSED: testLoginSuccessRedirectsUser
+21:23:28 INFO  base.BaseTest - Browser closed successfully.
+21:23:28 INFO  base.BaseTest - ========== STARTING TEST: testRedirectToDashboardOnSuccessfulLogin ==========
+21:23:30 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:23:32 INFO  pages.LoginPage - Logging in as admin...
+21:23:33 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectToDashboardOnSuccessfulLogin
+21:23:33 INFO  base.BaseTest - Browser closed successfully.
+21:23:33 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUnauthorizedUsersToLoginPage ==========
+21:23:36 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:23:38 INFO  pages.LoginPage - Logging in as admin...
+21:23:40 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUnauthorizedUsersToLoginPage
+21:23:40 INFO  base.BaseTest - Browser closed successfully.
+21:23:40 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUserAppropriatelyPostLogin ==========
+21:23:43 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:23:44 INFO  pages.LoginPage - Logging in as admin...
+21:23:49 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUserAppropriatelyPostLogin
+21:23:50 INFO  base.BaseTest - Browser closed successfully.
+21:23:50 INFO  base.BaseTest - ========== STARTING TEST: testShowEmailInputFieldOnLoginScreen ==========
+21:23:53 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:23:53 INFO  base.BaseTest - ✅ TEST PASSED: testShowEmailInputFieldOnLoginScreen
+21:23:53 INFO  base.BaseTest - Browser closed successfully.
+21:23:53 INFO  base.BaseTest - ========== STARTING TEST: testStoreAccessTokenAfterLogin ==========
+21:23:56 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:23:57 INFO  pages.LoginPage - Logging in as admin...
+21:23:59 INFO  base.BaseTest - ✅ TEST PASSED: testStoreAccessTokenAfterLogin
+21:23:59 INFO  base.BaseTest - Browser closed successfully.
+21:23:59 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+21:24:02 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:24:05 ERROR base.BaseTest - ❌ TEST FAILED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+21:24:05 INFO  base.BaseTest - Browser closed successfully.
+21:27:32 INFO  base.BaseTest - ========== STARTING TEST: testAccessTokenIsNotGeneratedOnFailedLogin ==========
+21:27:36 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:27:38 INFO  pages.LoginPage - Logging in as admin...
+21:27:44 INFO  base.BaseTest - ✅ TEST PASSED: testAccessTokenIsNotGeneratedOnFailedLogin
+21:27:44 INFO  base.BaseTest - Browser closed successfully.
+21:27:44 INFO  base.BaseTest - ========== STARTING TEST: testGenerateAccessTokenOnSuccessfulLogin ==========
+21:27:47 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:27:48 INFO  pages.LoginPage - Logging in as admin...
+21:27:50 INFO  base.BaseTest - ✅ TEST PASSED: testGenerateAccessTokenOnSuccessfulLogin
+21:27:51 INFO  base.BaseTest - Browser closed successfully.
+21:27:51 INFO  base.BaseTest - ========== STARTING TEST: testLoginSuccessRedirectsUser ==========
+21:27:55 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:27:56 INFO  pages.LoginPage - Logging in as admin...
+21:27:59 INFO  base.BaseTest - ✅ TEST PASSED: testLoginSuccessRedirectsUser
+21:27:59 INFO  base.BaseTest - Browser closed successfully.
+21:27:59 INFO  base.BaseTest - ========== STARTING TEST: testRedirectToDashboardOnSuccessfulLogin ==========
+21:28:02 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:28:04 INFO  pages.LoginPage - Logging in as admin...
+21:28:05 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectToDashboardOnSuccessfulLogin
+21:28:06 INFO  base.BaseTest - Browser closed successfully.
+21:28:06 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUnauthorizedUsersToLoginPage ==========
+21:28:11 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:28:12 INFO  pages.LoginPage - Logging in as admin...
+21:28:14 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUnauthorizedUsersToLoginPage
+21:28:14 INFO  base.BaseTest - Browser closed successfully.
+21:28:14 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUserAppropriatelyPostLogin ==========
+21:28:18 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:28:19 INFO  pages.LoginPage - Logging in as admin...
+21:28:24 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUserAppropriatelyPostLogin
+21:28:24 INFO  base.BaseTest - Browser closed successfully.
+21:28:24 INFO  base.BaseTest - ========== STARTING TEST: testShowEmailInputFieldOnLoginScreen ==========
+21:28:28 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:28:29 INFO  base.BaseTest - ✅ TEST PASSED: testShowEmailInputFieldOnLoginScreen
+21:28:29 INFO  base.BaseTest - Browser closed successfully.
+21:28:29 INFO  base.BaseTest - ========== STARTING TEST: testStoreAccessTokenAfterLogin ==========
+21:28:32 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:28:33 INFO  pages.LoginPage - Logging in as admin...
+21:28:34 INFO  base.BaseTest - ✅ TEST PASSED: testStoreAccessTokenAfterLogin
+21:28:35 INFO  base.BaseTest - Browser closed successfully.
+21:28:35 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+21:28:40 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+21:28:44 INFO  pages.LoginPage - Logging in as admin...
+21:28:58 ERROR base.BaseTest - ❌ TEST FAILED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+21:28:58 INFO  base.BaseTest - Browser closed successfully.
+22:04:09 INFO  base.BaseTest - ========== STARTING TEST: testAccessTokenIsNotGeneratedOnFailedLogin ==========
+22:04:13 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+22:04:15 INFO  pages.LoginPage - Logging in as admin...
+22:04:21 INFO  base.BaseTest - ✅ TEST PASSED: testAccessTokenIsNotGeneratedOnFailedLogin
+22:04:21 INFO  base.BaseTest - Browser closed successfully.
+22:04:21 INFO  base.BaseTest - ========== STARTING TEST: testGenerateAccessTokenOnSuccessfulLogin ==========
+22:04:24 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+22:04:25 INFO  pages.LoginPage - Logging in as admin...
+22:04:27 INFO  base.BaseTest - ✅ TEST PASSED: testGenerateAccessTokenOnSuccessfulLogin
+22:04:27 INFO  base.BaseTest - Browser closed successfully.
+22:04:27 INFO  base.BaseTest - ========== STARTING TEST: testLoginSuccessRedirectsUser ==========
+22:04:33 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+22:04:34 INFO  pages.LoginPage - Logging in as admin...
+22:04:37 INFO  base.BaseTest - ✅ TEST PASSED: testLoginSuccessRedirectsUser
+22:04:37 INFO  base.BaseTest - Browser closed successfully.
+22:04:37 INFO  base.BaseTest - ========== STARTING TEST: testRedirectToDashboardOnSuccessfulLogin ==========
+22:04:40 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+22:04:41 INFO  pages.LoginPage - Logging in as admin...
+22:04:43 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectToDashboardOnSuccessfulLogin
+22:04:43 INFO  base.BaseTest - Browser closed successfully.
+22:04:43 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUnauthorizedUsersToLoginPage ==========
+22:04:47 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+22:04:48 INFO  pages.LoginPage - Logging in as admin...
+22:04:51 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUnauthorizedUsersToLoginPage
+22:04:51 INFO  base.BaseTest - Browser closed successfully.
+22:04:51 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUserAppropriatelyPostLogin ==========
+22:04:54 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+22:04:55 INFO  pages.LoginPage - Logging in as admin...
+22:05:00 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUserAppropriatelyPostLogin
+22:05:00 INFO  base.BaseTest - Browser closed successfully.
+22:05:00 INFO  base.BaseTest - ========== STARTING TEST: testShowEmailInputFieldOnLoginScreen ==========
+22:05:04 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+22:05:05 INFO  base.BaseTest - ✅ TEST PASSED: testShowEmailInputFieldOnLoginScreen
+22:05:05 INFO  base.BaseTest - Browser closed successfully.
+22:05:05 INFO  base.BaseTest - ========== STARTING TEST: testStoreAccessTokenAfterLogin ==========
+22:05:08 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+22:05:09 INFO  pages.LoginPage - Logging in as admin...
+22:05:11 INFO  base.BaseTest - ✅ TEST PASSED: testStoreAccessTokenAfterLogin
+22:05:11 INFO  base.BaseTest - Browser closed successfully.
+22:05:11 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+22:05:14 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+22:05:19 INFO  pages.LoginPage - Logging in as admin...
+22:05:46 ERROR base.BaseTest - ❌ TEST FAILED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+22:05:46 INFO  base.BaseTest - Browser closed successfully.
+22:48:40 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+22:48:46 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+22:48:52 INFO  pages.LoginPage - Logging in as admin...
+22:50:09 ERROR base.BaseTest - ❌ TEST FAILED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+22:50:09 INFO  base.BaseTest - Browser closed successfully.
+09:56:20 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+09:56:25 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+09:56:29 INFO  pages.LoginPage - Logging in as admin...
+09:57:47 ERROR base.BaseTest - ❌ TEST FAILED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+09:57:47 INFO  base.BaseTest - Browser closed successfully.
+10:15:28 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+10:15:32 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+10:15:36 INFO  pages.LoginPage - Logging in as admin...
+10:16:07 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+10:16:11 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+10:16:14 INFO  pages.LoginPage - Logging in as admin...
+10:16:36 ERROR base.BaseTest - ❌ TEST FAILED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+10:16:36 INFO  base.BaseTest - Browser closed successfully.
+10:27:59 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+10:28:03 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+10:28:07 INFO  pages.LoginPage - Logging in as admin...
+10:29:23 INFO  base.BaseTest - ✅ TEST PASSED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+10:29:23 INFO  base.BaseTest - Browser closed successfully.
+10:39:43 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+10:39:47 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+10:39:51 INFO  pages.LoginPage - Logging in as admin...
+10:40:22 INFO  base.BaseTest - ✅ TEST PASSED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+10:40:23 INFO  base.BaseTest - Browser closed successfully.
+12:22:18 INFO  base.BaseTest - ========== STARTING TEST: testAccessTokenIsNotGeneratedOnFailedLogin ==========
+12:22:23 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:22:24 INFO  pages.LoginPage - Logging in as admin...
+12:22:31 INFO  base.BaseTest - ✅ TEST PASSED: testAccessTokenIsNotGeneratedOnFailedLogin
+12:22:31 INFO  base.BaseTest - Browser closed successfully.
+12:22:31 INFO  base.BaseTest - ========== STARTING TEST: testGenerateAccessTokenOnSuccessfulLogin ==========
+12:22:34 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:22:35 INFO  pages.LoginPage - Logging in as admin...
+12:22:37 INFO  base.BaseTest - ✅ TEST PASSED: testGenerateAccessTokenOnSuccessfulLogin
+12:22:37 INFO  base.BaseTest - Browser closed successfully.
+12:22:37 INFO  base.BaseTest - ========== STARTING TEST: testLoginSuccessRedirectsUser ==========
+12:22:40 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:22:42 INFO  pages.LoginPage - Logging in as admin...
+12:22:44 INFO  base.BaseTest - ✅ TEST PASSED: testLoginSuccessRedirectsUser
+12:22:45 INFO  base.BaseTest - Browser closed successfully.
+12:22:45 INFO  base.BaseTest - ========== STARTING TEST: testRedirectToDashboardOnSuccessfulLogin ==========
+12:22:48 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:22:49 INFO  pages.LoginPage - Logging in as admin...
+12:22:51 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectToDashboardOnSuccessfulLogin
+12:22:51 INFO  base.BaseTest - Browser closed successfully.
+12:22:51 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUnauthorizedUsersToLoginPage ==========
+12:22:54 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:22:55 INFO  pages.LoginPage - Logging in as admin...
+12:22:57 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUnauthorizedUsersToLoginPage
+12:22:58 INFO  base.BaseTest - Browser closed successfully.
+12:22:58 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUserAppropriatelyPostLogin ==========
+12:23:00 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:23:02 INFO  pages.LoginPage - Logging in as admin...
+12:23:07 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUserAppropriatelyPostLogin
+12:23:07 INFO  base.BaseTest - Browser closed successfully.
+12:23:07 INFO  base.BaseTest - ========== STARTING TEST: testShowEmailInputFieldOnLoginScreen ==========
+12:23:10 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:23:11 INFO  base.BaseTest - ✅ TEST PASSED: testShowEmailInputFieldOnLoginScreen
+12:23:11 INFO  base.BaseTest - Browser closed successfully.
+12:23:11 INFO  base.BaseTest - ========== STARTING TEST: testStoreAccessTokenAfterLogin ==========
+12:23:14 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:23:15 INFO  pages.LoginPage - Logging in as admin...
+12:23:17 INFO  base.BaseTest - ✅ TEST PASSED: testStoreAccessTokenAfterLogin
+12:23:17 INFO  base.BaseTest - Browser closed successfully.
+12:23:17 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+12:23:20 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:23:24 INFO  pages.LoginPage - Logging in as admin...
+12:23:55 INFO  base.BaseTest - ✅ TEST PASSED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+12:23:55 INFO  base.BaseTest - Browser closed successfully.
+12:37:03 INFO  base.BaseTest - ========== STARTING TEST: testAccessTokenIsNotGeneratedOnFailedLogin ==========
+12:37:07 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:37:08 INFO  pages.LoginPage - Logging in as admin...
+12:37:14 INFO  base.BaseTest - ✅ TEST PASSED: testAccessTokenIsNotGeneratedOnFailedLogin
+12:37:14 INFO  base.BaseTest - Browser closed successfully.
+12:37:14 INFO  base.BaseTest - ========== STARTING TEST: testGenerateAccessTokenOnSuccessfulLogin ==========
+12:37:17 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:37:19 INFO  pages.LoginPage - Logging in as admin...
+12:37:20 INFO  base.BaseTest - ✅ TEST PASSED: testGenerateAccessTokenOnSuccessfulLogin
+12:37:21 INFO  base.BaseTest - Browser closed successfully.
+12:37:21 INFO  base.BaseTest - ========== STARTING TEST: testLoginSuccessRedirectsUser ==========
+12:37:24 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:37:25 INFO  pages.LoginPage - Logging in as admin...
+12:37:28 INFO  base.BaseTest - ✅ TEST PASSED: testLoginSuccessRedirectsUser
+12:37:28 INFO  base.BaseTest - Browser closed successfully.
+12:37:28 INFO  base.BaseTest - ========== STARTING TEST: testRedirectToDashboardOnSuccessfulLogin ==========
+12:37:31 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:37:33 INFO  pages.LoginPage - Logging in as admin...
+12:37:34 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectToDashboardOnSuccessfulLogin
+12:37:34 INFO  base.BaseTest - Browser closed successfully.
+12:37:34 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUnauthorizedUsersToLoginPage ==========
+12:37:37 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:37:38 INFO  pages.LoginPage - Logging in as admin...
+12:37:41 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUnauthorizedUsersToLoginPage
+12:37:41 INFO  base.BaseTest - Browser closed successfully.
+12:37:41 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUserAppropriatelyPostLogin ==========
+12:37:44 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:37:45 INFO  pages.LoginPage - Logging in as admin...
+12:37:50 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUserAppropriatelyPostLogin
+12:37:50 INFO  base.BaseTest - Browser closed successfully.
+12:37:50 INFO  base.BaseTest - ========== STARTING TEST: testShowEmailInputFieldOnLoginScreen ==========
+12:37:53 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:37:54 INFO  base.BaseTest - ✅ TEST PASSED: testShowEmailInputFieldOnLoginScreen
+12:37:54 INFO  base.BaseTest - Browser closed successfully.
+12:37:54 INFO  base.BaseTest - ========== STARTING TEST: testStoreAccessTokenAfterLogin ==========
+12:37:57 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:37:58 INFO  pages.LoginPage - Logging in as admin...
+12:38:00 INFO  base.BaseTest - ✅ TEST PASSED: testStoreAccessTokenAfterLogin
+12:38:00 INFO  base.BaseTest - Browser closed successfully.
+12:38:00 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+12:38:02 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+12:38:06 INFO  pages.LoginPage - Logging in as admin...
+12:38:38 INFO  base.BaseTest - ✅ TEST PASSED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+12:38:38 INFO  base.BaseTest - Browser closed successfully.
+14:06:22 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+14:06:28 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+14:06:34 INFO  pages.LoginPage - Logging in as admin...
+14:08:49 ERROR base.BaseTest - ❌ TEST FAILED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+14:08:49 INFO  base.BaseTest - Browser closed successfully.
+09:44:31 INFO  base.BaseTest - ========== STARTING TEST: testAccessTokenIsNotGeneratedOnFailedLogin ==========
+09:44:37 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+09:44:39 INFO  pages.LoginPage - Logging in as admin...
+09:44:45 INFO  base.BaseTest - ✅ TEST PASSED: testAccessTokenIsNotGeneratedOnFailedLogin
+09:44:45 INFO  base.BaseTest - Browser closed successfully.
+09:44:45 INFO  base.BaseTest - ========== STARTING TEST: testGenerateAccessTokenOnSuccessfulLogin ==========
+09:44:48 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+09:44:49 INFO  pages.LoginPage - Logging in as admin...
+09:44:52 INFO  base.BaseTest - ✅ TEST PASSED: testGenerateAccessTokenOnSuccessfulLogin
+09:44:52 INFO  base.BaseTest - Browser closed successfully.
+09:44:52 INFO  base.BaseTest - ========== STARTING TEST: testLoginSuccessRedirectsUser ==========
+09:44:55 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+09:44:56 INFO  pages.LoginPage - Logging in as admin...
+09:44:58 INFO  base.BaseTest - ✅ TEST PASSED: testLoginSuccessRedirectsUser
+09:44:58 INFO  base.BaseTest - Browser closed successfully.
+09:44:58 INFO  base.BaseTest - ========== STARTING TEST: testRedirectToDashboardOnSuccessfulLogin ==========
+09:45:01 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+09:45:02 INFO  pages.LoginPage - Logging in as admin...
+09:45:04 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectToDashboardOnSuccessfulLogin
+09:45:04 INFO  base.BaseTest - Browser closed successfully.
+09:45:04 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUnauthorizedUsersToLoginPage ==========
+09:45:07 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+09:45:09 INFO  pages.LoginPage - Logging in as admin...
+09:45:11 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUnauthorizedUsersToLoginPage
+09:45:12 INFO  base.BaseTest - Browser closed successfully.
+09:45:12 INFO  base.BaseTest - ========== STARTING TEST: testRedirectUserAppropriatelyPostLogin ==========
+09:45:14 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+09:45:15 INFO  pages.LoginPage - Logging in as admin...
+09:45:20 INFO  base.BaseTest - ✅ TEST PASSED: testRedirectUserAppropriatelyPostLogin
+09:45:21 INFO  base.BaseTest - Browser closed successfully.
+09:45:21 INFO  base.BaseTest - ========== STARTING TEST: testShowEmailInputFieldOnLoginScreen ==========
+09:45:24 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+09:45:25 INFO  base.BaseTest - ✅ TEST PASSED: testShowEmailInputFieldOnLoginScreen
+09:45:25 INFO  base.BaseTest - Browser closed successfully.
+09:45:25 INFO  base.BaseTest - ========== STARTING TEST: testStoreAccessTokenAfterLogin ==========
+09:45:27 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+09:45:29 INFO  pages.LoginPage - Logging in as admin...
+09:45:30 INFO  base.BaseTest - ✅ TEST PASSED: testStoreAccessTokenAfterLogin
+09:45:30 INFO  base.BaseTest - Browser closed successfully.
+09:45:30 INFO  base.BaseTest - ========== STARTING TEST: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions ==========
+09:45:33 INFO  base.BaseTest - Navigated to URL: https://tilt-dashboard-dev.tilt365.com/
+09:45:37 INFO  pages.LoginPage - Logging in as admin...
+09:46:09 INFO  base.BaseTest - ✅ TEST PASSED: testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions
+09:46:10 INFO  base.BaseTest - Browser closed successfully.

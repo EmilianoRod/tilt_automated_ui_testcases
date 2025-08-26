@@ -1,5 +1,6 @@
 package pages.Shop;
 
+import io.qameta.allure.Step;
 import org.openqa.selenium.*;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
@@ -10,287 +11,309 @@ import java.util.List;
 
 public class AssessmentEntryPage extends BasePage {
 
+
+
+    // ---------- Constructor ----------
     public AssessmentEntryPage(WebDriver driver) {
         super(driver);
     }
 
+    // ---------- Locators (robust & text-anchored) ----------
 
+    // Ant Design often hides the input; click the LABEL or the .ant-radio-inner
+    // Structure from your DOM:
+    // <div class="jrmjRs">
+    //    <label class="ant-radio-wrapper"> ... <input type="radio"> ... </label>
+    //    <p>Manually enter</p>
+    // </div>
+    private By radioLabelByText(String text) {
+        String t = text.toLowerCase();
+        return By.xpath("//p[translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')='" + t + "']" +
+                "/preceding-sibling::label[contains(@class,'ant-radio-wrapper')]");
+    }
 
+    private By radioInnerByText(String text) {
+        String t = text.toLowerCase();
+        return By.xpath("//p[translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')='" + t + "']" +
+                "/preceding-sibling::label//span[contains(@class,'ant-radio-inner')]");
+    }
 
-    // ------- Stable, text-anchored locators -------
-    // Click the LABEL (frameworks often hide the input)
-    private final By manualEntryRadio = By.xpath(
-            "//span[@class='ant-radio ant-wave-target ant-radio-checked']"
-    );
+    private By radioCheckedBadgeByText(String text) {
+        String t = text.toLowerCase();
+        return By.xpath("//p[translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')='" + t + "']" +
+                "/preceding-sibling::label//span[contains(@class,'ant-radio') and contains(@class,'ant-radio-checked')]");
+    }
 
-    // Also add a label locator to get a clickable element.
-    private final By manualEntryLabel = By.xpath("(//label)[1]");
-
-    private final By manualEntryInput = By.xpath("(//input[@type='radio'])[1]");
-
-    // Choose ONE rows locator. I’ll use a tolerant CSS:
-    private final By personRowsLoc = By.cssSelector("[data-test='person-row'], [role='row'], .person-row");
-
-    // Email inputs (used as a secondary signal that a row appeared)
-    private final By emailInputsLoc = By.cssSelector("input[type='email'], input[name*='email' i], input[id*='email' i]");
-
-    // Optional overlay/spinner
-    private final By blockingOverlay = By.xpath(
-            "//*[self::div or self::span][contains(@class,'loading') or contains(@class,'spinner') or contains(@class,'overlay') or @role='progressbar']"
-    );
-
-    // Add/Plus triggers that create the first row
-    private final By addPersonButton = By.xpath("//span[@aria-label='Increase Value']//span"
-    );
-
-
-    // keep your broad row container too, if you have one:
-    private final By rowContainers = By.xpath(
-            "//form[@data-hs-cf-bound='true']"
-    );
-
-    // "Download template" radio
-    private final By DOWNLOAD_TEMPLATE_RADIO = By.xpath(
-            "//section[.//h2[normalize-space()='Purchase Information']]//label[normalize-space()='Download template']//preceding::input[@type='radio'][1]"
-    );
-
-
-    // flexible quantity selector (ids/names can vary)
+    // Quantity / count input (tolerant)
     private final By quantityInput = By.xpath(
-            "//section[.//h2[normalize-space()='Purchase Information']]"
-                    + "//*[@role='spinbutton' or self::input[@type='number' or @inputmode='numeric'"
-                    + " or contains(translate(@name,'QUANTITY','quantity'),'quant')"
-                    + " or contains(translate(@id,'QUANTITY','quantity'),'quant')]][1]"
+            "//*[@role='spinbutton' or " +
+                    " self::input[@type='number' or @inputmode='numeric' or " +
+                    "             contains(translate(@name,'QUANTITY','quantity'),'quant') or " +
+                    "             contains(translate(@id,'QUANTITY','quantity'),'quant')]]"
     );
 
-    // Your UI copy varies; support both “Next” and “Proceed”
+    // Proceed button variations (Next / Proceed / Proceed to payment)
     private final By proceedButton = By.xpath(
-            "//button[normalize-space()='Proceed to payment']"
+            "//button[normalize-space()='Proceed to payment' or normalize-space()='Proceed' or normalize-space()='Next' or " +
+                    "        .//span[normalize-space()='Next' or contains(normalize-space(),'Proceed')]]"
     );
 
-    By CANCEL_BTN = By.xpath(
-            "//main//button[normalize-space()='Cancel']"
+    // Add person (your DOM shows an icon button with aria-label)
+    private final By addPersonButton = By.xpath(
+            "//button[@data-test='add-person' " +
+                    " or normalize-space(.)='Add person' or normalize-space(.)='Add Person' " +
+                    " or .//span[normalize-space(.)='Add person' or normalize-space(.)='Add Person']]"
     );
 
+    // Person rows & email inputs (used to confirm a row appeared)
+    private final By personRowsLoc   = By.cssSelector("[data-test='person-row'], [role='row'], .person-row, table tr");
+    private final By emailInputsLoc  = By.cssSelector("input[type='email'], input[name*='email' i], input[id*='email' i]");
 
-    // Dynamic locators for participant rows
-    private By firstNameFieldInRow(int rowIndex) {
-        return By.xpath("(//table//tr[.//td]//input[contains(@placeholder,'First') " +
-                "or @name='firstName' or @aria-label='First name'])[" + rowIndex + "]");
+    // Generic overlay/spinner patterns (Ant/MUI/ARIA)
+    private final By possibleLoader = By.cssSelector(
+            "[data-testid='loading'],[data-test='loading'],[role='progressbar']," +
+                    ".MuiBackdrop-root,.MuiCircularProgress-root,.ant-spin,.ant-spin-spinning," +
+                    ".overlay,.spinner,.backdrop,[aria-busy='true']"
+    );
+
+    // Flexible selectors for fields (don’t depend on rows)
+    private By firstNameInputs() {
+        return By.cssSelector("input[aria-label='First name'], input[name='firstName'], input[placeholder*='First' i]");
+    }
+    private By lastNameInputs() {
+        return By.cssSelector("input[aria-label='Last name'], input[name='lastName'], input[placeholder*='Last' i]");
+    }
+    private By emailInputs() {
+        return By.cssSelector("input[type='email'], input[name='email'], input[aria-label='Email'], input[placeholder*='mail' i]");
     }
 
-    private By lastNameFieldInRow(int rowIndex) {
-        return By.xpath("(//table//tr[.//td]//input[contains(@placeholder,'Last') " +
-                "or @name='lastName' or @aria-label='Last name'])[" + rowIndex + "]");
+
+
+    // ---------- Private utils ----------
+
+    private WebElement waitClickable(By locator, long sec) {
+        return new WebDriverWait(driver, Duration.ofSeconds(sec))
+                .until(ExpectedConditions.elementToBeClickable(locator));
     }
 
-    private By emailFieldInRow(int rowIndex) {
-        return By.xpath("(//table//tr[.//td]//input[contains(@type,'email') " +
-                "or contains(@placeholder,'mail') or @name='email' or @aria-label='Email'])[" + rowIndex + "]");
+    private WebElement waitVisible(By locator, long sec) {
+        return new WebDriverWait(driver, Duration.ofSeconds(sec))
+                .until(ExpectedConditions.visibilityOfElementLocated(locator));
+    }
+
+    private boolean waitInvisibility(By locator, long sec) {
+        try {
+            return new WebDriverWait(driver, Duration.ofSeconds(sec))
+                    .until(ExpectedConditions.invisibilityOfElementLocated(locator));
+        } catch (TimeoutException e) {
+            return false;
+        }
     }
 
 
-
-
-
-    // ================== Helpers ==================
-    private void scrollCenter(WebElement el) {
-        ((JavascriptExecutor) driver).executeScript(
-                "arguments[0].scrollIntoView({block:'center', inline:'center'})", el);
-    }
-
-    private void waitOverlayGone(Duration timeout) {
-        new WebDriverWait(driver, timeout).until(d -> {
-            List<WebElement> els = d.findElements(blockingOverlay);
-            for (WebElement e : els) {
-                if (e.isDisplayed()) return false;
+    private void clearAndTypeCross(WebElement el, String text) {
+        // CMD/CTRL+A + Delete (macOS/Linux/Windows) + JS fallback if needed
+        try { el.sendKeys(Keys.chord(Keys.COMMAND, "a")); el.sendKeys(Keys.DELETE); } catch (Exception ignored) {}
+        try { el.sendKeys(Keys.chord(Keys.CONTROL,  "a")); el.sendKeys(Keys.DELETE); } catch (Exception ignored) {}
+        try {
+            if (!String.valueOf(el.getAttribute("value")).isEmpty()) {
+                ((JavascriptExecutor) driver).executeScript(
+                        "arguments[0].value=''; arguments[0].dispatchEvent(new Event('input',{bubbles:true}));", el);
             }
-            return true;
-        });
+        } catch (Exception ignored) {}
+        el.sendKeys(text);
     }
 
+    private int currentRowCount() { return visibleCount(emailInputs()); }
 
-    private int currentRowCount() {
-        return driver.findElements(personRowsLoc).size();
-    }
+    // ---------- Public API ----------
 
-
-    // ---------------- Public API ----------------
-
-    /** Ensure key elements are present and page isn't covered by an overlay. */
+    @Step("Wait until Assessment Entry page is ready")
     public AssessmentEntryPage waitUntilLoaded() {
-        try { wait.waitForElementInvisible(blockingOverlay); } catch (Exception ignore) {
-            //ignore if not present
-        }
-        wait.waitForElementVisible(manualEntryLabel);
+        waitLoadersGone();
+        // Expect at least one of the radio choices to be interactable
+        new WebDriverWait(driver, Duration.ofSeconds(10)).until(ExpectedConditions.or(
+                ExpectedConditions.visibilityOfElementLocated(radioLabelByText("Manually enter")),
+                ExpectedConditions.visibilityOfElementLocated(radioLabelByText("Download template"))
+        ));
         return this;
     }
 
-
-    /** Robustly select “Manual entry”. Click the label, with scroll + JS fallback. */
+    @Step("Select 'Manually enter'")
     public AssessmentEntryPage selectManualEntry() {
-        // Wait section usable
-        waitOverlayGone(Duration.ofSeconds(10));
-
-        WebElement label = new WebDriverWait(driver, Duration.ofSeconds(10))
-                .until(ExpectedConditions.elementToBeClickable(manualEntryLabel));
-
-        scrollCenter(label);
+        waitLoadersGone();
         try {
-            label.click();
-        } catch (ElementClickInterceptedException e) {
-            jsClick(label);
+            safeClick(radioLabelByText("Manually enter"));
+        } catch (TimeoutException ignored) {
+            safeClick(radioInnerByText("Manually enter"));
         }
-
-        // Assert the INPUT is selected. If frameworks hide it, we still can read .isSelected()
         new WebDriverWait(driver, Duration.ofSeconds(5))
-                .until(d -> d.findElement(manualEntryInput).isSelected());
-
+                .until(ExpectedConditions.visibilityOfElementLocated(radioCheckedBadgeByText("Manually enter")));
+        waitLoadersGone();
         return this;
     }
 
-    public AssessmentEntryPage clickAddPerson() {
-        waitOverlayGone(Duration.ofSeconds(10));
-
-        int before = currentRowCount();
-
-        WebElement addBtn = new WebDriverWait(driver, Duration.ofSeconds(10))
-                .until(ExpectedConditions.elementToBeClickable(addPersonButton));
-
-        scrollCenter(addBtn);
+    @Step("Select 'Download template'")
+    public AssessmentEntryPage selectDownloadTemplate() {
+        waitLoadersGone();
         try {
-            addBtn.click();
-        } catch (ElementClickInterceptedException e) {
-            jsClick(addBtn);
+            safeClick(radioLabelByText("Download template"));
+        } catch (TimeoutException ignored) {
+            safeClick(radioInnerByText("Download template"));
         }
-
-        // Either a new row appears or at least one email input shows up
-        new WebDriverWait(driver, Duration.ofSeconds(10))
-                .until(d -> currentRowCount() > before || !d.findElements(emailInputsLoc).isEmpty());
-
-        waitOverlayGone(Duration.ofSeconds(5));
+        new WebDriverWait(driver, Duration.ofSeconds(5))
+                .until(ExpectedConditions.visibilityOfElementLocated(radioCheckedBadgeByText("Download template")));
+        waitLoadersGone();
         return this;
     }
 
-    /** Set number of individuals (defaults to 1 if null/blank). */
+    @Step("Enter number of individuals: {count}")
     public AssessmentEntryPage enterNumberOfIndividuals(String count) {
         String value = (count == null || count.isBlank()) ? "1" : count.trim();
-        wait.waitForElementInvisible(blockingOverlay);
-        WebElement qty = wait.waitForElementVisible(quantityInput);
-        scrollIntoViewCenter(qty);
+        waitLoadersGone();
+        WebElement qty = waitVisible(quantityInput, 10);
+        scrollToElement(qty);
         clearAndTypeCross(qty, value);
         return this;
     }
 
 
-
-    /**
-     * Fill First/Last/Email for the Nth row (1-based index).
-     * Tolerant to minor DOM changes by scoping to a row that contains an email field.
-     */
-    public AssessmentEntryPage fillUserDetailsAtIndex(int oneBasedIndex, String first, String last, String email) {
-        if (oneBasedIndex < 1) oneBasedIndex = 1;
-
-        List<WebElement> rows = wait.waitForAllVisible(rowContainers); // make sure your WaitUtils has this
-        if (rows.size() < oneBasedIndex) {
-            throw new NoSuchElementException("Only " + rows.size() + " row(s) rendered; asked for row " + oneBasedIndex);
-        }
-        WebElement row = rows.get(oneBasedIndex - 1);
-
-        WebElement firstNameEl = findInScope(row, By.xpath(".//input[contains(@placeholder,'First') or @name='firstName' or @aria-label='First name']"));
-        WebElement lastNameEl  = findInScope(row, By.xpath(".//input[contains(@placeholder,'Last')  or @name='lastName'  or @aria-label='Last name']"));
-        WebElement emailEl     = findInScope(row, By.xpath(".//input[@type='email' or contains(@placeholder,'mail') or @name='email' or @aria-label='Email']"));
-
-        if (firstNameEl == null || lastNameEl == null || emailEl == null) {
-            throw new NoSuchElementException("Could not locate all inputs in row " + oneBasedIndex);
-        }
-
-        scrollIntoViewCenter(row);
-        clearAndTypeCross(firstNameEl, first);
-        clearAndTypeCross(lastNameEl,  last);
-        clearAndTypeCross(emailEl,     email);
+    @Step("Add a participant row")
+    public AssessmentEntryPage clickAddPerson() {
+        waitLoadersGone();
+        int before = visibleCount(emailInputs());
+        safeClick(addPersonButton);
+        new WebDriverWait(driver, Duration.ofSeconds(10))
+                .until(d -> visibleCount(emailInputs()) > before);
+        waitLoadersGone();
         return this;
     }
 
-    private void clearAndTypeCross(WebElement el, String text) {
-        try {
-            el.sendKeys(Keys.chord(Keys.COMMAND, "a"));
-            el.sendKeys(Keys.DELETE);
-        } catch (Exception ignored) {}
-        try {
-            el.sendKeys(Keys.chord(Keys.CONTROL, "a"));
-            el.sendKeys(Keys.DELETE);
-        } catch (Exception ignored) {}
-        try {
-            if (!el.getAttribute("value").isEmpty()) {
-                ((JavascriptExecutor) driver).executeScript("arguments[0].value=''; arguments[0].dispatchEvent(new Event('input',{bubbles:true}));", el);
-            }
-        } catch (Exception ignored) {}
-        el.sendKeys(text);
-    }
 
+    /**
+     * Fill First/Last/Email for the Nth row (1-based index).
+     * Tolerant by locating inputs within that row scope.
+     */
+    @Step("Fill user at index {oneBasedIndex}: {first} {last} <{email}>")
+    public AssessmentEntryPage fillUserDetailsAtIndex(int oneBasedIndex, String first, String last, String email) {
+        if (oneBasedIndex < 1) oneBasedIndex = 1;
 
+        waitLoadersGone(); // guard if you have this; otherwise keep wait.waitForLoadersToDisappear()
 
+        // Ensure we have at least N visible email inputs (row-agnostic)
+        ensureAtLeastNRows(oneBasedIndex);
 
-    /** Click proceed/next to reach the Order Preview step. */
-    public OrderPreviewPage clickProceedToPayment() {
-        try { wait.waitForElementInvisible(blockingOverlay); } catch (Exception ignore) {}
-        WebElement btn = wait.waitForElementClickable(proceedButton);
-        scrollIntoViewCenter(btn);
-        try {
-            btn.click();
-        } catch (ElementClickInterceptedException e) {
-            jsClick(btn);
+        // Find the Nth *visible* inputs for each field
+        WebElement firstNameEl = nthVisible(firstNameInputs(), oneBasedIndex);
+        WebElement lastNameEl  = nthVisible(lastNameInputs(),  oneBasedIndex);
+        WebElement emailEl     = nthVisible(emailInputs(),     oneBasedIndex);
+
+        if (firstNameEl == null || lastNameEl == null || emailEl == null) {
+            int f = visibleCount(firstNameInputs());
+            int l = visibleCount(lastNameInputs());
+            int e = visibleCount(emailInputs());
+            throw new NoSuchElementException(
+                    "Could not locate all inputs for row " + oneBasedIndex +
+                            " (visible counts -> first:" + f + " last:" + l + " email:" + e + ")"
+            );
         }
-        return new OrderPreviewPage(driver);
+
+        scrollToElement(firstNameEl);
+        clearAndTypeCross(firstNameEl, first);
+        clearAndTypeCross(lastNameEl,  last);
+        clearAndTypeCross(emailEl,     email);
+
+        // Blur to trigger validations
+        emailEl.sendKeys(Keys.TAB);
+
+        waitLoadersGone();
+        return this;
     }
 
-    // Optional utility some tests rely on
-    public int getTotalInputRowsRendered() {
-        return driver.findElements(rowContainers).size();
+
+
+    private void ensureAtLeastNRows(int n) {
+        int have = visibleCount(emailInputs());
+        if (have >= n) return;
+
+        // First choice: set the quantity field directly (most reliable)
+        List<WebElement> qtyEls = driver.findElements(quantityInput);
+        if (!qtyEls.isEmpty()) {
+            WebElement qty = qtyEls.get(0);
+//            scrollIntoViewCenter(qty);
+            clearAndTypeCross(qty, String.valueOf(n));
+            new WebDriverWait(driver, Duration.ofSeconds(10))
+                    .until(d -> visibleCount(emailInputs()) >= n);
+            return;
+        }
+
+        // Fallback: click the explicit "Add person" button until we reach N
+        int guard = 0;
+        while (visibleCount(emailInputs()) < n && guard++ < n * 2) {
+            safeClick(addPersonButton);
+            waitLoadersGone();
+        }
+        new WebDriverWait(driver, Duration.ofSeconds(10))
+                .until(d -> visibleCount(emailInputs()) >= n);
     }
 
-    // ---------------- Private helpers ----------------
 
-    private WebElement findInScope(WebElement scope, By locator) {
-        try { return scope.findElement(locator); } catch (NoSuchElementException e) { return null; }
-    }
 
-    private void clearAndType(WebElement el, String text) {
-        el.sendKeys(Keys.chord(Keys.CONTROL, "a"));
-        el.sendKeys(Keys.DELETE);
-        el.sendKeys(text);
-    }
-
-    private void scrollIntoViewCenter(WebElement el) {
-        ((JavascriptExecutor) driver).executeScript(
-                "arguments[0].scrollIntoView({block:'center', inline:'nearest'});", el);
-    }
-
-    private void jsClick(WebElement el) {
-        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", el);
-    }
-
-    /** Try to resolve the <input type='radio'> linked to a label via @for or proximity. */
-    private WebElement resolveRadioFromLabel(WebElement label) {
+    // Return the 1-based Nth *visible* element for a selector, or null if not found.
+// Includes a short wait so we don’t race the DOM.
+    private WebElement nthVisible(By selector, int oneBasedIndex) {
+        // best-effort wait until at least N are visible
         try {
-            String forId = label.getAttribute("for");
-            if (forId != null && !forId.isBlank()) return driver.findElement(By.id(forId));
-        } catch (NoSuchElementException ignore) {}
-        try {
-            return label.findElement(By.xpath("(preceding::input[@type='radio'][1] | following::input[@type='radio'][1])"));
-        } catch (NoSuchElementException ignore) {}
+            new WebDriverWait(driver, Duration.ofSeconds(5))
+                    .until(d -> visibleCount(selector) >= oneBasedIndex);
+        } catch (TimeoutException ignored) { }
+
+        int seen = 0;
+        for (WebElement el : driver.findElements(selector)) {
+            try {
+                if (el.isDisplayed()) {
+                    seen++;
+                    if (seen == oneBasedIndex) return el;
+                }
+            } catch (StaleElementReferenceException ignored) { }
+        }
         return null;
     }
 
-    private void waitUntilSelected(WebElement radio) {
-        long end = System.currentTimeMillis() + 5000;
-        while (System.currentTimeMillis() < end) {
-            try {
-                if (radio.isSelected()) return;
-            } catch (StaleElementReferenceException ignored) {}
-            try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+
+
+    private int visibleCount(By selector) {
+        int c = 0;
+        for (WebElement el : driver.findElements(selector)) {
+            try { if (el.isDisplayed()) c++; } catch (StaleElementReferenceException ignored) {}
         }
+        return c;
     }
+
+    // Tiny guard alias (use your existing wait method if you prefer)
+    private void waitLoadersGone() {
+        try { wait.waitForLoadersToDisappear(); } catch (Exception ignored) {}
+    }
+
+
+    @Step("Proceed to payment")
+    public OrderPreviewPage clickProceedToPayment() {
+        waitLoadersGone();
+        safeClick(proceedButton);
+        waitLoadersGone();
+        return new OrderPreviewPage(driver);
+    }
+
+
+
+
+    // ---------- Small helpers ----------
+
+    private WebElement findIn(WebElement scope, By locator) {
+        try { return scope.findElement(locator); }
+        catch (NoSuchElementException e) { return null; }
+    }
+
+
 
 }

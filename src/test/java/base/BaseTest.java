@@ -28,23 +28,24 @@ public class BaseTest {
         logger.info("Navigated to URL: {}", Config.getBaseUrl());
     }
 
+
+    /**
+     * This method is executed after each test method.
+     * It logs the result of the test and closes the browser.
+     *
+     * @param result The result of the test method.
+     */
     @AfterMethod(alwaysRun = true)
     public void tearDown(ITestResult result) {
-        if (ITestResult.FAILURE == result.getStatus()) {
-            takeScreenshot(result.getName());
-            logger.error("❌ TEST FAILED: {}", result.getName());
-        } else {
-            logger.info("✅ TEST PASSED: {}", result.getName());
+        switch (result.getStatus()) {
+            case ITestResult.FAILURE -> logger.error("❌ TEST FAILED: {}", result.getName());
+            case ITestResult.SKIP    -> logger.warn("⚠️ TEST SKIPPED: {}", result.getName());
+            default                  -> logger.info("✅ TEST PASSED: {}", result.getName());
         }
         if (driver != null) {
             driver.quit();
             logger.info("Browser closed successfully.");
         }
-    }
-
-    @Attachment(value = "Screenshot on Failure", type = "image/png")
-    public byte[] takeScreenshot(String testName) {
-        return ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
     }
 
 
