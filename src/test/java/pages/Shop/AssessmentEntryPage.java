@@ -305,6 +305,79 @@ public class AssessmentEntryPage extends BasePage {
     }
 
 
+    // --- Locators that work with your existing id scheme (e.g., emails.0.email) ---
+    private By emailInputAt(int row) {
+        // Prefer the explicit id pattern you already use for the row checkbox (emails.N.checkbox)
+        // so email input is likely emails.N.email
+        return By.cssSelector("input[id='emails." + row + ".email']");
+    }
+
+    // Tries common spots for inline error text near the email input
+    private String nearestErrorText(WebElement input) {
+        // 1) aria-describedby points to an error element
+        String desc = input.getAttribute("aria-describedby");
+        if (desc != null && !desc.isBlank()) {
+            for (String id : desc.split("\\s+")) {
+                try {
+                    WebElement el = driver.findElement(By.id(id));
+                    String txt = el.getText();
+                    if (txt != null && !txt.isBlank()) return txt.trim();
+                } catch (NoSuchElementException ignored) {}
+            }
+        }
+        // 2) role="alert" sibling/ancestor
+        try {
+            WebElement alert = input.findElement(By.xpath(
+                    "ancestor::*[self::div or self::td][1]//*[(@role='alert') or contains(@class,'error') or contains(@class,'invalid')][1]"
+            ));
+            String txt = alert.getText();
+            if (txt != null && !txt.isBlank()) return txt.trim();
+        } catch (NoSuchElementException ignored) {}
+
+        // 3) Next sibling with error-ish class
+        try {
+            WebElement sib = input.findElement(By.xpath(
+                    "following::*[self::div or self::p or self::span][contains(@class,'error') or contains(@class,'invalid')][1]"
+            ));
+            String txt = sib.getText();
+            if (txt != null && !txt.isBlank()) return txt.trim();
+        } catch (NoSuchElementException ignored) {}
+
+        return null;
+    }
+
+// --- API used by the test ---
+
+    public boolean isProceedToPaymentEnabled() {
+        try {
+            WebElement btn = new WebDriverWait(driver, java.time.Duration.ofSeconds(5))
+                    .until(org.openqa.selenium.support.ui.ExpectedConditions.presenceOfElementLocated(proceedButton));
+            String disabled = btn.getAttribute("disabled");
+            return btn.isEnabled() && (disabled == null || disabled.equalsIgnoreCase("false"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void setEmailAtRow(int row, String email) {
+        WebElement input = new WebDriverWait(driver, java.time.Duration.ofSeconds(5))
+                .until(org.openqa.selenium.support.ui.ExpectedConditions.elementToBeClickable(emailInputAt(row)));
+        input.clear();
+        input.sendKeys(email);
+        // Blur to trigger validation if needed
+        ((org.openqa.selenium.JavascriptExecutor) driver)
+                .executeScript("arguments[0].dispatchEvent(new Event('blur', {bubbles:true}));", input);
+    }
+
+    public String getEmailErrorAtRow(int row) {
+        try {
+            WebElement input = new WebDriverWait(driver, java.time.Duration.ofSeconds(5))
+                    .until(org.openqa.selenium.support.ui.ExpectedConditions.presenceOfElementLocated(emailInputAt(row)));
+            return nearestErrorText(input);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
 
     // ---------- Small helpers ----------
