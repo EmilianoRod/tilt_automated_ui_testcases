@@ -318,7 +318,6 @@ public class Phase1SmokeTests extends BaseTest {
     }
 
 
-
     /**
      * TC-4: Generate access-token on successful login
      * Verify that an access-token is issued upon successful login with valid credentials.
