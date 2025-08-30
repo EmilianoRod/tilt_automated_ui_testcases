@@ -28,21 +28,31 @@ public class OrderPreviewPage extends BasePage {
                     "or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'purchase information') ]"
     );
 
-    // Coupon: your markup has text like "I have a coupon code" next to a checkbox (often no <label>)
-    // Anchor a wrapper that contains that text, then find the input within.
-    private final By couponSection = By.xpath(
-            "//*[.//*[self::p or self::label][contains(normalize-space(.),'I have a coupon') or contains(normalize-space(.),'coupon')]]"
+
+    // Container anchored on the literal text "I have a coupon code"
+    private final By couponContainer = By.xpath(
+            "(//*[self::label or self::div][contains(normalize-space(.),'I have a coupon')])[1]"
     );
-    private final By couponInput = By.xpath(
-            "//input[@type='checkbox' and (contains(translate(@id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'coupon') " +
-                    " or contains(translate(@name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'coupon') " +
-                    " or contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'coupon'))]"
+
+    // Finds the element that actually displays the "I have a coupon" text,
+// goes to its nearest label/div wrapper, *then* selects the checkbox within.
+// Also excludes anything inside the preview table.
+    private final By couponCheckbox = By.xpath(
+            "(//*[contains(normalize-space(.),'I have a coupon')]" +
+                    "/ancestor::*[self::label or self::div][1]" +
+                    "//input[@type='checkbox' and not(ancestor::table)])[1]"
     );
+
+
     // If Ant applies visual state, this will appear; we use it as a secondary signal (optional)
     private final By couponCheckedBadge = By.xpath(
             "(.//*[contains(normalize-space(.),'coupon')])[1]" +
                     "/ancestor::*[self::div or self::label][1]//span[contains(@class,'ant-checkbox') and contains(@class,'ant-checkbox-checked')]"
     );
+
+    // Optional: row checkbox (for debugging only)
+    private final By rowCheckbox = By.cssSelector("input[id^='emails.'][id$='.checkbox']");
+
 
     private final By previousButton = By.xpath(
             "//button[normalize-space()='Previous' or .//span[normalize-space()='Previous']]"
@@ -76,6 +86,27 @@ public class OrderPreviewPage extends BasePage {
                     ".overlay,.spinner,.backdrop,[aria-busy='true']"
     );
 
+
+
+    // Find the "Order preview" block and scope queries to that container
+    private WebElement previewSection() {
+        By subHeader = By.xpath(
+                "//*[self::h1 or self::h2 or self::h3]" +
+                        "[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'order preview')]"
+        );
+
+        WebElement h = new WebDriverWait(driver, Duration.ofSeconds(10))
+                .until(ExpectedConditions.visibilityOfElementLocated(subHeader));
+
+        // ⬇️ nearest ancestor div/section that ALSO contains the <table> (the outer container you pasted)
+        return h.findElement(By.xpath("ancestor::*[self::div or self::section][.//table][1]"));
+    }
+
+
+
+
+
+
     // ---------- Page readiness ----------
 
     @Step("Wait until Order Preview / Purchase Information is loaded")
@@ -106,24 +137,28 @@ public class OrderPreviewPage extends BasePage {
      */
     @Step("Set coupon checkbox to: {shouldBeChecked}")
     public OrderPreviewPage setCouponChecked(boolean shouldBeChecked) {
-        waitForOverlayGone(10);
+        waitForOverlayGone(5);
 
-        WebElement checkbox = findFirst(couponInput, Duration.ofSeconds(2));
-        if (checkbox == null) {
-            WebElement wrapper = new WebDriverWait(driver, Duration.ofSeconds(5))
-                    .until(ExpectedConditions.visibilityOfElementLocated(couponSection));
-            checkbox = wrapper.findElement(By.xpath(".//input[@type='checkbox']"));
+        WebDriverWait w = new WebDriverWait(driver, Duration.ofSeconds(8));
+        WebElement box = w.until(ExpectedConditions.elementToBeClickable(couponCheckbox));
+
+        scrollCenter(box);
+
+        // 2) Early exit if already in desired state
+        if (box.isSelected() == shouldBeChecked) return this;
+
+        // 3) Click the real input (fallback to JS click if it’s visually hidden)
+        try {
+            safeClick(box);
+        } catch (Exception e) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", box);
         }
 
-        scrollCenter(checkbox);
-        if (safeIsSelected(checkbox) != shouldBeChecked) {
-            safeClick(checkbox);
-            new WebDriverWait(driver, Duration.ofSeconds(5))
-                    .until(ExpectedConditions.elementSelectionStateToBe(checkbox, shouldBeChecked));
-            // ^ built-in EC solves the lambda + final issue
-        }
+        // 4) Wait by re-locating the element each poll (avoid stale references)
+        w.until(d -> d.findElement(couponCheckbox).isSelected() == shouldBeChecked);
         return this;
     }
+
 
 
 
@@ -131,10 +166,10 @@ public class OrderPreviewPage extends BasePage {
     public OrderPreviewPage toggleCouponCheckbox() {
         waitForOverlayGone(10);
 
-        WebElement input = findFirst(couponInput, Duration.ofSeconds(2));
+        WebElement input = findFirst(couponCheckbox, Duration.ofSeconds(2));
         if (input == null) {
             WebElement wrapper = new WebDriverWait(driver, Duration.ofSeconds(5))
-                    .until(ExpectedConditions.visibilityOfElementLocated(couponSection));
+                    .until(ExpectedConditions.visibilityOfElementLocated(couponContainer));
             input = wrapper.findElement(By.xpath(".//input[@type='checkbox']"));
         }
 
@@ -248,6 +283,99 @@ public class OrderPreviewPage extends BasePage {
                 .getText().trim();
     }
 
+
+
+    // ---------- Helpers ----------
+    // ---------- Helpers ----------
+    // ---------- Helpers ----------
+
+
+    // Does the preview list the expected product name (partial match)?
+    public boolean hasProductNamed(String namePart) {
+        By productRow = By.xpath("//*[self::div or self::span or self::p or self::td]" +
+                "[contains(normalize-space(.), \"" + namePart + "\")]");
+        return !driver.findElements(productRow).isEmpty();
+    }
+
+
+    /** True if any product image inside the preview section has attributes that contain ANY of the tokens.
+     *  We check alt/title/aria-label/src (case-insensitive).
+     */
+    public boolean hasProductImageMatching(String... tokensAny) {
+        try {
+            WebElement section = previewSection();
+            for (WebElement img : section.findElements(By.cssSelector("img"))) {
+                String alt  = (img.getAttribute("alt")         + "").toLowerCase();
+                String tit  = (img.getAttribute("title")       + "").toLowerCase();
+                String aria = (img.getAttribute("aria-label")  + "").toLowerCase();
+                String src  = (img.getAttribute("src")         + "").toLowerCase();
+                for (String t : tokensAny) {
+                    String tok = t.toLowerCase();
+                    if (alt.contains(tok) || tit.contains(tok) || aria.contains(tok) || src.contains(tok)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+
+    /** True if there is at least one product image visible in the preview row. */
+    public boolean hasAnyProductImage() {
+        try {
+            WebElement section = previewSection();
+            return section.findElements(By.cssSelector("img")).stream().anyMatch(WebElement::isDisplayed);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // Is the primary continue/pay button enabled (don’t click it here)
+    public boolean isProceedEnabled() {
+        // Prefer an explicit “Pay with …” button if visible; otherwise use the generic proceed CTA
+        try {
+            WebElement btn;
+            if (!driver.findElements(payWithStripeButton).isEmpty()
+                    && driver.findElement(payWithStripeButton).isDisplayed()) {
+                btn = driver.findElement(payWithStripeButton);
+            } else {
+                btn = new WebDriverWait(driver, Duration.ofSeconds(5))
+                        .until(ExpectedConditions.presenceOfElementLocated(placeOrderOrProceedBtn));
+            }
+            String disabled = btn.getAttribute("disabled");
+            return btn.isEnabled() && (disabled == null || disabled.equalsIgnoreCase("false"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Read the coupon checkbox state without toggling it. */
+    public boolean isCouponChecked() {
+        waitForOverlayGone(5);
+
+        WebElement input = findFirst(couponCheckbox, Duration.ofSeconds(2));
+        if (input == null) {
+            try {
+                WebElement wrapper = new WebDriverWait(driver, Duration.ofSeconds(5))
+                        .until(ExpectedConditions.visibilityOfElementLocated(couponContainer));
+                input = wrapper.findElement(By.xpath(".//input[@type='checkbox']"));
+            } catch (TimeoutException e) {
+                return false; // section not present
+            }
+        }
+        try {
+            return input.isSelected();
+        } catch (StaleElementReferenceException e) {
+            // one retry
+            WebElement refreshed = findFirst(couponCheckbox, Duration.ofSeconds(2));
+            return refreshed != null && refreshed.isSelected();
+        }
+    }
+
+
     // ---------- Local utilities ----------
 
     private void waitForOverlayGone(int seconds) {
@@ -274,5 +402,60 @@ public class OrderPreviewPage extends BasePage {
     private boolean safeIsSelected(WebElement el) {
         try { return el.isSelected(); } catch (StaleElementReferenceException e) { return false; }
     }
+
+
+    // --- DEBUG UTILITIES (temporary) --------------------------------------------
+    @io.qameta.allure.Attachment(value = "Screenshot — {label}", type = "image/png")
+    private byte[] attachScreenshot(String label) {
+        return ((org.openqa.selenium.TakesScreenshot) driver).getScreenshotAs(org.openqa.selenium.OutputType.BYTES);
+    }
+
+    @io.qameta.allure.Attachment(value = "{label}", type = "text/html")
+    private String attachHtml(String label, String html) { return html; }
+
+    /** Dump coupon checkbox diagnostics to Allure without changing behavior. */
+    public void debugCoupon(String label) {
+        try {
+            // Scope to the coupon container so we never hit the row checkbox
+            WebElement wrapper = new WebDriverWait(driver, Duration.ofSeconds(10))
+                    .until(ExpectedConditions.visibilityOfElementLocated(couponContainer));
+            WebElement input = wrapper.findElement(By.xpath(".//input[@type='checkbox']"));
+
+            JavascriptExecutor js = (JavascriptExecutor) driver;
+
+            Boolean checkedJS = (Boolean) js.executeScript("return !!arguments[0].checked;", input);
+            boolean displayed = input.isDisplayed();
+            boolean enabled   = input.isEnabled();
+            String disabled   = input.getAttribute("disabled");
+            String wrapperCls = wrapper.getAttribute("class");
+
+            // Which element sits on top at the input center? (detect hidden overlay)
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> top = (java.util.Map<String, Object>) js.executeScript(
+                    "var r=arguments[0].getBoundingClientRect();" +
+                            "var x=Math.floor(r.left + r.width/2), y=Math.floor(r.top + r.height/2);" +
+                            "var el=document.elementFromPoint(x,y);" +
+                            "return {x:x, y:y, html: el ? (el.outerHTML || el.tagName) : 'null'};", input);
+
+            String containerHtml = (String) js.executeScript("return arguments[0].outerHTML;", wrapper);
+
+            attachHtml("Coupon debug — " + label,
+                    "<pre>" +
+                            "checked(JS): " + checkedJS + "\n" +
+                            "displayed   : " + displayed + "\n" +
+                            "enabled     : " + enabled + "\n" +
+                            "disabledAttr: " + disabled + "\n" +
+                            "wrapperClass: " + wrapperCls + "\n" +
+                            "topElement  : " + top.get("html") + "\n" +
+                            "</pre>" + containerHtml);
+
+            attachScreenshot("coupon " + label);
+        } catch (Exception e) {
+            attachHtml("Coupon debug — " + label + " (exception)",
+                    "<pre>" + org.apache.commons.lang3.exception.ExceptionUtils.getStackTrace(e) + "</pre>");
+            attachScreenshot("coupon " + label + " (exception)");
+        }
+    }
+
 
 }
