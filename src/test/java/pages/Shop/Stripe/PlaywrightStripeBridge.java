@@ -29,11 +29,6 @@ public final class PlaywrightStripeBridge {
 
 
 
-
-
-
-
-
     /** Quick entry point with sane defaults. Throws RuntimeException if Playwright exits non-zero. */
     public static void pay(String freshCheckoutUrl, String email) {
         Options opts = Options.defaultOptions()
@@ -255,20 +250,19 @@ public final class PlaywrightStripeBridge {
         return null; // fall back to current CWD
     }
 
+
     private static List<String> buildCommand(Options o) {
-        String testArg   = (o.testPath  != null ? o.testPath  : "tests/stripe-checkout.spec.ts");
-        String projectArg= (o.project   != null ? o.project   : "chromium");
-        String grepArg   = (o.testGrep  != null ? o.testGrep  : "Stripe hosted checkout");
+        String testArg    = (o.testPath  != null ? o.testPath  : "tests/stripe-checkout.spec.ts");
+        String projectArg = (o.project   != null ? o.project   : "chromium");
+        String grepArg    = (o.testGrep  != null ? o.testGrep  : "Stripe hosted checkout");
 
         // --- pick an effective working dir (CI or local) ---
         File baseWd = o.workingDirectory;
         if (baseWd == null) {
-            // 1) explicit override from CI
             String envWd = System.getenv("PW_BRIDGE_WD");
             if (envWd != null && !envWd.isBlank()) {
                 baseWd = new File(envWd);
             } else {
-                // 2) Jenkins-style layout
                 String ws = System.getenv("WORKSPACE");
                 if (ws != null && !ws.isBlank()) {
                     File f = new File(ws, "automation/playwright");
@@ -277,7 +271,6 @@ public final class PlaywrightStripeBridge {
                     }
                 }
             }
-            // 3) common local layouts
             if (baseWd == null) {
                 String[] candidates = {
                         "automation/playwright",
@@ -302,7 +295,6 @@ public final class PlaywrightStripeBridge {
             String exe = (o.npxExecutable != null ? o.npxExecutable : "npx");
             args.add(exe); args.add("playwright"); args.add("test");
         } else {
-            // prefer the repo-local Playwright binary if present
             File local = new File(new File(baseWd.toURI()), "node_modules/.bin/playwright");
             if (local.exists() && local.canExecute()) {
                 args.add(local.getAbsolutePath()); args.add("test");
@@ -312,11 +304,26 @@ public final class PlaywrightStripeBridge {
             }
         }
 
-        // Resolve the test path against the chosen working dir (so relative spec paths work)
-        String testArgResolved = new File(testArg).isAbsolute()
-                ? testArg
-                : new File(baseWd, testArg).getPath();
-        args.add(testArgResolved);
+        // IMPORTANT: keep test path relative to baseWd so Playwright can match it.
+        try {
+            File f = new File(testArg);
+            if (f.isAbsolute()) {
+                java.nio.file.Path base = baseWd.getCanonicalFile().toPath();
+                java.nio.file.Path abs  = f.getCanonicalFile().toPath();
+                if (abs.startsWith(base)) {
+                    testArg = base.relativize(abs).toString().replace("\\", "/");
+                } else {
+                    // outside the working dir: fall back to just the filename (better than an absolute)
+                    testArg = f.getName();
+                }
+            } else {
+                // leave as-is; don't prefix with baseWd (Playwright resolves relative to CWD)
+                testArg = testArg.replace("\\", "/");
+            }
+        } catch (IOException ignored) {
+            // keep testArg as given
+        }
+        args.add(testArg);
 
         args.add("--project=" + projectArg);
         args.add("--reporter=line");
@@ -335,6 +342,7 @@ public final class PlaywrightStripeBridge {
         }
         return args;
     }
+
 
 
     private static boolean isWindows() {
