@@ -41,29 +41,33 @@ public class Phase1SmokeTests extends BaseTest {
      * Ensure that after a **Super Admin** successfully invites a new user, the user receives an **email notification** containing a welcome message and instructions for logging in using the **OTP authentication system**. The email should be delivered promptly and include all necessary login details.
      */
     @Test
-    public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException, InterruptedException {
-
+    public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions()
+            throws ApiException, InterruptedException {
 
         // ===== Config / constants =====
         final String ADMIN_USER = System.getProperty("ADMIN_USER", Config.getAdminEmail());
         final String ADMIN_PASS = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
-        final String PW_WORKDIR = System.getProperty("PW_WORKDIR", "/Users/test/Desktop/stripe-checkout-playwright");
-        final String PW_PROJECT = System.getProperty("PW_PROJECT", "Google Chrome");
-        final String NPX_PATH   = System.getProperty("NPX_PATH", "/usr/local/bin/npx");
-        final String CHECKOUT_EMAIL = System.getProperty("CHECKOUT_EMAIL", "qa+stripe@example.com");
+
+        // Optional overrides (may be present in config.properties)
+        final String PW_WORKDIR_PROP = System.getProperty("PW_WORKDIR");         // e.g. /Users/test/Desktop/...
+        final String PW_PROJECT      = System.getProperty("PW_PROJECT", "chromium");
+        final String NPX_PATH_PROP   = System.getProperty("NPX_PATH");           // e.g. /usr/local/bin/npx
+        final boolean PW_HEADED      = Boolean.parseBoolean(
+                System.getProperty("PW_HEADED", (System.getenv("CI") == null ? "true" : "false"))
+        );
+        final String CHECKOUT_EMAIL  = System.getProperty("CHECKOUT_EMAIL", "qa+stripe@example.com");
 
         final Duration EMAIL_TIMEOUT = Duration.ofSeconds(120);
         final String CTA_TEXT       = "Accept Assessment";
         final String SUBJECT_NEEDLE = "assessment";
 
-
-        // 🔹 Step 1: Create a disposable inbox
+        // 🔹 Step 1: disposable inbox
         InboxDto inbox = MailSlurpUtils.createInbox();
         String tempEmail = inbox.getEmailAddress();
         UUID inboxId = inbox.getId();
         System.out.println("📧 Temporary test email: " + tempEmail);
 
-        // 🔹 Step 2: Log in as Super Admin
+        // 🔹 Step 2: login
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
@@ -71,53 +75,66 @@ public class Phase1SmokeTests extends BaseTest {
         new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> dashboardPage.isLoaded());
         Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard did not load after login");
 
-
-        // 🔹 Step 3: Navigate to Shop, click on Buy Now button from TTP, click on Individuals, click Next
+        // 🔹 Step 3: go to Shop
         ShopPage shopPage = dashboardPage.goToShop();
         Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
-        PurchaseRecipientSelectionPage purchaseRecipientSelectionPage = shopPage.clickBuyNowForTrueTilt();
-        purchaseRecipientSelectionPage.selectClientOrIndividual();
-        purchaseRecipientSelectionPage.clickNext();
+        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
+        sel.selectClientOrIndividual();
+        sel.clickNext();
 
-
-        // ◆ Step 4: Select "Manual entry" and input invitee information
+        // ◆ Step 4: manual entry
         AssessmentEntryPage entryPage = new AssessmentEntryPage(driver)
                 .waitUntilLoaded()
                 .selectManualEntry()
                 .enterNumberOfIndividuals("1");
-        String firstName = "Emi";
-        String lastName  = "Rod";
-        entryPage.fillUserDetailsAtIndex(1, firstName, lastName, tempEmail);
+        entryPage.fillUserDetailsAtIndex(1, "Emi", "Rod", tempEmail);
 
+        // → preview
+        OrderPreviewPage preview = entryPage.clickProceedToPayment().waitUntilLoaded();
 
-        // → Order preview
-        OrderPreviewPage preview = entryPage
-                .   clickProceedToPayment()   // clicks the form's submit/Proceed button
-                .waitUntilLoaded();        // waits for the preview screen
-
-       // ◆ Step 5: Proceed to Stripe and pay (handoff to Playwright)
+        // ◆ Step 5: hand off to Playwright
         String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
 
-
-        //  configure Playwright handoff
-        //  run the checkout in Playwright
-        PlaywrightStripeBridge.Result r = PlaywrightStripeBridge.payReturning(
-                PlaywrightStripeBridge.Options.defaultOptions()
+        PlaywrightStripeBridge.Options opts = PlaywrightStripeBridge.Options.defaultOptions()
                 .setCheckoutUrl(stripeUrl)
-                .setCheckoutEmail("qa+stripe@example.com")
-                .setProject("Google Chrome")   // name from your playwright.config.ts project
-                .setHeaded(true)              // run visible so you can watch
-                .setWorkingDirectory(new File(PW_WORKDIR))
-                .setNpxExecutable("/usr/local/bin/npx")
-        );
+                .setCheckoutEmail(CHECKOUT_EMAIL)
+                .setProject(PW_PROJECT)     // "chromium" by default; "Google Chrome" if that's your PW project name
+                .setHeaded(PW_HEADED);
 
+        // Prefer CI-provided working dir; only apply local override if it looks like a PW repo.
+        String ciEnvWd = System.getenv("PW_BRIDGE_WD"); // set in Jenkinsfile
+        if (ciEnvWd != null && !ciEnvWd.isBlank()) {
+            File ciWd = new File(ciEnvWd);
+            if (looksLikePlaywrightRepo(ciWd)) {
+                opts.setWorkingDirectory(ciWd);
+            } else {
+                System.out.println("[PW] CI PW_BRIDGE_WD is not a Playwright repo, ignoring: " + ciWd);
+            }
+        } else if (PW_WORKDIR_PROP != null && !PW_WORKDIR_PROP.isBlank()) {
+            File localWd = new File(PW_WORKDIR_PROP);
+            if (looksLikePlaywrightRepo(localWd)) {
+                opts.setWorkingDirectory(localWd);
+            } else {
+                System.out.println("[PW] Local PW_WORKDIR does not look like a Playwright repo, ignoring: " + localWd);
+            }
+        } // else: let the bridge auto-detect
 
+        // Only set NPX explicitly if it exists & is executable; otherwise auto-detect.
+        if (NPX_PATH_PROP != null && !NPX_PATH_PROP.isBlank()) {
+            File npx = new File(NPX_PATH_PROP);
+            if (npx.exists() && npx.canExecute()) {
+                opts.setNpxExecutable(npx.getAbsolutePath());
+            } else {
+                System.out.println("[PW] NPX_PATH is not an executable file, ignoring: " + NPX_PATH_PROP);
+            }
+        }
 
-        // ===== Step 5b: Back to Selenium – verify PW success & land back in app =====
+        PlaywrightStripeBridge.Result r = PlaywrightStripeBridge.payReturning(opts);
+
+        // ===== Step 5b: back to Selenium =====
         if (!r.isSuccess()) {
             throw new AssertionError("❌ Stripe payment failed (Playwright exit != 0). Check [PW] logs above.");
         }
-
         String successUrl = r.getSuccessUrl();
         if (successUrl != null && !successUrl.isBlank()) {
             System.out.println("↩️ Navigating Selenium to success URL: " + successUrl);
@@ -128,64 +145,58 @@ public class Phase1SmokeTests extends BaseTest {
             driver.navigate().to(fallback);
         }
 
-        // sanity: not still on Stripe
         Assert.assertFalse(driver.getCurrentUrl().contains("checkout.stripe.com"),
                 "❌ Still on Stripe Checkout after payment.");
 
-        // ===== Step 6: Verify purchase reflected in Tilt (Individuals) =====
+        // ===== Step 6: Individuals =====
         driver.navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/individuals"));
         IndividualsPage individuals = new IndividualsPage(driver).waitUntilLoaded();
-
         boolean listed = WaitUtils.pollFor(
-                Duration.ofSeconds(30),
-                Duration.ofMillis(700),
+                Duration.ofSeconds(30), Duration.ofMillis(700),
                 () -> individuals.isUserListedByEmail(tempEmail)
         );
         Assert.assertTrue(listed, "❌ Newly purchased/invited user not found in Individuals: " + tempEmail);
         System.out.println("✅ User appears in Individuals: " + tempEmail);
 
-        // ===== Step 7: Verify invite/receipt email via MailSlurp =====
+        // ===== Step 7: email assertions =====
         com.mailslurp.models.Email email =
                 MailSlurpUtils.waitForLatestEmail(inboxId, EMAIL_TIMEOUT.toMillis(), true);
-
         Assert.assertNotNull(email, "❌ No email received for " + tempEmail + " within " + EMAIL_TIMEOUT);
 
         final String subject = safe(email.getSubject());
         final String from    = safe(email.getFrom());
         final String body    = safe(email.getBody());
 
-        System.out.println(format("📨 Email — From: %s | Subject: %s", from, subject));
-
+        System.out.println(String.format("📨 Email — From: %s | Subject: %s", from, subject));
         Assert.assertTrue(subject.toLowerCase().contains(SUBJECT_NEEDLE),
                 "❌ Subject does not mention " + SUBJECT_NEEDLE + ". Got: " + subject);
-
         Assert.assertTrue(from.toLowerCase().contains("tilt365") || from.toLowerCase().contains("sendgrid"),
                 "❌ Unexpected sender: " + from);
-
-        Assert.assertTrue(body.toLowerCase().contains(CTA_TEXT.toLowerCase()),
-                "❌ Email body missing CTA text '" + CTA_TEXT + "'.");
-
+        Assert.assertTrue(body.toLowerCase().contains("Accept Assessment".toLowerCase()),
+                "❌ Email body missing CTA text 'Accept Assessment'.");
         Assert.assertTrue(email.getSubject().contains("Assessment"),
                 "Expected subject containing 'Assessment'");
-
         Assert.assertTrue(email.getBody().contains("Accept Assessment"),
                 "CTA button not found in email body");
-
         Assert.assertEquals(email.getFrom(), "no-reply@tilt365.com");
 
-
-
-        String ctaHref = MailSlurpUtils.extractLinkByAnchorText(email, CTA_TEXT);
+        String ctaHref = MailSlurpUtils.extractLinkByAnchorText(email, "Accept Assessment");
         if (ctaHref == null) ctaHref = MailSlurpUtils.extractFirstLink(email);
-
         Assert.assertNotNull(ctaHref, "❌ Could not find a link in the email.");
         System.out.println("🔗 CTA link: " + ctaHref);
         Assert.assertTrue(ctaHref.contains("sendgrid.net") || ctaHref.contains("tilt365"),
                 "❌ CTA link host unexpected: " + ctaHref);
-
-        // (Optional) Continue to invite link:
-        // driver.navigate().to(ctaHref);
     }
+
+    private static boolean looksLikePlaywrightRepo(File dir) {
+        if (dir == null) return false;
+        return dir.isDirectory() &&
+                (new File(dir, "playwright.config.ts").exists()
+                        || new File(dir, "playwright.config.js").exists()
+                        || new File(dir, "package.json").exists());
+    }
+
+
 
 
 

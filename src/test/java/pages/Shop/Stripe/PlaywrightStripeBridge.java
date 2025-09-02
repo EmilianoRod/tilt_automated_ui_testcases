@@ -192,21 +192,29 @@ public final class PlaywrightStripeBridge {
         return autoDetectPwDir();
     }
 
+
+
     private static File effectiveWorkingDirectory(Options o) {
-        if (o.workingDirectory != null) return o.workingDirectory;
+        // 1) In CI, prefer PW_BRIDGE_WD if valid
+        if (isCi()) {
+            String envWd = System.getenv("PW_BRIDGE_WD");
+            if (envWd != null && !envWd.isBlank()) {
+                File f = new File(envWd);
+                if (isPwRepoDir(f)) return f.getAbsoluteFile();
+            }
+        }
 
-        // CI override
-        String envWd = System.getenv("PW_BRIDGE_WD");
-        if (envWd != null && !envWd.isBlank()) return new File(envWd);
+        // 2) Respect caller-provided WD only if it looks like a PW repo
+        if (isPwRepoDir(o.workingDirectory)) return o.workingDirectory.getAbsoluteFile();
 
-        // Jenkins layout
+        // 3) Jenkins layout
         String ws = System.getenv("WORKSPACE");
         if (ws != null && !ws.isBlank()) {
             File f = new File(ws, "automation/playwright");
-            if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) return f;
+            if (isPwRepoDir(f)) return f.getAbsoluteFile();
         }
 
-        // Common local layouts
+        // 4) Common local layouts
         String[] candidates = {
                 "automation/playwright",
                 "../stripe-checkout-playwright",
@@ -215,10 +223,10 @@ public final class PlaywrightStripeBridge {
         };
         for (String c : candidates) {
             File f = new File(c);
-            if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists())
-                return f.getAbsoluteFile();
+            if (isPwRepoDir(f)) return f.getAbsoluteFile();
         }
-        return new File(".");
+
+        return new File(".").getAbsoluteFile();
     }
 
 
@@ -256,41 +264,10 @@ public final class PlaywrightStripeBridge {
         String projectArg = (o.project   != null ? o.project   : "chromium");
         String grepArg    = (o.testGrep  != null ? o.testGrep  : "Stripe hosted checkout");
 
-        // --- pick an effective working dir (CI or local) ---
-        File baseWd = o.workingDirectory;
-        if (baseWd == null) {
-            String envWd = System.getenv("PW_BRIDGE_WD");
-            if (envWd != null && !envWd.isBlank()) {
-                baseWd = new File(envWd);
-            } else {
-                String ws = System.getenv("WORKSPACE");
-                if (ws != null && !ws.isBlank()) {
-                    File f = new File(ws, "automation/playwright");
-                    if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
-                        baseWd = f;
-                    }
-                }
-            }
-            if (baseWd == null) {
-                String[] candidates = {
-                        "automation/playwright",
-                        "../stripe-checkout-playwright",
-                        "../../stripe-checkout-playwright",
-                        "."
-                };
-                for (String c : candidates) {
-                    File f = new File(c);
-                    if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
-                        baseWd = f.getAbsoluteFile();
-                        break;
-                    }
-                }
-                if (baseWd == null) baseWd = new File(".");
-            }
-        }
+        // Use the same WD logic as the runner
+        File baseWd = effectiveWorkingDirectory(o);
 
         List<String> args = new ArrayList<>();
-
         if (isWindows()) {
             String exe = (o.npxExecutable != null ? o.npxExecutable : "npx");
             args.add(exe); args.add("playwright"); args.add("test");
@@ -304,7 +281,7 @@ public final class PlaywrightStripeBridge {
             }
         }
 
-        // IMPORTANT: keep test path relative to baseWd so Playwright can match it.
+        // Keep test path RELATIVE to baseWd so PW matches it correctly
         try {
             File f = new File(testArg);
             if (f.isAbsolute()) {
@@ -313,26 +290,18 @@ public final class PlaywrightStripeBridge {
                 if (abs.startsWith(base)) {
                     testArg = base.relativize(abs).toString().replace("\\", "/");
                 } else {
-                    // outside the working dir: fall back to just the filename (better than an absolute)
-                    testArg = f.getName();
+                    testArg = f.getName(); // best-effort if outside WD
                 }
             } else {
-                // leave as-is; don't prefix with baseWd (Playwright resolves relative to CWD)
                 testArg = testArg.replace("\\", "/");
             }
-        } catch (IOException ignored) {
-            // keep testArg as given
-        }
+        } catch (IOException ignored) {}
         args.add(testArg);
 
         args.add("--project=" + projectArg);
         args.add("--reporter=line");
-        if (grepArg != null && !grepArg.isBlank()) {
-            args.add("-g"); args.add(grepArg);
-        }
-        if (Boolean.TRUE.equals(o.headed)) {
-            args.add("--headed");
-        }
+        if (grepArg != null && !grepArg.isBlank()) { args.add("-g"); args.add(grepArg); }
+        if (Boolean.TRUE.equals(o.headed)) { args.add("--headed"); }
 
         if (isWindows()) {
             List<String> cmd = new ArrayList<>();
@@ -342,6 +311,7 @@ public final class PlaywrightStripeBridge {
         }
         return args;
     }
+
 
 
 
@@ -384,6 +354,23 @@ public final class PlaywrightStripeBridge {
         public boolean isSuccess() { return success; }
         public String getSuccessUrl() { return successUrl; }
     }
+
+    // add helpers near the bottom of the class
+    private static boolean isPwRepoDir(File f) {
+        if (f == null) return false;
+        return f.exists() && f.isDirectory() &&
+                (new File(f, "playwright.config.ts").exists()
+                        || new File(f, "playwright.config.js").exists()
+                        || new File(f, "package.json").exists());
+    }
+
+    private static boolean isCi() {
+        String ci = System.getenv("CI");
+        return (ci != null && !ci.isBlank())
+                || System.getenv("JENKINS_URL") != null
+                || System.getenv("GITHUB_ACTIONS") != null;
+    }
+
 
 
     // ---------------- options ----------------
