@@ -260,17 +260,14 @@ public final class PlaywrightStripeBridge {
 
 
     private static List<String> buildCommand(Options o) {
-        // ---- allow overriding test file from sysprop or env (for CI precompiled JS) ----
-        String testOverride = System.getProperty("PW_TEST");
-        if (testOverride == null || testOverride.isBlank()) {
-            testOverride = System.getenv("PW_TEST");
-        }
+        // Let CI override the test file (compiled JS)
+        String testOverride = System.getenv("PW_TEST");
+        String testArg = (testOverride != null && !testOverride.isBlank())
+                ? testOverride
+                : (o.testPath != null ? o.testPath : "tests/stripe-checkout.spec.ts");
 
-        String testArg    = (o.testPath  != null ? o.testPath
-                : (testOverride != null && !testOverride.isBlank() ? testOverride
-                : "tests/stripe-checkout.spec.ts"));
-        String projectArg = (o.project   != null ? o.project   : "chromium");
-        String grepArg    = (o.testGrep  != null ? o.testGrep  : "Stripe hosted checkout");
+        String projectArg = (o.project != null ? o.project : "chromium");
+        String grepArg    = (o.testGrep != null ? o.testGrep : "Stripe hosted checkout");
 
         // --- pick an effective working dir (CI or local) ---
         File baseWd = o.workingDirectory;
