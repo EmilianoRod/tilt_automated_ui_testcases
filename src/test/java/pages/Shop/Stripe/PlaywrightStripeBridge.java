@@ -260,14 +260,53 @@ public final class PlaywrightStripeBridge {
 
 
     private static List<String> buildCommand(Options o) {
-        String testArg    = (o.testPath  != null ? o.testPath  : "tests/stripe-checkout.spec.ts");
+        // ---- allow overriding test file from sysprop or env (for CI precompiled JS) ----
+        String testOverride = System.getProperty("PW_TEST");
+        if (testOverride == null || testOverride.isBlank()) {
+            testOverride = System.getenv("PW_TEST");
+        }
+
+        String testArg    = (o.testPath  != null ? o.testPath
+                : (testOverride != null && !testOverride.isBlank() ? testOverride
+                : "tests/stripe-checkout.spec.ts"));
         String projectArg = (o.project   != null ? o.project   : "chromium");
         String grepArg    = (o.testGrep  != null ? o.testGrep  : "Stripe hosted checkout");
 
-        // Use the same WD logic as the runner
-        File baseWd = effectiveWorkingDirectory(o);
+        // --- pick an effective working dir (CI or local) ---
+        File baseWd = o.workingDirectory;
+        if (baseWd == null) {
+            String envWd = System.getenv("PW_BRIDGE_WD");
+            if (envWd != null && !envWd.isBlank()) {
+                baseWd = new File(envWd);
+            } else {
+                String ws = System.getenv("WORKSPACE");
+                if (ws != null && !ws.isBlank()) {
+                    File f = new File(ws, "automation/playwright");
+                    if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
+                        baseWd = f;
+                    }
+                }
+            }
+            if (baseWd == null) {
+                String[] candidates = {
+                        "automation/playwright",
+                        "../stripe-checkout-playwright",
+                        "../../stripe-checkout-playwright",
+                        "."
+                };
+                for (String c : candidates) {
+                    File f = new File(c);
+                    if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
+                        baseWd = f.getAbsoluteFile();
+                        break;
+                    }
+                }
+                if (baseWd == null) baseWd = new File(".");
+            }
+        }
 
         List<String> args = new ArrayList<>();
+
         if (isWindows()) {
             String exe = (o.npxExecutable != null ? o.npxExecutable : "npx");
             args.add(exe); args.add("playwright"); args.add("test");
@@ -281,27 +320,29 @@ public final class PlaywrightStripeBridge {
             }
         }
 
-        // Keep test path RELATIVE to baseWd so PW matches it correctly
-        try {
-            File f = new File(testArg);
-            if (f.isAbsolute()) {
-                java.nio.file.Path base = baseWd.getCanonicalFile().toPath();
-                java.nio.file.Path abs  = f.getCanonicalFile().toPath();
-                if (abs.startsWith(base)) {
-                    testArg = base.relativize(abs).toString().replace("\\", "/");
-                } else {
-                    testArg = f.getName(); // best-effort if outside WD
-                }
-            } else {
-                testArg = testArg.replace("\\", "/");
-            }
-        } catch (IOException ignored) {}
-        args.add(testArg);
+        // Prefer explicit config if present (helps loader consistency)
+        File cfgTs = new File(baseWd, "playwright.config.ts");
+        File cfgJs = new File(baseWd, "playwright.config.js");
+        if (cfgTs.exists()) {
+            args.add("--config=" + cfgTs.getPath());
+        } else if (cfgJs.exists()) {
+            args.add("--config=" + cfgJs.getPath());
+        }
+
+        // Resolve test path relative to baseWd unless absolute/already compiled
+        String testArgResolved = new File(testArg).isAbsolute()
+                ? testArg
+                : new File(baseWd, testArg).getPath();
+        args.add(testArgResolved);
 
         args.add("--project=" + projectArg);
         args.add("--reporter=line");
-        if (grepArg != null && !grepArg.isBlank()) { args.add("-g"); args.add(grepArg); }
-        if (Boolean.TRUE.equals(o.headed)) { args.add("--headed"); }
+        if (grepArg != null && !grepArg.isBlank()) {
+            args.add("-g"); args.add(grepArg);
+        }
+        if (Boolean.TRUE.equals(o.headed)) {
+            args.add("--headed");
+        }
 
         if (isWindows()) {
             List<String> cmd = new ArrayList<>();
