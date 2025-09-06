@@ -259,6 +259,99 @@ public final class PlaywrightStripeBridge {
     }
 
 
+//    private static List<String> buildCommand(Options o) {
+//        // Let CI override the test file (compiled JS)
+//        String testOverride = System.getenv("PW_TEST");
+//        String testArg = (testOverride != null && !testOverride.isBlank())
+//                ? testOverride
+//                : (o.testPath != null ? o.testPath : "tests/stripe-checkout.spec.ts");
+//
+//        String projectArg = (o.project != null ? o.project : "chromium");
+//        String grepArg    = (o.testGrep != null ? o.testGrep : "Stripe hosted checkout");
+//
+//        // --- pick an effective working dir (CI or local) ---
+//        File baseWd = o.workingDirectory;
+//        if (baseWd == null) {
+//            String envWd = System.getenv("PW_BRIDGE_WD");
+//            if (envWd != null && !envWd.isBlank()) {
+//                baseWd = new File(envWd);
+//            } else {
+//                String ws = System.getenv("WORKSPACE");
+//                if (ws != null && !ws.isBlank()) {
+//                    File f = new File(ws, "automation/playwright");
+//                    if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
+//                        baseWd = f;
+//                    }
+//                }
+//            }
+//            if (baseWd == null) {
+//                String[] candidates = {
+//                        "automation/playwright",
+//                        "../stripe-checkout-playwright",
+//                        "../../stripe-checkout-playwright",
+//                        "."
+//                };
+//                for (String c : candidates) {
+//                    File f = new File(c);
+//                    if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
+//                        baseWd = f.getAbsoluteFile();
+//                        break;
+//                    }
+//                }
+//                if (baseWd == null) baseWd = new File(".");
+//            }
+//        }
+//
+//        List<String> args = new ArrayList<>();
+//
+//        if (isWindows()) {
+//            String exe = (o.npxExecutable != null ? o.npxExecutable : "npx");
+//            args.add(exe); args.add("playwright"); args.add("test");
+//        } else {
+//            File local = new File(new File(baseWd.toURI()), "node_modules/.bin/playwright");
+//            if (local.exists() && local.canExecute()) {
+//                args.add(local.getAbsolutePath()); args.add("test");
+//            } else {
+//                String exe = (o.npxExecutable != null ? o.npxExecutable : "npx");
+//                args.add(exe); args.add("playwright"); args.add("test");
+//            }
+//        }
+//
+//        // Prefer explicit config if present (helps loader consistency)
+//        File cfgTs = new File(baseWd, "playwright.config.ts");
+//        File cfgJs = new File(baseWd, "playwright.config.js");
+//        if (cfgTs.exists()) {
+//            args.add("--config=" + cfgTs.getPath());
+//        } else if (cfgJs.exists()) {
+//            args.add("--config=" + cfgJs.getPath());
+//        }
+//
+//        // Resolve test path relative to baseWd unless absolute/already compiled
+//        String testArgResolved = new File(testArg).isAbsolute()
+//                ? testArg
+//                : new File(baseWd, testArg).getPath();
+//        args.add(testArgResolved);
+//
+//        args.add("--project=" + projectArg);
+//        args.add("--reporter=line");
+//        if (grepArg != null && !grepArg.isBlank()) {
+//            args.add("-g"); args.add(grepArg);
+//        }
+//        if (Boolean.TRUE.equals(o.headed)) {
+//            args.add("--headed");
+//        }
+//
+//        if (isWindows()) {
+//            List<String> cmd = new ArrayList<>();
+//            cmd.add("cmd"); cmd.add("/c");
+//            cmd.add(String.join(" ", quoteForCmd(args)));
+//            return cmd;
+//        }
+//        return args;
+//    }
+
+
+
     private static List<String> buildCommand(Options o) {
         // Let CI override the test file (compiled JS)
         String testOverride = System.getenv("PW_TEST");
@@ -268,89 +361,56 @@ public final class PlaywrightStripeBridge {
 
         String projectArg = (o.project != null ? o.project : "chromium");
         String grepArg    = (o.testGrep != null ? o.testGrep : "Stripe hosted checkout");
+        boolean headed    = Boolean.TRUE.equals(o.headed);
 
-        // --- pick an effective working dir (CI or local) ---
+        // Pick an effective working dir (your existing logic)
         File baseWd = o.workingDirectory;
         if (baseWd == null) {
-            String envWd = System.getenv("PW_BRIDGE_WD");
-            if (envWd != null && !envWd.isBlank()) {
-                baseWd = new File(envWd);
-            } else {
-                String ws = System.getenv("WORKSPACE");
-                if (ws != null && !ws.isBlank()) {
-                    File f = new File(ws, "automation/playwright");
-                    if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
-                        baseWd = f;
-                    }
-                }
-            }
-            if (baseWd == null) {
-                String[] candidates = {
-                        "automation/playwright",
-                        "../stripe-checkout-playwright",
-                        "../../stripe-checkout-playwright",
-                        "."
-                };
-                for (String c : candidates) {
-                    File f = new File(c);
-                    if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
-                        baseWd = f.getAbsoluteFile();
-                        break;
-                    }
-                }
-                if (baseWd == null) baseWd = new File(".");
-            }
+            baseWd = effectiveWorkingDirectory(o);
         }
+        if (baseWd == null) baseWd = new File(".");
 
-        List<String> args = new ArrayList<>();
+        // Build a single bash -lc command so nvm/Volta can be picked up by run-pw.sh
+        StringBuilder cmdLine = new StringBuilder();
+        cmdLine.append("cd ").append(shellQuote(baseWd.getPath()))
+                .append(" && ./run-pw.sh test ");
 
-        if (isWindows()) {
-            String exe = (o.npxExecutable != null ? o.npxExecutable : "npx");
-            args.add(exe); args.add("playwright"); args.add("test");
-        } else {
-            File local = new File(new File(baseWd.toURI()), "node_modules/.bin/playwright");
-            if (local.exists() && local.canExecute()) {
-                args.add(local.getAbsolutePath()); args.add("test");
-            } else {
-                String exe = (o.npxExecutable != null ? o.npxExecutable : "npx");
-                args.add(exe); args.add("playwright"); args.add("test");
-            }
-        }
-
-        // Prefer explicit config if present (helps loader consistency)
+        // Explicit config helps keep loader consistent
         File cfgTs = new File(baseWd, "playwright.config.ts");
         File cfgJs = new File(baseWd, "playwright.config.js");
         if (cfgTs.exists()) {
-            args.add("--config=" + cfgTs.getPath());
+            cmdLine.append("--config=").append(shellQuote("playwright.config.ts")).append(" ");
         } else if (cfgJs.exists()) {
-            args.add("--config=" + cfgJs.getPath());
+            cmdLine.append("--config=").append(shellQuote("playwright.config.js")).append(" ");
         }
 
-        // Resolve test path relative to baseWd unless absolute/already compiled
-        String testArgResolved = new File(testArg).isAbsolute()
-                ? testArg
-                : new File(baseWd, testArg).getPath();
-        args.add(testArgResolved);
+        // Test file (relative to PW repo is OK)
+        cmdLine.append(shellQuote(testArg)).append(" ");
 
-        args.add("--project=" + projectArg);
-        args.add("--reporter=line");
+        // Common flags
+        cmdLine.append("--project=").append(shellQuote(projectArg)).append(" ")
+                .append("--reporter=line ").append("--trace=on ");
+
         if (grepArg != null && !grepArg.isBlank()) {
-            args.add("-g"); args.add(grepArg);
+            cmdLine.append("-g ").append(shellQuote(grepArg)).append(" ");
         }
-        if (Boolean.TRUE.equals(o.headed)) {
-            args.add("--headed");
+        if (headed) {
+            cmdLine.append("--headed ");
         }
 
+        // Return as a process-friendly list
         if (isWindows()) {
-            List<String> cmd = new ArrayList<>();
-            cmd.add("cmd"); cmd.add("/c");
-            cmd.add(String.join(" ", quoteForCmd(args)));
-            return cmd;
+            return Arrays.asList("bash", "-lc", cmdLine.toString());
         }
-        return args;
+        return Arrays.asList("bash", "-lc", cmdLine.toString());
     }
 
 
+    private static String shellQuote(String s) {
+        if (s == null) return "''";
+        // single-quote for POSIX shells; escape internal single quotes
+        return "'" + s.replace("'", "'\"'\"'") + "'";
+    }
 
 
     private static boolean isWindows() {
