@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 
 public class MailSlurpUtils {
 
-    private static final String MAILSLURP_API_KEY = "5afb0ce7d2588396bbd72ca1dc0357dd808c40987af4b097a210371a7c488b30";
+    private static final String MAILSLURP_API_KEY = "feba6e455ec86d89c45a7124e5529bcf944c543c3bd45cdd97cd84e0005fa87d";
 
     private static final ApiClient apiClient;
     private static final InboxControllerApi inboxController;
