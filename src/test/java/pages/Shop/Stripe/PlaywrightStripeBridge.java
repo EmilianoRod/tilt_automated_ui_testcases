@@ -9,25 +9,23 @@ import java.util.*;
  * Runs a Playwright test that completes Stripe Hosted Checkout using a fresh CHECKOUT_URL.
  *
  * Usage:
- *   String url = preview.proceedToStripeAndGetCheckoutUrl(); // from your OrderPreviewPage
+ *   String url = preview.proceedToStripeAndGetCheckoutUrl();
  *   PlaywrightStripeBridge.pay(url, "qa+stripe@example.com");
  *
  * Advanced:
  *   PlaywrightStripeBridge.Options opts = PlaywrightStripeBridge.Options.defaultOptions()
  *       .setCheckoutUrl(url)
  *       .setCheckoutEmail("qa+stripe@example.com")
- *       .setProject("chromium")      // or "Google Chrome" if you configured channel:'chrome'
- *       .setHeaded(true)
+ *       .setProject("chromium")
+ *       .setHeaded(true) // headed Chromium under Xvfb on CI avoids hCaptcha gating
  *       .setTestGrep("Stripe hosted checkout")
  *       .setTimeout(Duration.ofMinutes(3))
- *       .setWorkingDirectory(new File(".")); // repo root with playwright.config.ts
+ *       .setWorkingDirectory(new File(".")); // repo root with playwright.config.ts + run-pw.sh
  *   PlaywrightStripeBridge.pay(opts);
  */
 public final class PlaywrightStripeBridge {
 
     private PlaywrightStripeBridge() {}
-
-
 
     /** Quick entry point with sane defaults. Throws RuntimeException if Playwright exits non-zero. */
     public static void pay(String freshCheckoutUrl, String email) {
@@ -37,111 +35,74 @@ public final class PlaywrightStripeBridge {
         pay(opts);
     }
 
-    /** Main entry: runs `npx playwright test ...` with environment variables for the test. */
+    /** Main entry: runs Playwright and throws if the run did not succeed. */
     public static void pay(Options options) {
-//        Objects.requireNonNull(options.checkoutUrl, "checkoutUrl is required");
-//
-//        // Build the Playwright CLI command
-//        List<String> cmd = buildCommand(options);
-//
-//        // Prepare environment (only what we need)
-//        Map<String, String> env = new HashMap<>(System.getenv());
-//        env.put("CHECKOUT_URL", options.checkoutUrl);
-//        if (options.checkoutEmail != null) env.put("CHECKOUT_EMAIL", options.checkoutEmail);
-//
-//        // Spawn process
-//        int exit;
-//        try {
-//            ProcessBuilder pb = new ProcessBuilder(cmd);
-//            if (options.workingDirectory != null) {
-//                pb.directory(options.workingDirectory);
-//            }
-//            // Pass env vars
-//            Map<String, String> pbEnv = pb.environment();
-//            pbEnv.putAll(env);
-//
-//            // Inherit stdout/stderr so you see the Playwright logs in your test console
-//            pb.redirectErrorStream(true);
-//            Process p = pb.start();
-//
-//            // Pump output to console with a prefix
-//            Thread stdout = new Thread(() -> pipe(p.getInputStream(), System.out, "[PW] "));
-//            stdout.setDaemon(true);
-//            stdout.start();
-//
-//            // Wait with timeout
-//            if (options.timeout != null && !options.timeout.isZero() && !options.timeout.isNegative()) {
-//                if (!p.waitFor(options.timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)) {
-//                    p.destroyForcibly();
-//                    throw new RuntimeException("Playwright checkout timed out after " + options.timeout);
-//                }
-//            } else {
-//                p.waitFor();
-//            }
-//
-//            exit = p.exitValue();
-//        } catch (Exception e) {
-//            throw new RuntimeException("Failed to execute Playwright checkout", e);
-//        }
-//
-//        if (exit != 0) {
-//            throw new RuntimeException("Playwright checkout failed (exit code " + exit + ")");
-//        }
         Result r = payReturning(options);
         if (!r.isSuccess()) {
             throw new RuntimeException("Playwright checkout failed");
         }
         if (r.getSuccessUrl() == null) {
-            // Not fatal for pay(), but useful to diagnose when you expected a redirect
             System.out.println("[PW] (note) success URL not captured. Did you add the console.log marker in the spec?");
         }
     }
 
-
-
+    /** Same as {@link #pay(Options)} but returns success + the final success URL if captured. */
     public static Result payReturning(Options options) {
         Objects.requireNonNull(options.checkoutUrl, "checkoutUrl is required");
 
-        // Decide the working directory *first* so buildCommand can consider it.
+        // Decide effective working directory first.
         final File wd = effectiveWorkingDirectory(options);
 
-        // Temporarily set Options.workingDirectory so buildCommand can detect local node_modules/.bin/playwright
+        // Build the command while temporarily setting the WD so detection uses it.
         final File oldWd = options.workingDirectory;
         options.setWorkingDirectory(wd);
-
-        List<String> cmd;
+        final List<String> cmd;
         try {
             cmd = buildCommand(options);
         } finally {
-            // restore original value to avoid side-effects on the caller
             options.setWorkingDirectory(oldWd);
         }
 
+        // Environment for the Playwright process
         Map<String, String> env = new HashMap<>(System.getenv());
+        env.put("CI", "1"); // make PW behave deterministically in CI
+        env.put("PW_BRIDGE_WD", wd.getAbsolutePath());
         env.put("CHECKOUT_URL", options.checkoutUrl);
         if (options.checkoutEmail != null) env.put("CHECKOUT_EMAIL", options.checkoutEmail);
+
+        // Ensure Playwright (config) understands that we want headed mode when requested.
+        if (Boolean.TRUE.equals(options.headed)) {
+            env.put("PW_HEADLESS", "0"); // your config reads this; 0 => headed
+        }
+        // Pass the same per-test timeout down to Playwright (ms)
+        if (options.timeout != null && !options.timeout.isZero() && !options.timeout.isNegative()) {
+            env.put("PW_TIMEOUT_MS", String.valueOf(options.timeout.toMillis()));
+        }
+        // Optional: let you increase expect timeouts without code changes
+        if (!env.containsKey("PW_EXPECT_TIMEOUT_MS")) {
+            env.put("PW_EXPECT_TIMEOUT_MS", "15000");
+        }
 
         final String MARKER = "PW_BRIDGE::SUCCESS_URL ";
         final java.util.concurrent.atomic.AtomicReference<String> successUrlRef = new java.util.concurrent.atomic.AtomicReference<>(null);
 
         int exit;
         try {
-            // Helpful diagnostics
             System.out.println("[PW] using working dir: " + wd.getAbsolutePath());
             System.out.println("[PW] command: " + String.join(" ", cmd));
             System.out.println("[PW] PATH=" + env.getOrDefault("PATH", System.getenv("PATH")));
 
             ProcessBuilder pb = new ProcessBuilder(cmd);
-            pb.directory(wd); // ← key: run from the Playwright repo folder
+            pb.directory(wd);
 
             Map<String, String> pbEnv = pb.environment();
             pbEnv.putAll(env);
 
-            // Keep streams separate so we can parse stdout lines cleanly
+            // Keep streams separate so we can parse stdout lines cleanly.
             pb.redirectErrorStream(false);
             Process p = pb.start();
 
-            // pump & parse STDOUT
+            // STDOUT (parse success marker)
             Thread tOut = new Thread(() -> {
                 try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
                     String line;
@@ -158,12 +119,12 @@ public final class PlaywrightStripeBridge {
             tOut.setDaemon(true);
             tOut.start();
 
-            // pump STDERR (so process won't block)
+            // STDERR (avoid blocking on full buffers)
             Thread tErr = new Thread(() -> pipe(p.getErrorStream(), System.err, "[PW-ERR] "));
             tErr.setDaemon(true);
             tErr.start();
 
-            // wait
+            // Wait with an overall timeout at the process level.
             if (options.timeout != null && !options.timeout.isZero() && !options.timeout.isNegative()) {
                 if (!p.waitFor(options.timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)) {
                     p.destroyForcibly();
@@ -176,7 +137,7 @@ public final class PlaywrightStripeBridge {
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to execute Playwright checkout in " + wd.getAbsolutePath() +
-                            " with cmd: " + String.join(" ", /* safe */ cmd == null ? java.util.List.of() : cmd),
+                            " with cmd: " + String.join(" ", (cmd == null ? List.<String>of() : cmd)),
                     e
             );
         }
@@ -185,15 +146,9 @@ public final class PlaywrightStripeBridge {
         return new Result(ok, successUrlRef.get());
     }
 
-
     // ---------------- internal helpers ----------------
-    private static File effectiveWorkingDir(Options o) {
-        if (o.workingDirectory != null) return o.workingDirectory;
-        return autoDetectPwDir();
-    }
 
-
-
+    /** Find the Playwright repo dir (works in Jenkins and locally). */
     private static File effectiveWorkingDirectory(Options o) {
         // 1) In CI, prefer PW_BRIDGE_WD if valid
         if (isCi()) {
@@ -203,7 +158,6 @@ public final class PlaywrightStripeBridge {
                 if (isPwRepoDir(f)) return f.getAbsoluteFile();
             }
         }
-
         // 2) Respect caller-provided WD only if it looks like a PW repo
         if (isPwRepoDir(o.workingDirectory)) return o.workingDirectory.getAbsoluteFile();
 
@@ -225,135 +179,13 @@ public final class PlaywrightStripeBridge {
             File f = new File(c);
             if (isPwRepoDir(f)) return f.getAbsoluteFile();
         }
-
+        // Fallback: current dir (still allow running if user points WD elsewhere)
         return new File(".").getAbsoluteFile();
     }
 
-
-    private static File autoDetectPwDir() {
-        // 1) explicit override from CI
-        String env = System.getenv("PW_BRIDGE_WD");
-        if (env != null && !env.isBlank()) {
-            File f = new File(env);
-            if (new File(f, "package.json").exists()) return f;
-        }
-        // 2) common Jenkins layout
-        String ws = System.getenv("WORKSPACE");
-        if (ws != null && !ws.isBlank()) {
-            File f = new File(ws, "automation/playwright");
-            if (new File(f, "package.json").exists()) return f;
-        }
-        // 3) common local layouts
-        String[] candidates = {
-                "automation/playwright",
-                "../stripe-checkout-playwright",
-                "../../stripe-checkout-playwright",
-        };
-        for (String c : candidates) {
-            File f = new File(c);
-            if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
-                return f.getAbsoluteFile();
-            }
-        }
-        return null; // fall back to current CWD
-    }
-
-
-//    private static List<String> buildCommand(Options o) {
-//        // Let CI override the test file (compiled JS)
-//        String testOverride = System.getenv("PW_TEST");
-//        String testArg = (testOverride != null && !testOverride.isBlank())
-//                ? testOverride
-//                : (o.testPath != null ? o.testPath : "tests/stripe-checkout.spec.ts");
-//
-//        String projectArg = (o.project != null ? o.project : "chromium");
-//        String grepArg    = (o.testGrep != null ? o.testGrep : "Stripe hosted checkout");
-//
-//        // --- pick an effective working dir (CI or local) ---
-//        File baseWd = o.workingDirectory;
-//        if (baseWd == null) {
-//            String envWd = System.getenv("PW_BRIDGE_WD");
-//            if (envWd != null && !envWd.isBlank()) {
-//                baseWd = new File(envWd);
-//            } else {
-//                String ws = System.getenv("WORKSPACE");
-//                if (ws != null && !ws.isBlank()) {
-//                    File f = new File(ws, "automation/playwright");
-//                    if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
-//                        baseWd = f;
-//                    }
-//                }
-//            }
-//            if (baseWd == null) {
-//                String[] candidates = {
-//                        "automation/playwright",
-//                        "../stripe-checkout-playwright",
-//                        "../../stripe-checkout-playwright",
-//                        "."
-//                };
-//                for (String c : candidates) {
-//                    File f = new File(c);
-//                    if (new File(f, "playwright.config.ts").exists() || new File(f, "package.json").exists()) {
-//                        baseWd = f.getAbsoluteFile();
-//                        break;
-//                    }
-//                }
-//                if (baseWd == null) baseWd = new File(".");
-//            }
-//        }
-//
-//        List<String> args = new ArrayList<>();
-//
-//        if (isWindows()) {
-//            String exe = (o.npxExecutable != null ? o.npxExecutable : "npx");
-//            args.add(exe); args.add("playwright"); args.add("test");
-//        } else {
-//            File local = new File(new File(baseWd.toURI()), "node_modules/.bin/playwright");
-//            if (local.exists() && local.canExecute()) {
-//                args.add(local.getAbsolutePath()); args.add("test");
-//            } else {
-//                String exe = (o.npxExecutable != null ? o.npxExecutable : "npx");
-//                args.add(exe); args.add("playwright"); args.add("test");
-//            }
-//        }
-//
-//        // Prefer explicit config if present (helps loader consistency)
-//        File cfgTs = new File(baseWd, "playwright.config.ts");
-//        File cfgJs = new File(baseWd, "playwright.config.js");
-//        if (cfgTs.exists()) {
-//            args.add("--config=" + cfgTs.getPath());
-//        } else if (cfgJs.exists()) {
-//            args.add("--config=" + cfgJs.getPath());
-//        }
-//
-//        // Resolve test path relative to baseWd unless absolute/already compiled
-//        String testArgResolved = new File(testArg).isAbsolute()
-//                ? testArg
-//                : new File(baseWd, testArg).getPath();
-//        args.add(testArgResolved);
-//
-//        args.add("--project=" + projectArg);
-//        args.add("--reporter=line");
-//        if (grepArg != null && !grepArg.isBlank()) {
-//            args.add("-g"); args.add(grepArg);
-//        }
-//        if (Boolean.TRUE.equals(o.headed)) {
-//            args.add("--headed");
-//        }
-//
-//        if (isWindows()) {
-//            List<String> cmd = new ArrayList<>();
-//            cmd.add("cmd"); cmd.add("/c");
-//            cmd.add(String.join(" ", quoteForCmd(args)));
-//            return cmd;
-//        }
-//        return args;
-//    }
-
-
-
+    /** Build the final shell command that runs Playwright via your run-pw.sh wrapper. */
     private static List<String> buildCommand(Options o) {
-        // Let CI override the test file (compiled JS)
+        // Let CI override the test file
         String testOverride = System.getenv("PW_TEST");
         String testArg = (testOverride != null && !testOverride.isBlank())
                 ? testOverride
@@ -363,19 +195,13 @@ public final class PlaywrightStripeBridge {
         String grepArg    = (o.testGrep != null ? o.testGrep : "Stripe hosted checkout");
         boolean headed    = Boolean.TRUE.equals(o.headed);
 
-        // Pick an effective working dir (your existing logic)
-        File baseWd = o.workingDirectory;
-        if (baseWd == null) {
-            baseWd = effectiveWorkingDirectory(o);
-        }
-        if (baseWd == null) baseWd = new File(".");
+        File baseWd = (o.workingDirectory != null) ? o.workingDirectory : effectiveWorkingDirectory(o);
 
-        // Build a single bash -lc command so nvm/Volta can be picked up by run-pw.sh
         StringBuilder cmdLine = new StringBuilder();
         cmdLine.append("cd ").append(shellQuote(baseWd.getPath()))
                 .append(" && ./run-pw.sh test ");
 
-        // Explicit config helps keep loader consistent
+        // Prefer explicit config (keeps loader consistent)
         File cfgTs = new File(baseWd, "playwright.config.ts");
         File cfgJs = new File(baseWd, "playwright.config.js");
         if (cfgTs.exists()) {
@@ -384,51 +210,32 @@ public final class PlaywrightStripeBridge {
             cmdLine.append("--config=").append(shellQuote("playwright.config.js")).append(" ");
         }
 
-        // Test file (relative to PW repo is OK)
+        // Test file (relative is fine)
         cmdLine.append(shellQuote(testArg)).append(" ");
 
         // Common flags
         cmdLine.append("--project=").append(shellQuote(projectArg)).append(" ")
-                .append("--reporter=line ").append("--trace=on ");
+                .append("--reporter=line ")
+                .append("--trace=on "); // keep rich traces in CI
 
         if (grepArg != null && !grepArg.isBlank()) {
             cmdLine.append("-g ").append(shellQuote(grepArg)).append(" ");
         }
         if (headed) {
-            cmdLine.append("--headed ");
+            cmdLine.append("--headed "); // CLI override for headed mode
         }
 
-        // Return as a process-friendly list
-        if (isWindows()) {
-            return Arrays.asList("bash", "-lc", cmdLine.toString());
-        }
         return Arrays.asList("bash", "-lc", cmdLine.toString());
     }
 
-
     private static String shellQuote(String s) {
         if (s == null) return "''";
-        // single-quote for POSIX shells; escape internal single quotes
         return "'" + s.replace("'", "'\"'\"'") + "'";
     }
-
 
     private static boolean isWindows() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         return os.contains("win");
-    }
-
-    private static List<String> quoteForCmd(List<String> args) {
-        // Naive quoting for Windows cmd: wrap with double quotes if space present
-        List<String> out = new ArrayList<>(args.size());
-        for (String a : args) {
-            if (a.matches(".*[\\s\"].*")) {
-                out.add("\"" + a.replace("\"", "\\\"") + "\"");
-            } else {
-                out.add(a);
-            }
-        }
-        return out;
     }
 
     private static void pipe(InputStream in, OutputStream out, String prefix) {
@@ -441,19 +248,6 @@ public final class PlaywrightStripeBridge {
         } catch (IOException ignored) {}
     }
 
-    public static final class Result {
-        private final boolean success;
-        private final String successUrl; // may be null if not found
-
-        public Result(boolean success, String successUrl) {
-            this.success = success;
-            this.successUrl = successUrl;
-        }
-        public boolean isSuccess() { return success; }
-        public String getSuccessUrl() { return successUrl; }
-    }
-
-    // add helpers near the bottom of the class
     private static boolean isPwRepoDir(File f) {
         if (f == null) return false;
         return f.exists() && f.isDirectory() &&
@@ -469,32 +263,45 @@ public final class PlaywrightStripeBridge {
                 || System.getenv("GITHUB_ACTIONS") != null;
     }
 
+    // ---------------- result + options ----------------
 
-
-    // ---------------- options ----------------
+    public static final class Result {
+        private final boolean success;
+        private final String successUrl; // may be null if not found
+        public Result(boolean success, String successUrl) { this.success = success; this.successUrl = successUrl; }
+        public boolean isSuccess() { return success; }
+        public String getSuccessUrl() { return successUrl; }
+    }
 
     public static final class Options {
-        private String npxExecutable = "npx";   // <— NEW: default to "npx"
+        private String npxExecutable = "npx"; // kept for API compatibility (unused when using run-pw.sh)
         private String checkoutUrl;        // REQUIRED
         private String checkoutEmail;      // optional
         private String testPath;           // default: tests/stripe-checkout.spec.ts
-        private String project;            // default: chromium  (or "Google Chrome" if configured)
+        private String project;            // default: chromium
         private String testGrep;           // default: "Stripe hosted checkout"
-        private Boolean headed;            // default: false
-        private Duration timeout;          // default: 2 minutes
-        private File workingDirectory;     // default: current dir
+        private Boolean headed;            // default: true on CI (recommended), otherwise true as well
+        private Duration timeout;          // default: 5 minutes
+        private File workingDirectory;     // default: auto-detected
 
         public static Options defaultOptions() {
-            // allow override from env (ms), default 5 minutes
+            // Overall process timeout (ms) from env, else 5 minutes
             Duration t = Optional.ofNullable(System.getenv("PW_BRIDGE_TIMEOUT_MS"))
-                    .map(Long::parseLong)
-                    .map(Duration::ofMillis)
+                    .map(Long::parseLong).map(Duration::ofMillis)
                     .orElse(Duration.ofMinutes(5));
+            // Default to headed; CI runs under Xvfb in your pipeline.
+            boolean headedDefault = true;
+            String envHeadless = System.getenv("PW_HEADLESS");
+            if (envHeadless != null) {
+                // PW_HEADLESS=0 => headed; 1 => headless
+                headedDefault = !"1".equals(envHeadless) && !"true".equalsIgnoreCase(envHeadless);
+            } else if ("1".equals(System.getenv("PWDEBUG"))) {
+                headedDefault = true;
+            }
             return new Options()
-                    .setHeaded(true)
+                    .setHeaded(headedDefault)
                     .setTimeout(t);
         }
-
 
         public Options setCheckoutUrl(String url) { this.checkoutUrl = url; return this; }
         public Options setCheckoutEmail(String email) { this.checkoutEmail = email; return this; }
@@ -504,7 +311,6 @@ public final class PlaywrightStripeBridge {
         public Options setHeaded(boolean headed) { this.headed = headed; return this; }
         public Options setTimeout(Duration timeout) { this.timeout = timeout; return this; }
         public Options setWorkingDirectory(File dir) { this.workingDirectory = dir; return this; }
-        public Options setNpxExecutable(String path) { this.npxExecutable = path; return this; } // <— NEW
-
+        public Options setNpxExecutable(String path) { this.npxExecutable = path; return this; }
     }
 }
