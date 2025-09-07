@@ -485,10 +485,16 @@ public final class PlaywrightStripeBridge {
         private File workingDirectory;     // default: current dir
 
         public static Options defaultOptions() {
+            // allow override from env (ms), default 5 minutes
+            Duration t = Optional.ofNullable(System.getenv("PW_BRIDGE_TIMEOUT_MS"))
+                    .map(Long::parseLong)
+                    .map(Duration::ofMillis)
+                    .orElse(Duration.ofMinutes(5));
             return new Options()
                     .setHeaded(true)
-                    .setTimeout(Duration.ofMinutes(2));
+                    .setTimeout(t);
         }
+
 
         public Options setCheckoutUrl(String url) { this.checkoutUrl = url; return this; }
         public Options setCheckoutEmail(String email) { this.checkoutEmail = email; return this; }
