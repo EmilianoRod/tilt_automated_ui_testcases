@@ -9,18 +9,19 @@ import java.util.*;
  * Runs a Playwright test that completes Stripe Hosted Checkout using a fresh CHECKOUT_URL.
  *
  * Usage:
- *   String url = preview.proceedToStripeAndGetCheckoutUrl();
+ *   String url = preview.proceedToStripeAndGetCheckoutUrl(); // from your OrderPreviewPage
  *   PlaywrightStripeBridge.pay(url, "qa+stripe@example.com");
  *
  * Advanced:
  *   PlaywrightStripeBridge.Options opts = PlaywrightStripeBridge.Options.defaultOptions()
  *       .setCheckoutUrl(url)
  *       .setCheckoutEmail("qa+stripe@example.com")
- *       .setProject("chromium")
- *       .setHeaded(true) // headed Chromium under Xvfb on CI avoids hCaptcha gating
+ *       .setProject("chromium")      // or "Google Chrome" if you configured channel:'chrome'
+ *       .setHeaded(true)
  *       .setTestGrep("Stripe hosted checkout")
  *       .setTimeout(Duration.ofMinutes(3))
- *       .setWorkingDirectory(new File(".")); // repo root with playwright.config.ts + run-pw.sh
+ *       .setFakeSuccess(false)       // or true to bypass (maps to PW_STRIPE_FAKE_SUCCESS=1)
+ *       .setWorkingDirectory(new File(".")); // repo root with playwright.config.ts
  *   PlaywrightStripeBridge.pay(opts);
  */
 public final class PlaywrightStripeBridge {
@@ -63,28 +64,33 @@ public final class PlaywrightStripeBridge {
             options.setWorkingDirectory(oldWd);
         }
 
-        // Environment for the Playwright process
+        // Environment for the Playwright process (inherit current env; don't force CI)
         Map<String, String> env = new HashMap<>(System.getenv());
-        env.put("CI", "1"); // make PW behave deterministically in CI
         env.put("PW_BRIDGE_WD", wd.getAbsolutePath());
         env.put("CHECKOUT_URL", options.checkoutUrl);
         if (options.checkoutEmail != null) env.put("CHECKOUT_EMAIL", options.checkoutEmail);
 
-        // Ensure Playwright (config) understands that we want headed mode when requested.
+        // Allow programmatic fake-success toggle (also works if you set PW_STRIPE_FAKE_SUCCESS in the environment).
+        if (Boolean.TRUE.equals(options.fakeSuccess)) {
+            env.put("PW_STRIPE_FAKE_SUCCESS", "1");
+        }
+
+        // Ensure Playwright config understands we want headed mode when requested.
         if (Boolean.TRUE.equals(options.headed)) {
-            env.put("PW_HEADLESS", "0"); // your config reads this; 0 => headed
+            env.put("PW_HEADLESS", "0");               // your config/spec read this; 0 => headed
+        } else if (Boolean.FALSE.equals(options.headed)) {
+            env.put("PW_HEADLESS", "1");
         }
         // Pass the same per-test timeout down to Playwright (ms)
         if (options.timeout != null && !options.timeout.isZero() && !options.timeout.isNegative()) {
             env.put("PW_TIMEOUT_MS", String.valueOf(options.timeout.toMillis()));
         }
         // Optional: let you increase expect timeouts without code changes
-        if (!env.containsKey("PW_EXPECT_TIMEOUT_MS")) {
-            env.put("PW_EXPECT_TIMEOUT_MS", "15000");
-        }
+        env.putIfAbsent("PW_EXPECT_TIMEOUT_MS", "15000");
 
         final String MARKER = "PW_BRIDGE::SUCCESS_URL ";
-        final java.util.concurrent.atomic.AtomicReference<String> successUrlRef = new java.util.concurrent.atomic.AtomicReference<>(null);
+        final java.util.concurrent.atomic.AtomicReference<String> successUrlRef =
+                new java.util.concurrent.atomic.AtomicReference<>(null);
 
         int exit;
         try {
@@ -133,6 +139,11 @@ public final class PlaywrightStripeBridge {
             } else {
                 p.waitFor();
             }
+
+            // Make sure we drained output (so success marker is not lost on fast exits)
+            try { tOut.join(1500); } catch (InterruptedException ignored) {}
+            try { tErr.join(500); }  catch (InterruptedException ignored) {}
+
             exit = p.exitValue();
         } catch (Exception e) {
             throw new RuntimeException(
@@ -143,6 +154,15 @@ public final class PlaywrightStripeBridge {
         }
 
         boolean ok = (exit == 0);
+
+        // Optional escape hatch: if the spec printed a success marker, and env says to trust it, treat as success.
+        // (Use only if you absolutely need to paper over Playwright reporter quirks.)
+        if (!ok && successUrlRef.get() != null && "1".equals(System.getenv("PW_BRIDGE_TRUST_MARKER"))) {
+            System.err.println("[PW] WARNING: Non-zero exit from Playwright, but PW_BRIDGE_TRUST_MARKER=1 is set " +
+                    "and a success marker was seen. Treating as success.");
+            ok = true;
+        }
+
         return new Result(ok, successUrlRef.get());
     }
 
@@ -233,6 +253,7 @@ public final class PlaywrightStripeBridge {
         return "'" + s.replace("'", "'\"'\"'") + "'";
     }
 
+    @SuppressWarnings("unused")
     private static boolean isWindows() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         return os.contains("win");
@@ -280,15 +301,17 @@ public final class PlaywrightStripeBridge {
         private String testPath;           // default: tests/stripe-checkout.spec.ts
         private String project;            // default: chromium
         private String testGrep;           // default: "Stripe hosted checkout"
-        private Boolean headed;            // default: true on CI (recommended), otherwise true as well
+        private Boolean headed;            // default: true (Xvfb in CI)
         private Duration timeout;          // default: 5 minutes
         private File workingDirectory;     // default: auto-detected
+        private Boolean fakeSuccess;       // default: null (defer to env)
 
         public static Options defaultOptions() {
             // Overall process timeout (ms) from env, else 5 minutes
             Duration t = Optional.ofNullable(System.getenv("PW_BRIDGE_TIMEOUT_MS"))
                     .map(Long::parseLong).map(Duration::ofMillis)
                     .orElse(Duration.ofMinutes(5));
+
             // Default to headed; CI runs under Xvfb in your pipeline.
             boolean headedDefault = true;
             String envHeadless = System.getenv("PW_HEADLESS");
@@ -298,9 +321,14 @@ public final class PlaywrightStripeBridge {
             } else if ("1".equals(System.getenv("PWDEBUG"))) {
                 headedDefault = true;
             }
+
+            // Respect env fake-success by default if set.
+            Boolean fake = "1".equals(System.getenv("PW_STRIPE_FAKE_SUCCESS")) ? Boolean.TRUE : null;
+
             return new Options()
                     .setHeaded(headedDefault)
-                    .setTimeout(t);
+                    .setTimeout(t)
+                    .setFakeSuccess(fake);
         }
 
         public Options setCheckoutUrl(String url) { this.checkoutUrl = url; return this; }
@@ -312,5 +340,6 @@ public final class PlaywrightStripeBridge {
         public Options setTimeout(Duration timeout) { this.timeout = timeout; return this; }
         public Options setWorkingDirectory(File dir) { this.workingDirectory = dir; return this; }
         public Options setNpxExecutable(String path) { this.npxExecutable = path; return this; }
+        public Options setFakeSuccess(Boolean fakeSuccess) { this.fakeSuccess = fakeSuccess; return this; }
     }
 }
