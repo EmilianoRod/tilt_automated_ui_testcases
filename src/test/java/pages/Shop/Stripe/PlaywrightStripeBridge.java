@@ -342,7 +342,7 @@ public final class PlaywrightStripeBridge {
                     .map(Long::parseLong).map(Duration::ofMillis)
                     .orElse(Duration.ofMinutes(3));
 
-            // Default to headed; CI runs under Xvfb in your pipeline.
+            // De fault to headed; CI runs under Xvfb in your pipeline.
             boolean headedDefault = true;
             String envHeadless = System.getenv("PW_HEADLESS");
             if (envHeadless != null) {
