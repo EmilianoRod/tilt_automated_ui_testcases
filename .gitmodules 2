@@ -1,3 +1,0 @@
-[submodule "automation/playwright"]
-	path = automation/playwright
-	url = https://github.com/EmilianoRod/stripe-checkout-playwright.git
