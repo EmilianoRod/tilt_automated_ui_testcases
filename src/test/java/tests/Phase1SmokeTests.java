@@ -11,25 +11,24 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 import pages.Shop.AssessmentEntryPage;
-import pages.Shop.OrderConfirmationPage;
 import pages.Shop.PurchaseRecipientSelectionPage;
 import pages.Shop.OrderPreviewPage;
-import pages.Shop.Stripe.PlaywrightStripeBridge;
-import pages.Shop.Stripe.StripeCheckoutPage;
+
 import pages.menuPages.DashboardPage;
 import pages.LoginPage;
 import org.json.JSONObject;
 import pages.menuPages.IndividualsPage;
 import pages.menuPages.ShopPage;
 
-import java.io.File;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.UUID;
 
 import static Utils.Config.joinUrl;
-import static Utils.EncodingUtils.decodeBase64Url;
-import static java.lang.String.format;
+
+
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicReference;
+
 
 public class Phase1SmokeTests extends BaseTest {
 
@@ -40,8 +39,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-1: Verify that newly added users receive an email notification with login instructions
      */
     @Test
-    public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions()
-            throws ApiException, InterruptedException {
+    public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException {
 
         // ===== Config / constants =====
         final String ADMIN_USER = System.getProperty("ADMIN_USER", Config.getAdminEmail());
@@ -101,15 +99,33 @@ public class Phase1SmokeTests extends BaseTest {
         step("Navigate to post-payment confirmation");
         driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
 
+
+
         step("Individuals page shows the newly invited user");
+        // Navigate (no named arg)
         driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/individuals"));
-        IndividualsPage individuals = new IndividualsPage(driver).waitUntilLoaded();
+        // Keep a final reference; swap the value on reload
+        final AtomicReference<IndividualsPage> individualsRef =
+                new AtomicReference<>(new IndividualsPage(driver).waitUntilLoaded());
+        // First poll window
         boolean listed = WaitUtils.pollFor(
-                Duration.ofSeconds(30), Duration.ofMillis(700),
-                () -> individuals.isUserListedByEmail(tempEmail)
+                Duration.ofSeconds(20), Duration.ofMillis(700),
+                () -> individualsRef.get().isUserListedByEmail(tempEmail)
         );
+        // If not found, reload and try again
+        if (!listed) {
+            System.out.println("⚠️ User not listed yet, reloading Individuals page...");
+            driver.navigate().refresh(); // no args
+            individualsRef.set(new IndividualsPage(driver).waitUntilLoaded());
+
+            listed = WaitUtils.pollFor(
+                    Duration.ofSeconds(15), Duration.ofMillis(700),
+                    () -> individualsRef.get().isUserListedByEmail(tempEmail)
+            );
+        }
         Assert.assertTrue(listed, "❌ Newly purchased/invited user not found in Individuals: " + tempEmail);
         System.out.println("✅ User appears in Individuals: " + tempEmail);
+
 
         step("Wait for email and assert contents");
         System.out.println("[Email] Waiting up to " + EMAIL_TIMEOUT.toSeconds() + "s for message to " + tempEmail + "…");
