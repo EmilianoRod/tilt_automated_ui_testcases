@@ -10,6 +10,7 @@ import pages.BasePage;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class IndividualsPage extends BasePage {
 
@@ -298,4 +299,18 @@ public class IndividualsPage extends BasePage {
     }
     @FunctionalInterface private interface SupplierWithException<T> { T get() throws Exception; }
 
+
+
+    // ======= Utilities FOR DEBUGGING =======
+    public int debugCountRows() {
+        List<WebElement> rows = driver.findElements(By.cssSelector("table tbody tr"));
+        return rows.size();
+    }
+
+    public List<String> debugEmailsSeen() {
+        return driver.findElements(By.cssSelector("table tbody tr"))
+                .stream()
+                .map(tr -> tr.getText())
+                .collect(Collectors.toList());
+    }
 }
