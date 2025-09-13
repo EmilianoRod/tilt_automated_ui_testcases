@@ -1,5 +1,4 @@
 package tests;
-
 import Utils.*;
 import base.BaseTest;
 import com.mailslurp.clients.ApiException;
@@ -101,7 +100,7 @@ public class Phase1SmokeTests extends BaseTest {
 
 
 
-        step("Individuals page shows the newly invited user");
+      /*  step("Individuals page shows the newly invited user");
         // Navigate (no named arg)
         driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/individuals"));
         // Keep a final reference; swap the value on reload
@@ -109,7 +108,7 @@ public class Phase1SmokeTests extends BaseTest {
                 new AtomicReference<>(new IndividualsPage(driver).waitUntilLoaded());
         // First poll window
         boolean listed = WaitUtils.pollFor(
-                Duration.ofSeconds(20), Duration.ofMillis(700),
+                Duration.ofSeconds(8), Duration.ofMillis(700),
                 () -> individualsRef.get().isUserListedByEmail(tempEmail)
         );
         // If not found, reload and try again
@@ -119,12 +118,77 @@ public class Phase1SmokeTests extends BaseTest {
             individualsRef.set(new IndividualsPage(driver).waitUntilLoaded());
 
             listed = WaitUtils.pollFor(
-                    Duration.ofSeconds(15), Duration.ofMillis(700),
+                    Duration.ofSeconds(8), Duration.ofMillis(700),
                     () -> individualsRef.get().isUserListedByEmail(tempEmail)
             );
         }
         Assert.assertTrue(listed, "❌ Newly purchased/invited user not found in Individuals: " + tempEmail);
+        System.out.println("✅ User appears in Individuals: " + tempEmail);*/
+
+        step("Individuals page shows the newly invited user");
+        driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/individuals"));
+
+        final AtomicReference<IndividualsPage> individualsRef =
+                new AtomicReference<>(new IndividualsPage(driver).waitUntilLoaded());
+
+// First snapshot
+        DebugDumps.saveScreenshot(driver, "individuals_before_poll");
+        DebugDumps.saveHtml(driver, "individuals_before_poll");
+        System.out.println("Rows initially: " + individualsRef.get().debugCountRows());
+        System.out.println("Emails seen initially: " + individualsRef.get().debugEmailsSeen());
+        DebugUtils.dumpBrowserLogs(driver);
+        DebugUtils.dumpPerfLogs(driver, "/individuals"); // change needle to your XHR path if different
+
+        boolean listed = WaitUtils.pollFor(
+                Duration.ofSeconds(20), Duration.ofMillis(700),
+                () -> {
+                    boolean ok = individualsRef.get().isUserListedByEmail(tempEmail);
+                    if (!ok) {
+                        // mini-telemetry each tick
+                        System.out.println("…still not found; rows=" + individualsRef.get().debugCountRows());
+                    }
+                    return ok;
+                }
+        );
+
+        if (!listed) {
+            System.out.println("⚠️ Not found after first window — refreshing Individuals...");
+            driver.navigate().refresh();
+            individualsRef.set(new IndividualsPage(driver).waitUntilLoaded());
+
+            // After refresh snapshot
+            DebugDumps.saveScreenshot(driver, "individuals_after_refresh");
+            DebugDumps.saveHtml(driver, "individuals_after_refresh");
+            System.out.println("Rows post-refresh: " + individualsRef.get().debugCountRows());
+            System.out.println("Emails seen post-refresh: " + individualsRef.get().debugEmailsSeen());
+            DebugUtils.dumpBrowserLogs(driver);
+            DebugUtils.dumpPerfLogs(driver, "/individuals");
+
+            listed = WaitUtils.pollFor(
+                    Duration.ofSeconds(25), Duration.ofMillis(700),
+                    () -> individualsRef.get().isUserListedByEmail(tempEmail)
+            );
+        }
+
+// Fallback sanity-check: maybe it lands in Invites/Pending instead?
+        if (!listed) {
+            System.out.println("🔎 Fallback: checking Invites page for " + tempEmail);
+            driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/invites"));
+            DebugDumps.saveScreenshot(driver, "invites_page");
+            DebugDumps.saveHtml(driver, "invites_page");
+            // If you have InvitesPage, use it; otherwise quick ad-hoc check:
+            boolean inInvites = driver.getPageSource().toLowerCase().contains(tempEmail.toLowerCase());
+            System.out.println("Present in Invites? " + inInvites);
+        }
+
+        Assert.assertTrue(listed, "❌ Newly purchased/invited user not found in Individuals: " + tempEmail);
         System.out.println("✅ User appears in Individuals: " + tempEmail);
+
+
+
+
+
+
 
 
         step("Wait for email and assert contents");

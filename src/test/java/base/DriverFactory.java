@@ -5,7 +5,11 @@ import io.github.bonigarcia.wdm.WebDriverManager;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.logging.LogType;
+import org.openqa.selenium.logging.LoggingPreferences;
 import org.openqa.selenium.safari.SafariDriver;
+
+import java.util.logging.Level;
 
 public class DriverFactory {
 
@@ -19,6 +23,10 @@ public class DriverFactory {
             default:
                 WebDriverManager.chromedriver().setup();
                 ChromeOptions options = new ChromeOptions();
+                LoggingPreferences logPrefs = new LoggingPreferences();
+                logPrefs.enable(LogType.PERFORMANCE, Level.ALL);
+                logPrefs.enable(LogType.BROWSER, Level.ALL);
+                options.setCapability("goog:loggingPrefs", logPrefs);
 
                 // headless from config (defaults to true via your Config)
                 if (Config.isHeadless()) {
