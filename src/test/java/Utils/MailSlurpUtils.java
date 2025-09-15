@@ -1,100 +1,114 @@
 package Utils;
 
-
+import com.mailslurp.apis.InboxControllerApi;
+import com.mailslurp.apis.WaitForControllerApi;
 import com.mailslurp.clients.ApiClient;
 import com.mailslurp.clients.ApiException;
 import com.mailslurp.clients.Configuration;
-import com.mailslurp.apis.InboxControllerApi;
-import com.mailslurp.apis.WaitForControllerApi;
-import com.mailslurp.models.InboxDto;
 import com.mailslurp.models.Email;
+import com.mailslurp.models.InboxDto;
 
-import java.time.Duration;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MailSlurpUtils {
 
-    private static final String MAILSLURP_API_KEY = "f822e2b5c9226b95330af3cbbf9b120faf635777ab3071684f8752d82d6f2fc7";
+    // Resolved at static init from system property or environment variable.
+    private static final String RESOLVED_API_KEY;
 
     private static final ApiClient apiClient;
     private static final InboxControllerApi inboxController;
     private static final WaitForControllerApi waitForController;
 
     static {
-        apiClient = Configuration.getDefaultApiClient();
-        apiClient.setApiKey(MAILSLURP_API_KEY);
-        apiClient.setConnectTimeout(30000);
-        apiClient.setReadTimeout(30000);
-        apiClient.setWriteTimeout(30000);
+        // 1) Read key from preferred sources
+        String key = System.getProperty("mailslurp.apiKey");
+        if (key == null || key.isBlank()) {
+            key = System.getenv("MAILSLURP_API_KEY");
+        }
 
+        // (Optional) Accept a couple of common fallbacks to be extra robust
+        if (key == null || key.isBlank()) {
+            key = System.getProperty("MAILSLURP_API_KEY");
+        }
+        if (key == null || key.isBlank()) {
+            key = System.getenv("mailslurp.apiKey");
+        }
+
+        if (key == null || key.isBlank()) {
+            throw new IllegalStateException(
+                    "MAILSLURP_API_KEY not provided. " +
+                            "Set JVM prop -Dmailslurp.apiKey=<key> or env MAILSLURP_API_KEY"
+            );
+        }
+
+        RESOLVED_API_KEY = key;
+
+        // 2) Configure client
+        apiClient = Configuration.getDefaultApiClient();
+        apiClient.setApiKey(RESOLVED_API_KEY);
+        apiClient.setConnectTimeout(30_000);
+        apiClient.setReadTimeout(30_000);
+        apiClient.setWriteTimeout(30_000);
+
+        // 3) Build APIs
         inboxController = new InboxControllerApi(apiClient);
         waitForController = new WaitForControllerApi(apiClient);
     }
 
-//    *//**
-//     * Create a new disposable email inbox.
-//     * @return InboxDto containing the inbox ID and email address.
-//     * @throws ApiException if API call fails
-//     *//*
+    /** Creates a new disposable inbox using MailSlurp defaults. */
     public static InboxDto createInbox() throws ApiException {
-        return inboxController.createInboxWithDefaults().execute(); // ✅ .execute() required
+        return inboxController.createInboxWithDefaults().execute();
     }
 
-//    *//**
-//     * Wait for a new email to arrive in the given inbox.
-//     * @param inboxId the UUID of the target inbox
-//     * @param timeoutMillis how long to wait (milliseconds)
-//     * @param unreadOnly true = only wait for unread emails
-//     * @return Email received
-//     * @throws ApiException if no email arrives or call fails
-//     *//*
-public static Email waitForLatestEmail(UUID inboxId, long timeoutMillis, boolean unreadOnly) throws ApiException {
-    return waitForController
-            .waitForLatestEmail()   // start builder (no args in your SDK)
-            .inboxId(inboxId)       // set the inbox to watch
-            .timeout(timeoutMillis) // how long to wait (ms)
-            .unreadOnly(unreadOnly) // filter unread if you want
-            .execute();             // perform the request
-}
+    /**
+     * Waits for the latest email in the given inbox.
+     * @param inboxId target inbox UUID
+     * @param timeoutMillis maximum wait in milliseconds
+     * @param unreadOnly if true, only consider unread emails
+     */
+    public static Email waitForLatestEmail(UUID inboxId, long timeoutMillis, boolean unreadOnly) throws ApiException {
+        return waitForController
+                .waitForLatestEmail()
+                .inboxId(inboxId)
+                .timeout(timeoutMillis)
+                .unreadOnly(unreadOnly)
+                .execute();
+    }
 
-
-
-
-    //    *//**
-//     * Extract a numeric OTP code from the email body.
-//     * @param email the Email object
-//     * @return the first 6-digit number found
-//     *//*
+    /** Extracts the first 6-digit OTP code from the email body. */
     public static String extractOtpCode(Email email) {
-        String body = email.getBody();
+        String body = email != null ? email.getBody() : null;
         if (body == null) return null;
         Matcher matcher = Pattern.compile("\\b(\\d{6})\\b").matcher(body);
         return matcher.find() ? matcher.group(1) : null;
     }
 
-//    *//**
-//     * Extract the first link (HTTP/HTTPS) from the email body.
-//     * @param email the Email object
-//     * @return first URL found, or null
-//     *//*
+    /** Extracts the first HTTP/HTTPS link from the email body. */
     public static String extractFirstLink(Email email) {
-        String body = email.getBody();
+        String body = email != null ? email.getBody() : null;
         if (body == null) return null;
         Matcher matcher = Pattern.compile("https?://\\S+").matcher(body);
         return matcher.find() ? matcher.group() : null;
     }
 
-
+    /**
+     * Finds a link whose anchor text matches {@code anchorText} and returns its href.
+     * Example: <a href="...">Accept Assessment</a>
+     */
     public static String extractLinkByAnchorText(Email email, String anchorText) {
         if (email == null || email.getBody() == null || anchorText == null) return null;
-        // Match the <a ...>Accept Assessment</a> and capture the href
         String pattern = "<a[^>]*href=[\"']([^\"']+)[\"'][^>]*>\\s*" + Pattern.quote(anchorText) + "\\s*</a>";
         Matcher m = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(email.getBody());
         return m.find() ? m.group(1) : null;
     }
 
-
-
+    /** For troubleshooting: returns a short fingerprint of the API key without exposing it. */
+    public static String apiKeyFingerprint() {
+        // simple non-cryptographic mask to avoid leaking the key
+        String k = RESOLVED_API_KEY;
+        int len = k.length();
+        return len <= 8 ? "****" : (k.substring(0, 4) + "…" + k.substring(len - 4));
+    }
 }
