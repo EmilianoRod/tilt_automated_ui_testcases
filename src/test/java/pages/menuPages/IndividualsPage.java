@@ -1,14 +1,23 @@
 package pages.menuPages;
 
+import Utils.Config;
+import api.ApiConfig;
+import api.BackendApi;
 import io.qameta.allure.Step;
+import okhttp3.ResponseBody;
 import org.openqa.selenium.*;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
+import org.testng.Assert;
 import pages.BasePage;
+import retrofit2.Response;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -45,6 +54,15 @@ public class IndividualsPage extends BasePage {
     private WebElement reportCellInRow(WebElement row){ return row.findElement(By.cssSelector("td:nth-of-type(3)")); }
     private WebElement kebabInRow(WebElement row)     { return row.findElement(By.cssSelector("td:nth-of-type(4) .ant-dropdown-trigger")); }
 
+
+
+    private final By emptyState = By.cssSelector(".ant-table .ant-empty, .ant-empty-description, .ant-table-placeholder");
+
+
+
+
+
+
     private By emailCellAny(String emailLower) {
         return By.xpath(
                 "((//div[contains(@class,'ant-table')])[1]//tbody)[1]" +
@@ -69,6 +87,19 @@ public class IndividualsPage extends BasePage {
         try { waitUntilLoaded(); return true; } catch (TimeoutException e) { return false; }
     }
 
+
+
+
+    // ======= NAVIGATION =======
+
+    @Step("Open Individuals")
+    public IndividualsPage open(String baseUrl) {
+        String url = Config.joinUrl(baseUrl, "/dashboard/individuals?ts=" + System.nanoTime());
+        driver.navigate().to(url);
+        return waitUntilLoaded();
+    }
+
+
     // ======= Basic interactions =======
 
     @Step("Search for: {text}")
@@ -87,6 +118,15 @@ public class IndividualsPage extends BasePage {
         input.sendKeys(text);
         input.sendKeys(Keys.ENTER);
 
+        // (1) ensure the input value actually reflects our query (handles re-renders)
+        try {
+            new WebDriverWait(driver, Duration.ofSeconds(4)).until(d -> {
+                WebElement el = d.findElement(searchInput);
+                String v = el.getAttribute("value");
+                return v != null && v.equals(text);
+            });
+        } catch (TimeoutException ignored) { /* not fatal; proceed */ }
+
         // accept any of: tbody staleness OR row-count change
         try {
             if (oldBody != null) new WebDriverWait(driver, Duration.ofSeconds(8))
@@ -97,7 +137,9 @@ public class IndividualsPage extends BasePage {
                     .until(d -> driver.findElements(tableRows).size() != before);
         } catch (TimeoutException ignored) { }
 
-        waitForTableSettled();
+        // (2) global loader gate + final settle
+        wait.waitForLoadersToDisappear();
+        waitForTableSettled(); // see tweak below to include empty-state
     }
 
 
@@ -257,6 +299,8 @@ public class IndividualsPage extends BasePage {
         try { return Integer.parseInt(digits); } catch (Exception ignore) { return -1; }
     }
 
+
+
     // ======= Utilities =======
 
     private boolean isPresent(By by) { return !driver.findElements(by).isEmpty(); }
@@ -276,6 +320,8 @@ public class IndividualsPage extends BasePage {
     private void waitForTableSettled() {
         wdw.until(ExpectedConditions.presenceOfElementLocated(tableRoot));
         wdw.until(ExpectedConditions.presenceOfElementLocated(tableBody));
+        // rows visible OR empty state visible
+        wdw.until(d -> !d.findElements(tableRows).isEmpty() || !d.findElements(emptyState).isEmpty());
     }
 
     private void waitForTableRefreshed() {
@@ -301,6 +347,135 @@ public class IndividualsPage extends BasePage {
 
 
 
+    // ======== Public helpers ========
+
+    // tiny helper so other methods can self-heal if called on the wrong page
+    private boolean isOnIndividuals() {
+        String u = driver.getCurrentUrl().toLowerCase();
+        return u.contains("/dashboard/individual");
+    }
+
+
+
+    @Step("Hard reload Individuals with cache-buster")
+    public void reloadWithBuster(String baseUrl) {
+        String url = baseUrl.replaceAll("/+$", "") + "/dashboard/individuals?ts=" + System.nanoTime();
+        driver.navigate().to(url);
+        waitUntilLoaded(); // your existing: wait for loaders + table
+    }
+
+    /**
+     * Stale-buster polling: repeatedly hard-reload Individuals and look for the email.
+     * Throws AssertionError if not found after attempts.
+     */
+    @Step("Assert individual appears with reloads: {email}")
+    public void assertAppearsWithReload(String baseUrl, String email) {
+        final String emailLc   = email.trim().toLowerCase(Locale.ROOT);
+        final int    maxTries  = Integer.getInteger("INDIV_ATTEMPTS", 10);    // -DINDIV_ATTEMPTS=12
+        final long   sleepMs   = Long.getLong("INDIV_SLEEP_MS", 5000L);       // -DINDIV_SLEEP_MS=3000
+
+        for (int i = 1; i <= maxTries; i++) {
+            reloadWithBuster(baseUrl);
+            if (isUserListedByEmail(emailLc)) {
+                return; // ✅ found
+            }
+            try { Thread.sleep(sleepMs); }
+            catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+        }
+        throw new AssertionError("❌ User not found in Individuals after retries: " + emailLc);
+    }
+
+    @Step("Assert individual appears (UI) with optional network evidence + backend cross-check: {email}")
+    public void assertAppearsWithEvidence(String baseUrl, String email) {
+        // Flags (override via -DINDIV_CDP_CAPTURE, -DINDIV_BACKEND_CHECK, -DINDIV_CDP_WAIT_SEC)
+        final boolean captureNetwork = Boolean.parseBoolean(System.getProperty("INDIV_CDP_CAPTURE", "true"));
+        final boolean backendCheck   = Boolean.parseBoolean(System.getProperty("INDIV_BACKEND_CHECK", "false")); // default off to run without API wiring
+        final int     cdpWaitSec     = Integer.getInteger("INDIV_CDP_WAIT_SEC", 20);
+
+        assertAppearsWithEvidence(baseUrl, email, Duration.ofSeconds(cdpWaitSec), captureNetwork, backendCheck);
+    }
+
+    /**
+     * Core reusable helper:
+     * 1) optional CDP capture of /api/v2/individuals
+     * 2) stale-buster reload + UI wait
+     * 3) optional backend GET /api/v2/individuals?email=...
+     */
+    public void assertAppearsWithEvidence(String baseUrl,
+                                          String email,
+                                          Duration cdpWait,
+                                          boolean captureNetwork,
+                                          boolean backendCheck) {
+
+        final String emailLc = email.trim().toLowerCase(Locale.ROOT);
+
+        // 1) Start CDP capture (optional; no-op if driver doesn’t support DevTools)
+        final Optional<probes.NetworkCapture> capOpt =
+                captureNetwork
+                        ? probes.NetworkCapture.start(driver, url -> url.contains("/api/v2/individuals"))
+                        : Optional.empty();
+
+        if (capOpt.isPresent()) {
+            // Ensure capture closes even if the UI assertion fails
+            try (probes.NetworkCapture cap = capOpt.get()) {
+                // 2) UI flow with stale-buster
+                this.assertAppearsWithReload(baseUrl, emailLc);
+
+                // 2b) Assert network body includes the email
+                final boolean seen = cap.waitForAny(cdpWait) && cap.anyBodyContainsIgnoreCase(emailLc);
+                if (!seen) {
+                    throw new AssertionError("❌ /api/v2/individuals responses did not include "
+                            + email + " (webhook race or filtering?)");
+                }
+            }
+        } else {
+            // No capture: just run the UI flow
+            this.assertAppearsWithReload(baseUrl, emailLc);
+        }
+
+        // 3) Backend cross-check (optional; off by default)
+        if (backendCheck) {
+            try {
+                final BackendApi be = BackendApi.create(ApiConfig.fromEnv()); // requires base URL + auth in env
+                // NOTE: your generated interface expects Map<String,String>
+                final Response<ResponseBody> resp =
+                        be.individualsApiV2().index(Map.of("email", emailLc)).execute();
+
+                if (!resp.isSuccessful()) {
+                    throw new AssertionError("❌ /api/v2/individuals HTTP " + resp.code());
+                }
+                try (ResponseBody body = resp.body()) {
+                    final String json = (body != null) ? body.string() : "";
+                    if (!json.toLowerCase(Locale.ROOT).contains(emailLc)) {
+                        throw new AssertionError("❌ Backend payload did not include " + email);
+                    }
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(
+                        "❌ Backend check failed (connection/auth?). Set -DINDIV_BACKEND_CHECK=false to skip.",
+                        e
+                );
+            }
+        }
+    }
+
+    // ======== Private helpers (unique names) ========
+
+    /**
+     * Single-attempt UI check (no reload loop). Call inside the poller if you prefer.
+     * Keep this name different from assertAppearsWithReload to avoid signature clashes.
+     */
+    private void searchOnceAndAssert(String baseUrl, String emailLc) {
+        driver.navigate().to(baseUrl.replaceAll("/+$", "") + "/dashboard/individuals?ts=" + System.nanoTime());
+        waitUntilLoaded();
+        // searchBox.clear();
+        // searchBox.sendKeys(emailLc + Keys.ENTER);
+        // waitForResults();
+        Assert.assertTrue(isUserListedByEmail(emailLc), "User not found in Individuals: " + emailLc);
+    }
+
+
+
     // ======= Utilities FOR DEBUGGING =======
     public int debugCountRows() {
         List<WebElement> rows = driver.findElements(By.cssSelector("table tbody tr"));
@@ -313,4 +488,9 @@ public class IndividualsPage extends BasePage {
                 .map(tr -> tr.getText())
                 .collect(Collectors.toList());
     }
+
+
+
+
+
 }
