@@ -12,21 +12,16 @@ import org.testng.annotations.Test;
 import pages.Shop.AssessmentEntryPage;
 import pages.Shop.PurchaseRecipientSelectionPage;
 import pages.Shop.OrderPreviewPage;
-
 import pages.menuPages.DashboardPage;
 import pages.LoginPage;
 import org.json.JSONObject;
 import pages.menuPages.IndividualsPage;
 import pages.menuPages.ShopPage;
-
 import java.time.Duration;
 import java.util.UUID;
-
 import static Utils.Config.joinUrl;
 
 
-import java.time.Duration;
-import java.util.concurrent.atomic.AtomicReference;
 
 
 public class Phase1SmokeTests extends BaseTest {
@@ -41,16 +36,16 @@ public class Phase1SmokeTests extends BaseTest {
     public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException {
 
         // ===== Config / constants =====
-        final String ADMIN_USER = System.getProperty("ADMIN_USER", Config.getAdminEmail());
-        final String ADMIN_PASS = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
+        final String ADMIN_USER   = System.getProperty("ADMIN_USER", Config.getAdminEmail());
+        final String ADMIN_PASS   = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
         final Duration EMAIL_TIMEOUT = Duration.ofSeconds(120);
-        final String CTA_TEXT       = "Accept Assessment";
-        final String SUBJECT_NEEDLE = "assessment";
+        final String CTA_TEXT        = "Accept Assessment";
+        final String SUBJECT_NEEDLE  = "assessment";
 
         step("Create disposable inbox");
         InboxDto inbox = MailSlurpUtils.createInbox();
         String tempEmail = inbox.getEmailAddress();
-        UUID inboxId = inbox.getId();
+        UUID inboxId     = inbox.getId();
         System.out.println("📧 Temporary test email: " + tempEmail);
 
         step("Login as admin");
@@ -79,13 +74,11 @@ public class Phase1SmokeTests extends BaseTest {
         OrderPreviewPage preview = entryPage.clickProceedToPayment().waitUntilLoaded();
 
         step("Stripe: fetch session + metadata.body");
-        // capture hosted URL (do not open it)
         String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
         String sessionId = extractSessionIdFromUrl(stripeUrl); // cs_test_...
         Assert.assertNotNull(sessionId, "❌ Could not parse Stripe session id from URL");
         System.out.println("[Stripe] checkoutUrl=" + stripeUrl + " | sessionId=" + sessionId);
 
-        // Requires STRIPE_(TEST_)SECRET_KEY via Config.getStripeSecretKey()
         String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
         Assert.assertNotNull(bodyJson, "❌ metadata.body not found in Checkout Session");
         System.out.println("[Stripe] metadata.body length=" + bodyJson.length());
@@ -99,96 +92,12 @@ public class Phase1SmokeTests extends BaseTest {
         driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
 
 
-
-      /*  step("Individuals page shows the newly invited user");
-        // Navigate (no named arg)
-        driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/individuals"));
-        // Keep a final reference; swap the value on reload
-        final AtomicReference<IndividualsPage> individualsRef =
-                new AtomicReference<>(new IndividualsPage(driver).waitUntilLoaded());
-        // First poll window
-        boolean listed = WaitUtils.pollFor(
-                Duration.ofSeconds(8), Duration.ofMillis(700),
-                () -> individualsRef.get().isUserListedByEmail(tempEmail)
-        );
-        // If not found, reload and try again
-        if (!listed) {
-            System.out.println("⚠️ User not listed yet, reloading Individuals page...");
-            driver.navigate().refresh(); // no args
-            individualsRef.set(new IndividualsPage(driver).waitUntilLoaded());
-
-            listed = WaitUtils.pollFor(
-                    Duration.ofSeconds(8), Duration.ofMillis(700),
-                    () -> individualsRef.get().isUserListedByEmail(tempEmail)
-            );
-        }
-        Assert.assertTrue(listed, "❌ Newly purchased/invited user not found in Individuals: " + tempEmail);
-        System.out.println("✅ User appears in Individuals: " + tempEmail);*/
-
         step("Individuals page shows the newly invited user");
-        driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/individuals"));
-
-        final AtomicReference<IndividualsPage> individualsRef =
-                new AtomicReference<>(new IndividualsPage(driver).waitUntilLoaded());
-
-// First snapshot
-        DebugDumps.saveScreenshot(driver, "individuals_before_poll");
-        DebugDumps.saveHtml(driver, "individuals_before_poll");
-        System.out.println("Rows initially: " + individualsRef.get().debugCountRows());
-        System.out.println("Emails seen initially: " + individualsRef.get().debugEmailsSeen());
-        DebugUtils.dumpBrowserLogs(driver);
-        DebugUtils.dumpPerfLogs(driver, "/individuals"); // change needle to your XHR path if different
-
-        boolean listed = WaitUtils.pollFor(
-                Duration.ofSeconds(20), Duration.ofMillis(700),
-                () -> {
-                    boolean ok = individualsRef.get().isUserListedByEmail(tempEmail);
-                    if (!ok) {
-                        // mini-telemetry each tick
-                        System.out.println("…still not found; rows=" + individualsRef.get().debugCountRows());
-                    }
-                    return ok;
-                }
-        );
-
-        if (!listed) {
-            System.out.println("⚠️ Not found after first window — refreshing Individuals...");
-            driver.navigate().refresh();
-            individualsRef.set(new IndividualsPage(driver).waitUntilLoaded());
-
-            // After refresh snapshot
-            DebugDumps.saveScreenshot(driver, "individuals_after_refresh");
-            DebugDumps.saveHtml(driver, "individuals_after_refresh");
-            System.out.println("Rows post-refresh: " + individualsRef.get().debugCountRows());
-            System.out.println("Emails seen post-refresh: " + individualsRef.get().debugEmailsSeen());
-            DebugUtils.dumpBrowserLogs(driver);
-            DebugUtils.dumpPerfLogs(driver, "/individuals");
-
-            listed = WaitUtils.pollFor(
-                    Duration.ofSeconds(25), Duration.ofMillis(700),
-                    () -> individualsRef.get().isUserListedByEmail(tempEmail)
-            );
-        }
-
-// Fallback sanity-check: maybe it lands in Invites/Pending instead?
-        if (!listed) {
-            System.out.println("🔎 Fallback: checking Invites page for " + tempEmail);
-            driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/invites"));
-            DebugDumps.saveScreenshot(driver, "invites_page");
-            DebugDumps.saveHtml(driver, "invites_page");
-            // If you have InvitesPage, use it; otherwise quick ad-hoc check:
-            boolean inInvites = driver.getPageSource().toLowerCase().contains(tempEmail.toLowerCase());
-            System.out.println("Present in Invites? " + inInvites);
-        }
-
-        Assert.assertTrue(listed, "❌ Newly purchased/invited user not found in Individuals: " + tempEmail);
+        // open() handles navigation (with cache-buster) + waits
+        new IndividualsPage(driver)
+                .open(Config.getBaseUrl())
+                .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
         System.out.println("✅ User appears in Individuals: " + tempEmail);
-
-
-
-
-
-
 
 
         step("Wait for email and assert contents");
@@ -206,7 +115,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(subject.toLowerCase().contains(SUBJECT_NEEDLE),
                 "❌ Subject does not mention " + SUBJECT_NEEDLE + ". Got: " + subject);
 
-        // Sender should be Tilt or SendGrid relay (case-insensitive; avoid brittle exact match)
+        // Sender should be Tilt or SendGrid relay
         Assert.assertTrue(from.toLowerCase().contains("tilt365") || from.toLowerCase().contains("sendgrid"),
                 "❌ Unexpected sender: " + from);
 
@@ -222,6 +131,9 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(ctaHref.contains("sendgrid.net") || ctaHref.contains("tilt365"),
                 "❌ CTA link host unexpected: " + ctaHref);
     }
+
+
+
 
 // --- helpers ---
 
