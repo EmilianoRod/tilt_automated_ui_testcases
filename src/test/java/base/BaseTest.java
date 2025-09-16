@@ -9,6 +9,7 @@ import org.openqa.selenium.logging.LogEntry;
 import org.openqa.selenium.logging.LogType;
 import org.testng.ITestResult;
 import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import io.qameta.allure.Attachment;
 import org.apache.logging.log4j.LogManager;
@@ -30,6 +31,18 @@ public class BaseTest {
 
     // Track per-test duration (thread-safe for parallel)
     private static final ThreadLocal<Long> START = new ThreadLocal<>();
+
+
+
+    @BeforeClass
+    public static void forceMailSlurpKeyForCI() {
+        // ⚠️ TEMPORAL para destrabar CI
+        System.setProperty("mailslurp.forceKey", "4d9e6d8a17fefcb0585d2e0780d4ea882702e17fe0d683ac232b4e08a127ddfe");
+        System.setProperty("mailslurp.debug", "true"); // opcional: imprime fingerprint/userId
+    }
+
+
+
 
     @BeforeMethod(alwaysRun = true)
     public void setUp(Method method) {
