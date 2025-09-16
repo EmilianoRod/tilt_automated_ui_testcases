@@ -23,7 +23,7 @@ public class ShopPage extends BasePage {
 
     // Buy Now buttons
     private final By buyNowTrueTilt = By.xpath(
-            "(//button[@class='sc-401b6732-14 dNdyCo'][normalize-space()='BUY NOW'])[1]"
+            "//h3[contains(text(), 'True Tilt Personality Profile™')]/following::button[contains(text(), 'BUY NOW')][1]"
     );
     private final By buyNowAgilityGrowth = By.xpath("//h3[contains(text(), 'Agility Growth Tracker')]/following::button[contains(text(), 'BUY NOW')][1]");
 
