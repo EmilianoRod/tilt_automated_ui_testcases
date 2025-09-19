@@ -43,7 +43,7 @@ public class Phase1SmokeTests extends BaseTest {
         final String SUBJECT_NEEDLE  = "assessment";
 
         // --- FORCE MAILSLURP KEY (TEMP) ---
-        System.setProperty("mailslurp.forceKey", "4d9e6d8a17fefcb0585d2e0780d4ea882702e17fe0d683ac232b4e08a127ddfe");
+        System.setProperty("mailslurp.forceKey", "83ae143e4dd8c4f6981cdfadb63651029eeaca590271a98aae737e5478ccdf90");
         System.setProperty("mailslurp.debug", "true"); // optional
 
         step("Create disposable inbox");
