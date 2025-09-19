@@ -34,12 +34,11 @@ public class BaseTest {
 
 
 
-    @BeforeClass
-    public static void forceMailSlurpKeyForCI() {
-        // ⚠️ TEMPORAL para destrabar CI
-        System.setProperty("mailslurp.forceKey", "4d9e6d8a17fefcb0585d2e0780d4ea882702e17fe0d683ac232b4e08a127ddfe");
-        System.setProperty("mailslurp.debug", "true"); // opcional: imprime fingerprint/userId
-    }
+//    @BeforeClass
+//    public static void forceMailSlurpKeyForCI() {
+//        // ⚠️ TEMPORAL para destrabar CI
+//        System.setProperty("mailslurp.debug", "true"); // opcional: imprime fingerprint/userId
+//    }
 
 
 
