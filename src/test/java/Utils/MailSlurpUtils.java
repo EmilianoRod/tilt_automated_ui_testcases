@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.Formatter;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -30,22 +31,18 @@ import java.util.regex.Pattern;
  *   -Dmailslurp.expectedFingerprint=<first-12-of-SHA256>
  *   -Dmailslurp.basePath=https://api.mailslurp.com (default)
  *   -Dmailslurp.debug=true|false (default true)
+ *   -DMAILSLURP_INBOX_ID=<uuid> (or env var) to reuse a fixed inbox
  */
 public class MailSlurpUtils {
 
     // ========= Configuration resolution =========
 
     private static String resolveApiKey() {
-        // 1) Hard override wins (lets CI force the paid key regardless of env/files)
         String forced = System.getProperty("mailslurp.forceKey");
         if (forced != null && !forced.isBlank()) {
             return verifyFingerprintOrThrow(forced.trim());
         }
-
-        // 2) CI/ENV (preferred under normal circumstances)
         String key = System.getenv("MAILSLURP_API_KEY");
-
-        // 3) System property fallback (local runs)
         if (key == null || key.isBlank()) {
             key = System.getProperty("mailslurp.apiKey");
         }
@@ -89,7 +86,7 @@ public class MailSlurpUtils {
     static {
         apiClient = Configuration.getDefaultApiClient();
         apiClient.setBasePath(basePath());
-        apiClient.setApiKey(resolveApiKey());           // secret string (NOT a UUID)
+        apiClient.setApiKey(resolveApiKey());
         apiClient.setConnectTimeout(30_000);
         apiClient.setReadTimeout(30_000);
         apiClient.setWriteTimeout(30_000);
@@ -97,13 +94,10 @@ public class MailSlurpUtils {
         inboxController = new InboxControllerApi(apiClient);
         waitForController = new WaitForControllerApi(apiClient);
 
-        // One-time identity print to prove which key the Java SDK is using.
         if (isDebug()) {
             try {
                 String fp = safeSha12(resolveApiKey());
                 System.out.println("[MailSlurp][Java SDK] key fingerprint: " + fp);
-
-                // lightweight identity probe: try to fetch 1 inbox (works even if none exist)
                 List<InboxDto> one = inboxController.getInboxes().size(1).execute();
                 if (one != null && !one.isEmpty() && one.get(0) != null) {
                     System.out.println("[MailSlurp][Java SDK] account userId: " + one.get(0).getUserId());
@@ -133,11 +127,46 @@ public class MailSlurpUtils {
         }
     }
 
+    private static String safeMsg(Throwable t) {
+        String m = t.getMessage();
+        return (m == null || m.isBlank()) ? t.getClass().getSimpleName() : m;
+    }
+
     // ========= Inbox management =========
 
     /**
-     * Create a new disposable inbox. If quota/plan errors occur (426/402/429),
-     * or any 4xx we can reasonably bypass, reuse the first existing inbox so CI can proceed.
+     * Preferred: reuse fixed inbox if MAILSLURP_INBOX_ID is present (JVM prop or env).
+     * Otherwise, create a new one. If the fixed ID is invalid/inaccessible, we fall back to create.
+     */
+    public static InboxDto resolveFixedOrCreateInbox() throws ApiException {
+        String fixedIdStr = Optional.ofNullable(System.getProperty("MAILSLURP_INBOX_ID"))
+                .orElse(System.getenv("MAILSLURP_INBOX_ID"));
+
+        if (fixedIdStr != null && !fixedIdStr.isBlank()) {
+            try {
+                UUID fixedId = UUID.fromString(fixedIdStr.trim());
+                InboxDto fixed = inboxController.getInbox(fixedId).execute();
+                if (isDebug()) {
+                    System.out.println("[MailSlurp] Using fixed inbox " + fixed.getId() +
+                            " <" + fixed.getEmailAddress() + ">");
+                }
+                return fixed;
+            } catch (IllegalArgumentException badUuid) {
+                System.err.println("[MailSlurp] MAILSLURP_INBOX_ID is not a valid UUID: " + fixedIdStr +
+                        " — falling back to createInbox().");
+            } catch (ApiException ex) {
+                System.err.println("[MailSlurp] Could not fetch fixed inbox " + fixedIdStr +
+                        " (HTTP " + ex.getCode() + "): " + safeMsg(ex) +
+                        " — falling back to createInbox().");
+            }
+        }
+
+        // Fallback
+        return createInbox();
+    }
+
+    /**
+     * Create a new disposable inbox. If quota/plan/throttle errors occur, try to reuse an existing inbox.
      */
     public static InboxDto createInbox() throws ApiException {
         try {
@@ -147,7 +176,6 @@ public class MailSlurpUtils {
             if (isDebug()) {
                 System.out.println("[MailSlurp] createInbox failed HTTP " + code + ": " + safeMsg(ex));
             }
-            // Quota/plan/transient throttling → attempt reuse
             if (code == 426 || code == 402 || code == 429 || (code >= 400 && code < 500)) {
                 InboxDto reused = getFirstExistingInboxOrNull();
                 if (reused != null) {
@@ -167,27 +195,40 @@ public class MailSlurpUtils {
         try {
             List<InboxDto> all = inboxController.getInboxes().size(1).execute();
             if (all != null && !all.isEmpty()) return all.get(0);
-        } catch (Exception ignored) {
-            // If listing fails, just return null and let caller rethrow original error.
-        }
+        } catch (Exception ignored) {}
         return null;
+    }
+
+    /** Fetch inbox by ID string; throws if invalid or not found. */
+    public static InboxDto getInboxById(String id) throws ApiException {
+        return inboxController.getInbox(UUID.fromString(id)).execute();
+    }
+
+    /** Fetch inbox by ID; throws if not found. */
+    public static InboxDto getInboxById(UUID id) throws ApiException {
+        return inboxController.getInbox(id).execute();
+    }
+
+    /** Clear all emails from inbox (use at start of test/suite for deterministic waits). */
+    public static void clearInboxEmails(UUID inboxId) {
+        Objects.requireNonNull(inboxId, "inboxId must not be null");
+        try {
+            inboxController.deleteAllInboxEmails(inboxId).execute();
+            if (isDebug()) System.out.println("[MailSlurp] Cleared emails for inbox " + inboxId);
+        } catch (ApiException e) {
+            throw new RuntimeException("Failed to clear MailSlurp inbox: " + inboxId + " — " + safeMsg(e), e);
+        }
     }
 
     // ========= Email waiting =========
 
     /**
-     * Wait for latest email in the given inbox.
-     * @param inboxId UUID of the inbox (use inbox.getId())
-     * @param timeoutMillis total time the server can wait (MailSlurp long-poll)
-     * @param unreadOnly consider only unread messages (set false if reusing inboxes in CI)
+     * Wait for latest email in inbox.
+     * If you cleared inbox just before, keep unreadOnly=true.
      */
     public static Email waitForLatestEmail(UUID inboxId, long timeoutMillis, boolean unreadOnly) throws ApiException {
         Objects.requireNonNull(inboxId, "inboxId must not be null");
-        if (timeoutMillis <= 0) {
-            throw new IllegalArgumentException("timeoutMillis must be > 0");
-        }
-
-        // Single call long-polls server side; we keep it simple and let the SDK do the wait.
+        if (timeoutMillis <= 0) throw new IllegalArgumentException("timeoutMillis must be > 0");
         return waitForController
                 .waitForLatestEmail()
                 .inboxId(inboxId)
@@ -198,22 +239,18 @@ public class MailSlurpUtils {
 
     // ========= Parsers =========
 
-    /** Extract first 6-digit OTP from email body. */
     public static String extractOtpCode(Email email) {
         if (email == null || email.getBody() == null) return null;
         Matcher matcher = Pattern.compile("\\b(\\d{6})\\b").matcher(email.getBody());
         return matcher.find() ? matcher.group(1) : null;
-        // If you sometimes get textBody only, consider email.getBody() + email.getTextBody()
     }
 
-    /** Extract first http/https URL from email body. */
     public static String extractFirstLink(Email email) {
         if (email == null || email.getBody() == null) return null;
         Matcher matcher = Pattern.compile("https?://\\S+").matcher(email.getBody());
         return matcher.find() ? matcher.group() : null;
     }
 
-    /** Extract link by visible anchor text from HTML body. */
     public static String extractLinkByAnchorText(Email email, String anchorText) {
         if (email == null || email.getBody() == null || anchorText == null) return null;
         String pattern = "<a[^>]*href=[\"']([^\"']+)[\"'][^>]*>\\s*" + Pattern.quote(anchorText) + "\\s*</a>";
@@ -221,15 +258,7 @@ public class MailSlurpUtils {
         return m.find() ? m.group(1) : null;
     }
 
-    // ========= Small utility =========
-
-    /** Safer message extractor for logging exceptions. */
-    private static String safeMsg(Throwable t) {
-        String m = t.getMessage();
-        return (m == null || m.isBlank()) ? t.getClass().getSimpleName() : m;
-    }
-
-    // ========= Convenience for tests/logs =========
+    // ========= Convenience =========
 
     public static String currentKeyFingerprint() {
         try {
@@ -239,13 +268,11 @@ public class MailSlurpUtils {
         }
     }
 
-    /** For local quick checks. Not used by tests. */
     public static void main(String[] args) throws Exception {
         System.out.println("MailSlurp basePath: " + basePath());
         System.out.println("MailSlurp key FP : " + currentKeyFingerprint());
-
         if (isDebug()) {
-            InboxDto inbox = createInbox();
+            InboxDto inbox = resolveFixedOrCreateInbox();
             System.out.println("Inbox ready: " + inbox.getId() + " <" + inbox.getEmailAddress() + ">");
         }
     }

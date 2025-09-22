@@ -34,7 +34,6 @@ public class Phase1SmokeTests extends BaseTest {
      */
     @Test
     public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException {
-
         // ===== Config / constants =====
         final String ADMIN_USER   = System.getProperty("ADMIN_USER", Config.getAdminEmail());
         final String ADMIN_PASS   = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
@@ -42,15 +41,15 @@ public class Phase1SmokeTests extends BaseTest {
         final String CTA_TEXT        = "Accept Assessment";
         final String SUBJECT_NEEDLE  = "assessment";
 
-        // --- FORCE MAILSLURP KEY (TEMP) ---
-        System.setProperty("mailslurp.forceKey", "83ae143e4dd8c4f6981cdfadb63651029eeaca590271a98aae737e5478ccdf90");
-        System.setProperty("mailslurp.debug", "true"); // optional
+        // --- DO NOT hardcode forceKey; Jenkins supplies it via -Dmailslurp.forceKey or MAILSLURP_API_KEY ---
+        System.setProperty("mailslurp.debug", "true");
 
-        step("Create disposable inbox");
-        InboxDto inbox = MailSlurpUtils.createInbox();
+        step("Resolve fixed inbox if provided, else create one; then clear emails");
+        InboxDto inbox = MailSlurpUtils.resolveFixedOrCreateInbox();
         String tempEmail = inbox.getEmailAddress();
         UUID inboxId     = inbox.getId();
-        System.out.println("📧 Temporary test email: " + tempEmail);
+        MailSlurpUtils.clearInboxEmails(inboxId);
+        System.out.println("📧 Test email (clean): " + tempEmail);
 
         step("Login as admin");
         LoginPage loginPage = new LoginPage(driver);
@@ -95,19 +94,16 @@ public class Phase1SmokeTests extends BaseTest {
         step("Navigate to post-payment confirmation");
         driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
 
-
         step("Individuals page shows the newly invited user");
-        // open() handles navigation (with cache-buster) + waits
         new IndividualsPage(driver)
                 .open(Config.getBaseUrl())
                 .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
         System.out.println("✅ User appears in Individuals: " + tempEmail);
 
-
         step("Wait for email and assert contents");
         System.out.println("[Email] Waiting up to " + EMAIL_TIMEOUT.toSeconds() + "s for message to " + tempEmail + "…");
         com.mailslurp.models.Email email =
-                MailSlurpUtils.waitForLatestEmail(inboxId, EMAIL_TIMEOUT.toMillis(), true);
+                MailSlurpUtils.waitForLatestEmail(inboxId, EMAIL_TIMEOUT.toMillis(), true); // unreadOnly=true after clear
         Assert.assertNotNull(email, "❌ No email received for " + tempEmail + " within " + EMAIL_TIMEOUT);
 
         final String subject = safe(email.getSubject());
@@ -115,19 +111,15 @@ public class Phase1SmokeTests extends BaseTest {
         final String body    = safe(email.getBody());
         System.out.println(String.format("📨 Email — From: %s | Subject: %s", from, subject));
 
-        // Subject must mention "assessment" (case-insensitive)
         Assert.assertTrue(subject.toLowerCase().contains(SUBJECT_NEEDLE),
                 "❌ Subject does not mention " + SUBJECT_NEEDLE + ". Got: " + subject);
 
-        // Sender should be Tilt or SendGrid relay
         Assert.assertTrue(from.toLowerCase().contains("tilt365") || from.toLowerCase().contains("sendgrid"),
                 "❌ Unexpected sender: " + from);
 
-        // Body should include the CTA text
         Assert.assertTrue(body.toLowerCase().contains(CTA_TEXT.toLowerCase()),
                 "❌ Email body missing CTA text '" + CTA_TEXT + "'.");
 
-        // Extract CTA link
         String ctaHref = MailSlurpUtils.extractLinkByAnchorText(email, CTA_TEXT);
         if (ctaHref == null) ctaHref = MailSlurpUtils.extractFirstLink(email);
         Assert.assertNotNull(ctaHref, "❌ Could not find a link in the email.");
@@ -135,7 +127,6 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(ctaHref.contains("sendgrid.net") || ctaHref.contains("tilt365"),
                 "❌ CTA link host unexpected: " + ctaHref);
     }
-
 
 
 
