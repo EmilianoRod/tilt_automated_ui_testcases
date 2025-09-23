@@ -20,7 +20,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * MailSlurp helper with CI-safe key resolution and fingerprint guard.
+ * MailSlurp helper — CI-safe key resolution, fixed-inbox reuse, and 426 guard.
  *
  * Priority for API key:
  *   1) -Dmailslurp.forceKey
@@ -98,12 +98,13 @@ public class MailSlurpUtils {
             try {
                 String fp = safeSha12(resolveApiKey());
                 System.out.println("[MailSlurp][Java SDK] key fingerprint: " + fp);
-                List<InboxDto> one = inboxController.getInboxes().size(1).execute();
-                if (one != null && !one.isEmpty() && one.get(0) != null) {
-                    System.out.println("[MailSlurp][Java SDK] account userId: " + one.get(0).getUserId());
-                } else {
-                    System.out.println("[MailSlurp][Java SDK] getInboxes() returned empty list (no inboxes yet).");
-                }
+                // quick auth probe
+                try {
+                    apiClient.setConnectTimeout(10_000);
+                    apiClient.setReadTimeout(10_000);
+                    inboxController.getInboxes().size(1).execute();
+                    System.out.println("[MailSlurp][Java SDK] auth OK.");
+                } catch (Exception ignore) {}
             } catch (Exception e) {
                 System.out.println("[MailSlurp][Java SDK] identity probe failed: " + e.getMessage());
             }
@@ -161,7 +162,7 @@ public class MailSlurpUtils {
             }
         }
 
-        // Fallback
+        // Fallback (may consume CreateInbox allowance)
         return createInbox();
     }
 
@@ -209,7 +210,7 @@ public class MailSlurpUtils {
         return inboxController.getInbox(id).execute();
     }
 
-    /** Clear all emails from inbox (use at start of test/suite for deterministic waits). */
+    /** Clear all emails from inbox (use at start of suite or test for deterministic waits). */
     public static void clearInboxEmails(UUID inboxId) {
         Objects.requireNonNull(inboxId, "inboxId must not be null");
         try {

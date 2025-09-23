@@ -2,12 +2,14 @@ package tests;
 import Utils.*;
 import base.BaseTest;
 import com.mailslurp.clients.ApiException;
+import com.mailslurp.models.Email;
 import com.mailslurp.models.InboxDto;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
+import org.testng.SkipException;
 import org.testng.annotations.Test;
 import pages.Shop.AssessmentEntryPage;
 import pages.Shop.PurchaseRecipientSelectionPage;
@@ -29,11 +31,13 @@ public class Phase1SmokeTests extends BaseTest {
 
 
 
+
     /**
      * TC-1: Verify that newly added users receive an email notification with login instructions
      */
     @Test
     public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException {
+
         // ===== Config / constants =====
         final String ADMIN_USER   = System.getProperty("ADMIN_USER", Config.getAdminEmail());
         final String ADMIN_PASS   = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
@@ -41,16 +45,34 @@ public class Phase1SmokeTests extends BaseTest {
         final String CTA_TEXT        = "Accept Assessment";
         final String SUBJECT_NEEDLE  = "assessment";
 
-        // --- DO NOT hardcode forceKey; Jenkins supplies it via -Dmailslurp.forceKey or MAILSLURP_API_KEY ---
+        // Jenkins supplies the paid key; we keep logs verbose for diagnosis
         System.setProperty("mailslurp.debug", "true");
 
-        step("Resolve fixed inbox if provided, else create one; then clear emails");
-        InboxDto inbox = MailSlurpUtils.resolveFixedOrCreateInbox();
-        String tempEmail = inbox.getEmailAddress();
-        UUID inboxId     = inbox.getId();
+        // ===== Resolve inbox once (suite preferred), or create (guarded) =====
+        step("Resolve fixed inbox (preferred) or fallback");
+        InboxDto inbox;
+        try {
+            if (BaseTest.fixedInbox != null) {
+                inbox = BaseTest.fixedInbox;
+            } else {
+                // Fallback consumes CreateInbox allowance — guard with Skip on 426
+                inbox = MailSlurpUtils.resolveFixedOrCreateInbox();
+            }
+        } catch (ApiException ex) {
+            if (ex.getCode() == 426) {
+                throw new SkipException("MailSlurp CreateInbox limit exceeded (426). Configure MAILSLURP_INBOX_ID to avoid spending allowance.");
+            }
+            throw ex;
+        }
+
+        final String tempEmail = inbox.getEmailAddress();
+        final UUID inboxId     = inbox.getId();
+
+        // Start with a clean mailbox so unreadOnly=true is deterministic
         MailSlurpUtils.clearInboxEmails(inboxId);
         System.out.println("📧 Test email (clean): " + tempEmail);
 
+        // ===== App flow =====
         step("Login as admin");
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
@@ -100,10 +122,10 @@ public class Phase1SmokeTests extends BaseTest {
                 .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
         System.out.println("✅ User appears in Individuals: " + tempEmail);
 
+        // ===== MailSlurp assertion =====
         step("Wait for email and assert contents");
         System.out.println("[Email] Waiting up to " + EMAIL_TIMEOUT.toSeconds() + "s for message to " + tempEmail + "…");
-        com.mailslurp.models.Email email =
-                MailSlurpUtils.waitForLatestEmail(inboxId, EMAIL_TIMEOUT.toMillis(), true); // unreadOnly=true after clear
+        Email email = MailSlurpUtils.waitForLatestEmail(inboxId, EMAIL_TIMEOUT.toMillis(), true);
         Assert.assertNotNull(email, "❌ No email received for " + tempEmail + " within " + EMAIL_TIMEOUT);
 
         final String subject = safe(email.getSubject());
@@ -130,7 +152,11 @@ public class Phase1SmokeTests extends BaseTest {
 
 
 
+
+
 // --- helpers ---
+
+
 
     /** Parse cs_test_... from the Stripe Checkout URL (for diagnostics). */
     private static String extractSessionIdFromUrl(String stripeUrl) {
@@ -227,7 +253,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertEquals(userJson.optString("role"),  USER_ROLE,  "Persisted user role mismatch");
         Assert.assertEquals(userJson.optInt("id"),       USER_ID,    "Persisted user id mismatch");
     }
-    
+
 
     /**
      * TC-3: Redirect unauthorized users to login page
@@ -306,7 +332,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertNotNull(jwt, "Access token (jwt) was not generated after login");
         Assert.assertTrue(jwt.split("\\.").length == 3, "JWT format is invalid (should be header.payload.signature)");
     }
-    
+
 
     /**
      * TC-5: Access-token is not generated on failed login
@@ -333,7 +359,7 @@ public class Phase1SmokeTests extends BaseTest {
 
         Thread.sleep(5000); // Wait for any potential UI updates
     }
-    
+
 
     /**
      * TC-6: Login success redirects user
@@ -366,7 +392,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(dashboardPage.isUserNameDisplayed(), "User name is not displayed on the dashboard");
         Assert.assertTrue(dashboardPage.isNewAssessmentButtonVisible(), "New Assessment button is not visible on the dashboard");
     }
-    
+
 
     /**
      * TC-7: Redirect user appropriately post-login
@@ -395,7 +421,7 @@ public class Phase1SmokeTests extends BaseTest {
         String userName = dashboardPage.getUserName();
         Assert.assertTrue(userName.contains("Emiliano"), "User name not displayed correctly on dashboard.");
     }
-    
+
 
     /**
      * TC-9: Show email input field on login screen
@@ -412,7 +438,7 @@ public class Phase1SmokeTests extends BaseTest {
         boolean isEmailVisible = loginPage.isEmailFieldVisible();
         Assert.assertTrue(isEmailVisible, "Email input field is not visible on the login screen.");
     }
-    
+
 
     /**
      * TC-10: Redirect to dashboard on successful login
@@ -433,5 +459,5 @@ public class Phase1SmokeTests extends BaseTest {
         String currentUrl = driver.getCurrentUrl();
         Assert.assertTrue(currentUrl.contains("/dashboard"), "User was not redirected to the dashboard.");
     }
-    
+
 }
