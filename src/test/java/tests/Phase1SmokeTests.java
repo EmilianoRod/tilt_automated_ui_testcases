@@ -31,7 +31,6 @@ public class Phase1SmokeTests extends BaseTest {
 
 
 
-
     /**
      * TC-1: Verify that newly added users receive an email notification with login instructions
      */
@@ -39,28 +38,34 @@ public class Phase1SmokeTests extends BaseTest {
     public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException {
 
         // ===== Config / constants =====
-        final String ADMIN_USER   = System.getProperty("ADMIN_USER", Config.getAdminEmail());
-        final String ADMIN_PASS   = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
+        final String ADMIN_USER     = System.getProperty("ADMIN_USER", Config.getAdminEmail());
+        final String ADMIN_PASS     = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
         final Duration EMAIL_TIMEOUT = Duration.ofSeconds(120);
         final String CTA_TEXT        = "Accept Assessment";
         final String SUBJECT_NEEDLE  = "assessment";
 
-        // Jenkins supplies the paid key; we keep logs verbose for diagnosis
+        // Keep logs verbose for diagnosis in CI
         System.setProperty("mailslurp.debug", "true");
 
-        // ===== Resolve inbox once (suite preferred), or create (guarded) =====
+        // ===== Resolve inbox once (suite preferred), or guarded fallback =====
         step("Resolve fixed inbox (preferred) or fallback");
-        InboxDto inbox;
+        final InboxDto inbox;
         try {
             if (BaseTest.fixedInbox != null) {
                 inbox = BaseTest.fixedInbox;
             } else {
-                // Fallback consumes CreateInbox allowance — guard with Skip on 426
+                // This will SKIP if fixed inbox missing and creation is disallowed (or limited)
                 inbox = MailSlurpUtils.resolveFixedOrCreateInbox();
             }
+        } catch (SkipException se) {
+            // Honor guard semantics (don’t burn CreateInbox allowance in CI)
+            throw se;
         } catch (ApiException ex) {
+            // Safety: if MailSlurp plan limit (426) bubbles up as ApiException, skip the test
             if (ex.getCode() == 426) {
-                throw new SkipException("MailSlurp CreateInbox limit exceeded (426). Configure MAILSLURP_INBOX_ID to avoid spending allowance.");
+                throw new SkipException(
+                        "MailSlurp CreateInbox limit exceeded (426). " +
+                                "Set MAILSLURP_INBOX_ID to reuse a fixed inbox or allow creation explicitly.");
             }
             throw ex;
         }
@@ -149,7 +154,6 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(ctaHref.contains("sendgrid.net") || ctaHref.contains("tilt365"),
                 "❌ CTA link host unexpected: " + ctaHref);
     }
-
 
 
 
