@@ -30,7 +30,6 @@ public class Phase1SmokeTests extends BaseTest {
 
 
 
-
     /**
      * TC-1: Verify that newly added users receive an email notification with login instructions
      */
@@ -38,8 +37,8 @@ public class Phase1SmokeTests extends BaseTest {
     public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException {
 
         // ===== Config / constants =====
-        final String ADMIN_USER     = System.getProperty("ADMIN_USER", Config.getAdminEmail());
-        final String ADMIN_PASS     = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
+        final String ADMIN_USER      = System.getProperty("ADMIN_USER", Config.getAdminEmail());
+        final String ADMIN_PASS      = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
         final Duration EMAIL_TIMEOUT = Duration.ofSeconds(120);
         final String CTA_TEXT        = "Accept Assessment";
         final String SUBJECT_NEEDLE  = "assessment";
@@ -54,7 +53,7 @@ public class Phase1SmokeTests extends BaseTest {
             if (BaseTest.fixedInbox != null) {
                 inbox = BaseTest.fixedInbox;
             } else {
-                // This will SKIP if fixed inbox missing and creation is disallowed (or limited)
+                // Uses fixed inbox when provided; only creates if ALLOW_CREATE_INBOX_FALLBACK=true
                 inbox = MailSlurpUtils.resolveFixedOrCreateInbox();
             }
         } catch (SkipException se) {
@@ -65,7 +64,8 @@ public class Phase1SmokeTests extends BaseTest {
             if (ex.getCode() == 426) {
                 throw new SkipException(
                         "MailSlurp CreateInbox limit exceeded (426). " +
-                                "Set MAILSLURP_INBOX_ID to reuse a fixed inbox or allow creation explicitly.");
+                                "Set MAILSLURP_INBOX_ID to reuse a fixed inbox or allow creation explicitly."
+                );
             }
             throw ex;
         }
@@ -154,6 +154,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(ctaHref.contains("sendgrid.net") || ctaHref.contains("tilt365"),
                 "❌ CTA link host unexpected: " + ctaHref);
     }
+
 
 
 
