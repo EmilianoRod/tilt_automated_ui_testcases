@@ -51,7 +51,7 @@ public class BaseTest {
                 MailSlurpUtils.clearInboxEmails(fixedInbox.getId());
             } else {
                 // Only if you allow fallback: this will consume CreateInbox allowance
-                logger.warn("[MailSlurp][Suite] MAILSLURP_INBOX_ID not set. Tests may fall back to createInbox().");
+                logger.warn("[MailSlurp][Suite] MAILSLURP_INBOX_ID not set. Tests may fall back to inbox creation (when explicitly allowed).");
             }
         } catch (IllegalArgumentException e) {
             throw new SkipException("[MailSlurp][Suite] MAILSLURP_INBOX_ID is not a valid UUID: " + fixedId);
