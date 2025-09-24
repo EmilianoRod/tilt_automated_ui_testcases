@@ -20,6 +20,7 @@ import org.json.JSONObject;
 import pages.menuPages.IndividualsPage;
 import pages.menuPages.ShopPage;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.UUID;
 import static Utils.Config.joinUrl;
 
@@ -105,7 +106,7 @@ public class Phase1SmokeTests extends BaseTest {
 
         step("Stripe: fetch session + metadata.body");
         String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
-        String sessionId = extractSessionIdFromUrl(stripeUrl); // cs_test_...
+        String sessionId = extractSessionIdFromUrl(stripeUrl); // cs_test_... or from query param
         Assert.assertNotNull(sessionId, "❌ Could not parse Stripe session id from URL");
         System.out.println("[Stripe] checkoutUrl=" + stripeUrl + " | sessionId=" + sessionId);
 
@@ -130,12 +131,21 @@ public class Phase1SmokeTests extends BaseTest {
         // ===== MailSlurp assertion =====
         step("Wait for email and assert contents");
         System.out.println("[Email] Waiting up to " + EMAIL_TIMEOUT.toSeconds() + "s for message to " + tempEmail + "…");
-        Email email = MailSlurpUtils.waitForLatestEmail(inboxId, EMAIL_TIMEOUT.toMillis(), true);
-        Assert.assertNotNull(email, "❌ No email received for " + tempEmail + " within " + EMAIL_TIMEOUT);
 
-        final String subject = safe(email.getSubject());
-        final String from    = safe(email.getFrom());
-        final String body    = safe(email.getBody());
+        final Email email;
+        try {
+            email = MailSlurpUtils.waitForLatestEmail(inboxId, EMAIL_TIMEOUT.toMillis(), true);
+        } catch (ApiException e) {
+            // MailSlurp returns 404/408-ish on timeout; surface a clean assertion
+            if (e.getCode() == 404 || e.getCode() == 408) {
+                Assert.fail("❌ No email received for " + tempEmail + " within " + EMAIL_TIMEOUT);
+            }
+            throw e;
+        }
+
+        final String subject = Objects.toString(email.getSubject(), "");
+        final String from    = Objects.toString(email.getFrom(), "");
+        final String body    = Objects.toString(email.getBody(), "");
         System.out.println(String.format("📨 Email — From: %s | Subject: %s", from, subject));
 
         Assert.assertTrue(subject.toLowerCase().contains(SUBJECT_NEEDLE),
@@ -154,9 +164,6 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(ctaHref.contains("sendgrid.net") || ctaHref.contains("tilt365"),
                 "❌ CTA link host unexpected: " + ctaHref);
     }
-
-
-
 
 
 // --- helpers ---
