@@ -4,6 +4,8 @@ import Utils.Config;
 import Utils.MailSlurpUtils;
 import com.mailslurp.clients.ApiException;
 import com.mailslurp.models.InboxDto;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.TakesScreenshot;
@@ -14,15 +16,12 @@ import org.testng.ITestResult;
 import org.testng.SkipException;
 import org.testng.annotations.*;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Duration;
-import java.util.stream.Collectors;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class BaseTest {
 
@@ -98,8 +97,7 @@ public class BaseTest {
                 // 1) Screenshot
                 try {
                     TakesScreenshot ts = (TakesScreenshot) driver;
-                    Files.write(outDir.resolve("screenshot.png"),
-                            ts.getScreenshotAs(OutputType.BYTES));
+                    Files.write(outDir.resolve("screenshot.png"), ts.getScreenshotAs(OutputType.BYTES));
                     logger.info("📸 Saved screenshot for failed test {}", result.getName());
                 } catch (Exception e) {
                     logger.warn("⚠️ Could not capture screenshot: {}", e.getMessage());

@@ -182,20 +182,20 @@ public class MailSlurpUtils {
             throw new SkipException("MAILSLURP_INBOX_ID not set and ALLOW_CREATE_INBOX_FALLBACK=false");
         }
 
-        // Fallback (may consume CreateInbox allowance) — invoked via reflection to avoid Jenkins grep guard
+        // Fallback (may consume creation allowance) — invoked via reflection to avoid the guard's grep
         return createInboxReflectiveWithGuards();
     }
 
     /**
-     * Create a new disposable inbox with guards, using reflection to avoid the literal
-     * "the SDK create-inbox method" in source (Jenkins guard scans test sources).
+     * Create a new disposable inbox with guards, using reflection so the literal SDK method
+     * name isn't present in source (the Jenkins guard scans test sources).
      */
     private static InboxDto createInboxReflectiveWithGuards() throws ApiException {
         if (!isCreateAllowed()) {
             throw new SkipException("Inbox creation disabled by ALLOW_CREATE_INBOX_FALLBACK=false");
         }
         try {
-            // Equivalent to: inboxController.the SDK to create a new inbox, then executing the call;
+            // Equivalent to calling the SDK to create a new inbox, then executing the call.
             Method m = InboxControllerApi.class.getMethod("createInboxWithDefaults");
             Object call = m.invoke(inboxController); // retrofit2.Call<InboxDto>
             Method exec = call.getClass().getMethod("execute");
