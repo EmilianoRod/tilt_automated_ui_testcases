@@ -39,18 +39,52 @@ public class BaseTest {
         // Ensure debug logs for quick fingerprint/userId (safe)
         System.setProperty("mailslurp.debug", System.getProperty("mailslurp.debug", "true"));
 
-        final String fixedId = System.getProperty("MAILSLURP_INBOX_ID", System.getenv("MAILSLURP_INBOX_ID"));
+        // Read values via Config with aliases (covers -D, env, .properties, .env)
+        final String fixedIdRaw = Config.getAny("mailslurp.inboxId", "MAILSLURP_INBOX_ID");
+        final String fixedId = fixedIdRaw == null ? null : fixedIdRaw.trim();
+        final boolean allowCreate = Config.getMailSlurpAllowCreate();
+
+        logger.info("[MailSlurp][Suite] allowCreate={} | fixedIdPresent={}{}",
+                allowCreate,
+                (fixedId != null && !fixedId.isBlank()),
+                (fixedId != null ? " | idPrefix=" + fixedId.substring(0, Math.min(8, fixedId.length())) : "")
+        );
+
         try {
             if (fixedId != null && !fixedId.isBlank()) {
-                // Fetch fixed inbox once (preferred, zero quota usage)
-                fixedInbox = MailSlurpUtils.getInboxById(UUID.fromString(fixedId.trim()));
+                // Preferred: reuse existing fixed inbox (no quota usage)
+                fixedInbox = MailSlurpUtils.getInboxById(UUID.fromString(fixedId));
+                if (fixedInbox == null) {
+                    throw new SkipException("[MailSlurp][Suite] getInboxById returned null for id: " + fixedId);
+                }
                 logger.info("[MailSlurp][Suite] Using fixed inbox {} <{}>",
                         fixedInbox.getId(), fixedInbox.getEmailAddress());
+
+                // Propagate ID in both styles so tests/utilities can read either
+                System.setProperty("mailslurp.inboxId", fixedInbox.getId().toString());
+                System.setProperty("MAILSLURP_INBOX_ID", fixedInbox.getId().toString());
+
                 // Best-effort clear mailbox to make unreadOnly waits deterministic
-                MailSlurpUtils.clearInboxEmails(fixedInbox.getId());
+                try {
+                    MailSlurpUtils.clearInboxEmails(fixedInbox.getId());
+                } catch (Exception e) {
+                    logger.warn("[MailSlurp][Suite] Could not clear inbox emails: {}", e.getMessage());
+                }
+            } else if (allowCreate) {
+                // Fallback only if explicitly allowed (may spend CreateInbox quota)
+                fixedInbox = MailSlurpUtils.resolveFixedOrCreateInbox();
+                if (fixedInbox == null) {
+                    throw new SkipException("[MailSlurp][Suite] resolveFixedOrCreateInbox returned null (creation blocked/quota?)");
+                }
+                logger.info("[MailSlurp][Suite] Resolved/created inbox {} <{}>",
+                        fixedInbox.getId(), fixedInbox.getEmailAddress());
+
+                // Propagate
+                System.setProperty("mailslurp.inboxId", fixedInbox.getId().toString());
+                System.setProperty("MAILSLURP_INBOX_ID", fixedInbox.getId().toString());
             } else {
-                // Only if you allow fallback: this will consume CreateInbox allowance
-                logger.warn("[MailSlurp][Suite] MAILSLURP_INBOX_ID not set. Tests may fall back to inbox creation (when explicitly allowed).");
+                // Hard stop to avoid burning quota or running flaky tests
+                throw new SkipException("[MailSlurp][Suite] No fixed inbox configured and inbox creation is disabled (mailslurp.allowCreate=false).");
             }
         } catch (IllegalArgumentException e) {
             throw new SkipException("[MailSlurp][Suite] MAILSLURP_INBOX_ID is not a valid UUID: " + fixedId);
@@ -58,14 +92,25 @@ public class BaseTest {
             if (e.getCode() == 404) {
                 throw new SkipException("[MailSlurp][Suite] Fixed inbox not found: " + fixedId);
             }
-            throw new SkipException("[MailSlurp][Suite] Could not resolve fixed inbox (" + e.getCode() + "): " + e.getMessage());
+            if (e.getCode() == 426) {
+                throw new SkipException("[MailSlurp][Suite] CreateInbox quota exhausted (426). Provide MAILSLURP_INBOX_ID or upgrade quota.");
+            }
+            throw new SkipException("[MailSlurp][Suite] MailSlurp API error (" + e.getCode() + "): " + e.getMessage());
+        } catch (SkipException se) {
+            throw se; // bubble exact reason
         } catch (Exception e) {
-            throw new SkipException("[MailSlurp][Suite] Unexpected error resolving inbox: " + e.getMessage());
+            throw new SkipException("[MailSlurp][Suite] Unexpected error resolving inbox: " + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
     @BeforeMethod(alwaysRun = true)
     public void setUp(Method method) {
+        // If some test throws a custom guard, show the exact reason in logs
+        if (fixedInbox == null) {
+            throw new SkipException("[BaseTest][Guard] fixedInbox is null before test " + method.getName()
+                    + " (check mailslurp.inboxId/MAILSLURP_INBOX_ID or allowCreate)");
+        }
+
         // 1) Thread-safe driver (parallel-ready)
         DriverManager.init();
         driver = DriverManager.get();
@@ -81,6 +126,7 @@ public class BaseTest {
 
         START.set(System.currentTimeMillis());
         logger.info("========== STARTING TEST: {} ==========", method.getName());
+        logger.info("[MailSlurp][TestCtx] Inbox {} <{}>", fixedInbox.getId(), fixedInbox.getEmailAddress());
     }
 
     @AfterMethod(alwaysRun = true)
@@ -90,6 +136,11 @@ public class BaseTest {
         if (s != null) elapsed = System.currentTimeMillis() - s;
 
         try {
+            // If the test was skipped, log the reason explicitly
+            if (result.getStatus() == ITestResult.SKIP && result.getThrowable() != null) {
+                logger.warn("⤴️  SKIP REASON: {}", result.getThrowable().getMessage());
+            }
+
             if (!result.isSuccess() && driver != null) {
                 Path outDir = Paths.get("target", "artifacts", result.getName());
                 Files.createDirectories(outDir);
@@ -98,7 +149,7 @@ public class BaseTest {
                 try {
                     TakesScreenshot ts = (TakesScreenshot) driver;
                     Files.write(outDir.resolve("screenshot.png"), ts.getScreenshotAs(OutputType.BYTES));
-                    logger.info("📸 Saved screenshot for failed test {}", result.getName());
+                    logger.info("📸 Saved screenshot for {}", result.getName());
                 } catch (Exception e) {
                     logger.warn("⚠️ Could not capture screenshot: {}", e.getMessage());
                 }
@@ -143,3 +194,4 @@ public class BaseTest {
         }
     }
 }
+
