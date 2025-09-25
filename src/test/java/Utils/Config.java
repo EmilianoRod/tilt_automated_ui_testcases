@@ -15,8 +15,8 @@ import java.util.*;
  *
  * Also:
  *   - Supports alias keys for the same setting.
- *   - After loading, propagates MailSlurp values into system properties:
- *       mailslurp.apiKey, mailslurp.forceKey, mailslurp.inboxId
+ *   - After loading, propagates critical values into system properties in BOTH styles:
+ *       dotted (e.g., mailslurp.inboxId) AND UPPER_SNAKE (e.g., MAILSLURP_INBOX_ID)
  */
 public class Config {
 
@@ -83,13 +83,11 @@ public class Config {
         }
 
         // 2) Environment variables (both raw and dotted→ENV)
-        // primary
         v = System.getenv(primary);
         if (v != null && !v.isBlank()) return v;
         v = System.getenv(toEnv(primary));
         if (v != null && !v.isBlank()) return v;
 
-        // aliases
         for (String a : aliases) {
             v = System.getenv(a);
             if (v != null && !v.isBlank()) return v;
@@ -121,6 +119,13 @@ public class Config {
         }
     }
 
+    /** Set -D for both dotted and UPPER_SNAKE variants. */
+    private static void setBothStylesIfAbsent(String dottedKey, String value) {
+        if (dottedKey == null) return;
+        setSysIfAbsent(dottedKey, value);
+        setSysIfAbsent(toEnv(dottedKey), value);
+    }
+
     static {
         // ---- 1) Classpath properties (base then local overrides) ----
         loadFromClasspath(props, "config.properties");
@@ -131,42 +136,52 @@ public class Config {
             loadFromFilesystem(props, f);
         }
 
-        // ---- 3) After everything is loaded, propagate critical aliases to -D ----
-        // MailSlurp API key sources
+        // ---- 3) Resolve critical values then propagate to -D in BOTH styles ----
+
+        // MailSlurp API key
         String mailSlurpKey = resolve(
                 "mailslurp.apiKey",
                 "mailslurp.forceKey",
                 "MAILSLURP_API_KEY"
         );
-        // MailSlurp inbox id sources
+        // MailSlurp inbox id
         String mailSlurpInbox = resolve(
                 "mailslurp.inboxId",
                 "MAILSLURP_INBOX_ID"
         );
+        // MailSlurp allowCreate (boolean-ish)
+        String mailSlurpAllowCreate = resolve(
+                "mailslurp.allowCreate",
+                "MAILSLURP_ALLOW_CREATE"
+        );
 
-        // Propagate to system properties so any static initializers (e.g., MailSlurpUtils) will find them
-        setSysIfAbsent("mailslurp.apiKey", mailSlurpKey);
-        setSysIfAbsent("mailslurp.forceKey", mailSlurpKey);
-        setSysIfAbsent("mailslurp.inboxId", mailSlurpInbox);
+        // Propagate: prefer setting BOTH dotted and UPPERCASE so any code path can read them
+        setBothStylesIfAbsent("mailslurp.apiKey", mailSlurpKey);
+        setBothStylesIfAbsent("mailslurp.forceKey", mailSlurpKey);
+        setBothStylesIfAbsent("mailslurp.inboxId", mailSlurpInbox);
+        setBothStylesIfAbsent("mailslurp.allowCreate", mailSlurpAllowCreate);
 
-        // Optional: Stripe common aliases to -D if you want JVM-wide access
+        // Optional: Stripe common aliases to -D (dotted form; most of our code reads dotted)
         String stripeTestSecret = resolve("stripe.test.secret.key",
                 "STRIPE_TEST_SECRET_KEY", "STRIPE_SECRET_KEY", "stripe.secret.key");
-        setSysIfAbsent("stripe.test.secret.key", stripeTestSecret);
+        setBothStylesIfAbsent("stripe.test.secret.key", stripeTestSecret);
 
         String stripeWebhookSecret = resolve("stripe.webhook.secret", "STRIPE_WEBHOOK_SECRET");
-        setSysIfAbsent("stripe.webhook.secret", stripeWebhookSecret);
+        setBothStylesIfAbsent("stripe.webhook.secret", stripeWebhookSecret);
 
         String stripePublishable = resolve("stripe.publishable.key", "STRIPE_PUBLISHABLE_KEY");
-        setSysIfAbsent("stripe.publishable.key", stripePublishable);
+        setBothStylesIfAbsent("stripe.publishable.key", stripePublishable);
 
         String baseUrl = resolve("baseUrl", "base.url", "BASE_URL");
-        setSysIfAbsent("baseUrl", baseUrl);
+        setBothStylesIfAbsent("baseUrl", baseUrl);
 
         // Friendly logging for troubleshooting (single line)
         System.out.println("[Config] Effective sources prepared. "
                 + "mailslurp.apiKey? " + (System.getProperty("mailslurp.apiKey") != null)
-                + " | inboxId? " + (System.getProperty("mailslurp.inboxId") != null)
+                + " | MAILSLURP_API_KEY? " + (System.getProperty("MAILSLURP_API_KEY") != null)
+                + " | inboxId(dotted)? " + (System.getProperty("mailslurp.inboxId") != null)
+                + " | MAILSLURP_INBOX_ID? " + (System.getProperty("MAILSLURP_INBOX_ID") != null)
+                + " | allowCreate=" + String.valueOf(getMailSlurpAllowCreate())
                 + " | baseUrl=" + (baseUrl != null ? baseUrl : "(null)"));
     }
 
@@ -179,8 +194,7 @@ public class Config {
 
     /** Generic get with aliases (same precedence) */
     public static String getAny(String primary, String... aliases) {
-        String v = resolve(primary, aliases);
-        return v;
+        return resolve(primary, aliases);
     }
 
     public static String get(String key, String def) {
@@ -193,15 +207,19 @@ public class Config {
     }
 
     public static boolean getBoolean(String key) {
-        return Boolean.parseBoolean(get(key));
+        String v = get(key);
+        return v != null && (v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes"));
     }
 
-    // ---------- Convenience getters (with aliases) ----------
+    // ---------- Convenience getters ----------
 
     public static String getBaseUrl() {
-        return get("baseUrl",        // dotted
-                get("base.url",   // dotted variant
-                        get("BASE_URL", "https://tilt-dashboard-dev.tilt365.com/")));
+        return firstNonBlank(
+                get("baseUrl"),
+                get("base.url"),
+                get("BASE_URL"),
+                "https://tilt-dashboard-dev.tilt365.com/"
+        );
     }
 
     public static int getTimeout() {
@@ -211,7 +229,7 @@ public class Config {
 
     public static boolean isHeadless() {
         String v = getAny("headless", "HEADLESS");
-        return Boolean.parseBoolean(v != null ? v : "true");
+        return v == null ? true : getBoolean(v) || v.equals("true");
     }
 
     public static String getBrowser() {
@@ -261,6 +279,22 @@ public class Config {
         return getAny("stripe.success.url", "STRIPE_SUCCESS_URL");
     }
 
+    // ---------- MailSlurp helpers ----------
+
+    public static String getMailSlurpApiKey() {
+        return getAny("mailslurp.apiKey", "MAILSLURP_API_KEY", "mailslurp.forceKey");
+    }
+
+    public static String getMailSlurpInboxId() {
+        return getAny("mailslurp.inboxId", "MAILSLURP_INBOX_ID");
+    }
+
+    public static boolean getMailSlurpAllowCreate() {
+        String v = getAny("mailslurp.allowCreate", "MAILSLURP_ALLOW_CREATE");
+        if (v == null) return false; // default: fixed inbox mode
+        return v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes");
+    }
+
     // ---------- Misc ----------
 
     public static int getDefaultTimeout() {
@@ -280,7 +314,10 @@ public class Config {
                         + " | headless=" + isHeadless()
                         + " | browser=" + getBrowser()
                         + " | mailslurp.apiKey? " + (System.getProperty("mailslurp.apiKey") != null)
+                        + " | MAILSLURP_API_KEY? " + (System.getProperty("MAILSLURP_API_KEY") != null)
                         + " | mailslurp.inboxId=" + System.getProperty("mailslurp.inboxId")
+                        + " | MAILSLURP_INBOX_ID=" + System.getProperty("MAILSLURP_INBOX_ID")
+                        + " | allowCreate=" + getMailSlurpAllowCreate()
         );
     }
 }
