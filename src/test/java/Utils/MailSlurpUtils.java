@@ -80,11 +80,19 @@ public class MailSlurpUtils {
         return System.getProperty("mailslurp.basePath", "https://api.mailslurp.com").trim();
     }
 
+    private static String firstNonBlank(String... vals) {
+        for (String s : vals) if (s != null && !s.isBlank()) return s;
+        return null;
+    }
+
     private static boolean isCreateAllowed() {
-        // env or -D; default false in CI to avoid quota burn
-        String env = System.getenv("ALLOW_CREATE_INBOX_FALLBACK");
-        String prop = System.getProperty("ALLOW_CREATE_INBOX_FALLBACK");
-        String v = isNonBlank(env) ? env : prop;
+        // Accept both env and -D, snake_case or dotted:
+        String v = firstNonBlank(
+                System.getProperty("ALLOW_CREATE_INBOX_FALLBACK"),
+                System.getenv("ALLOW_CREATE_INBOX_FALLBACK"),
+                System.getProperty("mailslurp.allowCreate"),
+                System.getenv("MAILSLURP_ALLOW_CREATE")
+        );
         return Boolean.parseBoolean(v != null ? v : "false");
     }
 
@@ -146,6 +154,41 @@ public class MailSlurpUtils {
     }
 
     // ========= Inbox management =========
+
+
+
+
+    /**
+     * Public helper: create a brand-new MailSlurp inbox using the same guarded,
+     * reflective path we already use internally.
+     *
+     * Behavior:
+     *  - If ALLOW_CREATE_INBOX_FALLBACK=false → throws SkipException (no quota burn).
+     *  - On MailSlurp plan limits (426/402/429) the reflective helper already
+     *    tries to reuse the first existing inbox; if none, it Skip/throws accordingly.
+     */
+    public static InboxDto createNewInbox() throws ApiException {
+        return createInboxReflectiveWithGuards(); // respects ALLOW_CREATE_INBOX_FALLBACK
+    }
+
+    /**
+     * Convenience: force a fresh inbox even if a fixed ID is set via env by
+     * temporarily blanking the JVM property MAILSLURP_INBOX_ID. Still respects
+     * ALLOW_CREATE_INBOX_FALLBACK (will Skip when disabled).
+     */
+    public static InboxDto forceCreateNewInboxIgnoringFixedId() throws ApiException {
+        String prev = System.getProperty("MAILSLURP_INBOX_ID");
+        try {
+            System.setProperty("MAILSLURP_INBOX_ID", ""); // make resolver skip fixed-id path
+            return createInboxReflectiveWithGuards();
+        } finally {
+            if (prev == null) System.clearProperty("MAILSLURP_INBOX_ID");
+            else System.setProperty("MAILSLURP_INBOX_ID", prev);
+        }
+    }
+
+
+
 
     /**
      * Preferred: reuse fixed inbox if MAILSLURP_INBOX_ID is present (JVM prop or env).

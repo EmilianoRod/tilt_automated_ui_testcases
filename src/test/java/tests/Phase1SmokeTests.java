@@ -7,6 +7,7 @@ import com.mailslurp.models.InboxDto;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.SkipException;
@@ -19,9 +20,14 @@ import pages.LoginPage;
 import org.json.JSONObject;
 import pages.menuPages.IndividualsPage;
 import pages.menuPages.ShopPage;
+
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
 import static Utils.Config.joinUrl;
 
 
@@ -31,60 +37,177 @@ public class Phase1SmokeTests extends BaseTest {
 
 
 
+
+
+
+
+    // ==================== recipient provisioning ====================
+
+    /** Holder for the email we type in the UI and the inbox we wait on. */
+    private static class Recipient {
+        final UUID inboxId;
+        final String emailAddress;
+        Recipient(UUID id, String email) { this.inboxId = id; this.emailAddress = email; }
+    }
+
+    /**
+     * Use a unique email for each run.
+     * LOCAL default: enable creation (fresh MailSlurp inbox).
+     * CI: obey ALLOW_CREATE_INBOX_FALLBACK (typically false), never rely on plus-tagging for @mailslurp.biz.
+     */
+    private Recipient provisionUniqueRecipient() {
+        // Auto-enable creation when not in CI, unless the user explicitly set the flag.
+        if (System.getenv("CI") == null && System.getProperty("ALLOW_CREATE_INBOX_FALLBACK") == null) {
+            System.setProperty("ALLOW_CREATE_INBOX_FALLBACK", "true");
+        }
+
+        final boolean allowCreate = Boolean.parseBoolean(
+                System.getProperty("ALLOW_CREATE_INBOX_FALLBACK",
+                        Objects.toString(System.getenv("ALLOW_CREATE_INBOX_FALLBACK"), "false")));
+
+        try {
+            if (allowCreate) {
+                // Always create a fresh inbox (preferred) — guarantees a "new purchase" recipient
+                InboxDto fresh = MailSlurpUtils.createNewInbox();
+                System.out.println("📮 Fresh inbox for this run: " + fresh.getEmailAddress());
+                return new Recipient(fresh.getId(), fresh.getEmailAddress());
+            }
+
+            // No creation allowed. If a fixed inbox is present, do NOT use plus-tagging on mailslurp.biz.
+            if (fixedInbox != null) {
+                final String base = fixedInbox.getEmailAddress();
+                if (base.endsWith("@mailslurp.biz")) {
+                    throw new SkipException(
+                            "Unique recipient required for purchase flow, but inbox creation is disabled and " +
+                                    "the fixed domain (" + base + ") does not support plus-tag routing. " +
+                                    "Enable ALLOW_CREATE_INBOX_FALLBACK=true to run this test.");
+                }
+                // If your fixed domain *does* support tags, uncomment the lines below and remove the Skip above.
+/*
+                final String tagged = plusTag(base, "tc1-" + System.currentTimeMillis());
+                System.out.println("✉ Using tagged address on fixed inbox: " + tagged);
+                return new Recipient(fixedInbox.getId(), tagged);
+*/
+            }
+
+            // Last resort: delegate to resolver (will Skip if neither fixed nor creation allowed).
+            InboxDto resolved = MailSlurpUtils.resolveFixedOrCreateInbox();
+            System.out.println("📮 Resolved inbox for this run: " + resolved.getEmailAddress());
+            return new Recipient(resolved.getId(), resolved.getEmailAddress());
+
+        } catch (SkipException se) {
+            throw se;
+        } catch (Exception e) {
+            throw new SkipException("Cannot provision a unique recipient email: " + e.getMessage());
+        }
+    }
+
+    // ==================== login helper ====================
+
+    /** Throttle-aware login with diagnostics and a one-time retry (no “effectively final” lambda issues). */
+    private DashboardPage safeLoginAsAdmin(LoginPage loginPage, String email, String pass, Duration wait) {
+        DashboardPage dashboard = loginPage.login(email, pass);
+        try {
+            new WebDriverWait(driver, wait).until(ExpectedConditions.urlContains("/dashboard"));
+            return dashboard;
+        } catch (org.openqa.selenium.TimeoutException te) {
+            // Dump a few first lines to reveal banners like “Too many attempts”
+            String bodyText = "";
+            try { bodyText = driver.findElement(By.tagName("body")).getText(); } catch (Exception ignore) {}
+            System.out.println("[LoginFail] Still on sign-in. First lines:");
+            Arrays.stream(Objects.toString(bodyText, "").split("\\R"))
+                    .limit(10)
+                    .map(String::trim)
+                    .forEach(l -> System.out.println("  " + l));
+
+            String low = Objects.toString(bodyText, "").toLowerCase(Locale.ROOT);
+            if (low.contains("too many") || low.contains("try again later") || low.contains("rate")) {
+                try { Thread.sleep(8000); } catch (InterruptedException ignored) {}
+                dashboard = loginPage.login(email, pass);
+                new WebDriverWait(driver, wait).until(ExpectedConditions.urlContains("/dashboard"));
+                return dashboard;
+            }
+            throw te;
+        }
+    }
+
+    // ==================== small utils ====================
+
+    /** Console banner for readable logs. */
+    private static void step(String title) {
+        System.out.println("\n====== " + title + " ======\n");
+    }
+
+    /** Mask an email for logs. */
+    private static String maskEmail(String email) {
+        if (email == null || email.isBlank()) return "(blank)";
+        int at = email.indexOf('@');
+        String user = at > -1 ? email.substring(0, at) : email;
+        String dom  = at > -1 ? email.substring(at) : "";
+        if (user.length() <= 2) return user.charAt(0) + "****" + dom;
+        return user.charAt(0) + "****" + user.charAt(user.length() - 1) + dom;
+    }
+
+    /** Insert “+tag” before '@' (RFC 5233). */
+    private static String plusTag(String email, String tag) {
+        int at = email.indexOf('@');
+        if (at <= 0) return email;
+        return email.substring(0, at) + "+" + tag + email.substring(at);
+    }
+
+    /** Parse cs_test_... from a Stripe Checkout URL, or session_id=... */
+    private static String extractSessionIdFromUrl(String url) {
+        if (url == null) return null;
+        Matcher m = Pattern.compile("(?i)(?:cs_test_[A-Za-z0-9_]+)|(?:session_id=([^&]+))").matcher(url);
+        if (m.find()) {
+            String full = m.group();
+            if (full.startsWith("cs_test_")) return full;
+            if (m.groupCount() >= 1) return m.group(1);
+        }
+        return null;
+    }
+
+    /** Base64URL encode (no padding). */
+    private static String b64Url(String s) {
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(s.getBytes(StandardCharsets.UTF_8));
+    }
+
+    // ===================== TESTS =====================
+
     /**
      * TC-1: Verify that newly added users receive an email notification with login instructions
+     * NOTE: Purchase must use a brand-new recipient email each run (fresh MailSlurp inbox locally).
      */
     @Test
     public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException {
+        // ----- config / constants -----
+        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
+            throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
+        }
+        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
 
-        // ===== Config / constants =====
-        final String ADMIN_USER      = System.getProperty("ADMIN_USER", Config.getAdminEmail());
-        final String ADMIN_PASS      = System.getProperty("ADMIN_PASS", Config.getAdminPassword());
         final Duration EMAIL_TIMEOUT = Duration.ofSeconds(120);
-        final String CTA_TEXT        = "Accept Assessment";
-        final String SUBJECT_NEEDLE  = "assessment";
-
-        // Keep logs verbose for diagnosis in CI
+        final String CTA_TEXT       = "Accept Assessment";
+        final String SUBJECT_NEEDLE = "assessment";
         System.setProperty("mailslurp.debug", "true");
 
-        // ===== Resolve inbox once (suite preferred), or guarded fallback =====
-        step("Resolve fixed inbox (preferred) or fallback");
-        final InboxDto inbox;
-        try {
-            if (BaseTest.fixedInbox != null) {
-                inbox = BaseTest.fixedInbox;
-            } else {
-                // Uses fixed inbox when provided; only creates if ALLOW_CREATE_INBOX_FALLBACK=true
-                inbox = MailSlurpUtils.resolveFixedOrCreateInbox();
-            }
-        } catch (SkipException se) {
-            // Honor guard semantics (don’t burn CreateInbox allowance in CI)
-            throw se;
-        } catch (ApiException ex) {
-            // Safety: if MailSlurp plan limit (426) bubbles up as ApiException, skip the test
-            if (ex.getCode() == 426) {
-                throw new SkipException(
-                        "MailSlurp CreateInbox limit exceeded (426). " +
-                                "Set MAILSLURP_INBOX_ID to reuse a fixed inbox or allow creation explicitly."
-                );
-            }
-            throw ex;
-        }
-
-        final String tempEmail = inbox.getEmailAddress();
-        final UUID inboxId     = inbox.getId();
-
-        // Start with a clean mailbox so unreadOnly=true is deterministic
-        MailSlurpUtils.clearInboxEmails(inboxId);
+        // ----- recipient (unique per run) -----
+        step("Resolve recipient for this run (prefer fresh inbox)");
+        Recipient r = provisionUniqueRecipient();
+        MailSlurpUtils.clearInboxEmails(r.inboxId); // deterministic unreadOnly waits
+        final String tempEmail = r.emailAddress;
+        final UUID inboxId     = r.inboxId;
         System.out.println("📧 Test email (clean): " + tempEmail);
 
-        // ===== App flow =====
+        // ----- app flow -----
         step("Login as admin");
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
-        DashboardPage dashboardPage = loginPage.login(ADMIN_USER, ADMIN_PASS);
-        new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> dashboardPage.isLoaded());
+        DashboardPage dashboardPage = safeLoginAsAdmin(loginPage, ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
         Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard did not load after login");
 
         step("Go to Shop and start purchase flow");
@@ -99,6 +222,7 @@ public class Phase1SmokeTests extends BaseTest {
                 .waitUntilLoaded()
                 .selectManualEntry()
                 .enterNumberOfIndividuals("1");
+        // IMPORTANT: use the unique email for the purchase
         entryPage.fillUserDetailsAtIndex(1, "Emi", "Rod", tempEmail);
 
         step("Review order (Preview)");
@@ -106,7 +230,7 @@ public class Phase1SmokeTests extends BaseTest {
 
         step("Stripe: fetch session + metadata.body");
         String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
-        String sessionId = extractSessionIdFromUrl(stripeUrl); // cs_test_... or from query param
+        String sessionId = extractSessionIdFromUrl(stripeUrl);
         Assert.assertNotNull(sessionId, "❌ Could not parse Stripe session id from URL");
         System.out.println("[Stripe] checkoutUrl=" + stripeUrl + " | sessionId=" + sessionId);
 
@@ -128,7 +252,7 @@ public class Phase1SmokeTests extends BaseTest {
                 .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
         System.out.println("✅ User appears in Individuals: " + tempEmail);
 
-        // ===== MailSlurp assertion =====
+        // ----- email assertion -----
         step("Wait for email and assert contents");
         System.out.println("[Email] Waiting up to " + EMAIL_TIMEOUT.toSeconds() + "s for message to " + tempEmail + "…");
 
@@ -136,9 +260,10 @@ public class Phase1SmokeTests extends BaseTest {
         try {
             email = MailSlurpUtils.waitForLatestEmail(inboxId, EMAIL_TIMEOUT.toMillis(), true);
         } catch (ApiException e) {
-            // MailSlurp returns 404/408-ish on timeout; surface a clean assertion
-            if (e.getCode() == 404 || e.getCode() == 408) {
-                Assert.fail("❌ No email received for " + tempEmail + " within " + EMAIL_TIMEOUT);
+            // Some timeouts show as code 0; treat like a test-timeout for clearer signal.
+            if (e.getCode() == 0 || e.getCode() == 404 || e.getCode() == 408) {
+                Assert.fail("❌ No email received for " + tempEmail + " within " + EMAIL_TIMEOUT
+                        + " (MailSlurp code " + e.getCode() + ")");
             }
             throw e;
         }
@@ -146,17 +271,17 @@ public class Phase1SmokeTests extends BaseTest {
         final String subject = Objects.toString(email.getSubject(), "");
         final String from    = Objects.toString(email.getFrom(), "");
         final String body    = Objects.toString(email.getBody(), "");
-        System.out.println(String.format("📨 Email — From: %s | Subject: %s", from, subject));
+        System.out.printf("📨 Email — From: %s | Subject: %s%n", from, subject);
 
-        Assert.assertTrue(subject.toLowerCase().contains(SUBJECT_NEEDLE),
+        Assert.assertTrue(subject.toLowerCase(Locale.ROOT).contains(SUBJECT_NEEDLE),
                 "❌ Subject does not mention " + SUBJECT_NEEDLE + ". Got: " + subject);
 
-        Assert.assertTrue(from.toLowerCase().contains("tilt365") || from.toLowerCase().contains("sendgrid"),
+        Assert.assertTrue(from.toLowerCase(Locale.ROOT).contains("tilt365")
+                        || from.toLowerCase(Locale.ROOT).contains("sendgrid"),
                 "❌ Unexpected sender: " + from);
 
-        Assert.assertTrue(body.toLowerCase().contains(CTA_TEXT.toLowerCase()),
+        Assert.assertTrue(body.toLowerCase(Locale.ROOT).contains(CTA_TEXT.toLowerCase(Locale.ROOT)),
                 "❌ Email body missing CTA text '" + CTA_TEXT + "'.");
-
         String ctaHref = MailSlurpUtils.extractLinkByAnchorText(email, CTA_TEXT);
         if (ctaHref == null) ctaHref = MailSlurpUtils.extractFirstLink(email);
         Assert.assertNotNull(ctaHref, "❌ Could not find a link in the email.");
@@ -165,28 +290,13 @@ public class Phase1SmokeTests extends BaseTest {
                 "❌ CTA link host unexpected: " + ctaHref);
     }
 
-
-// --- helpers ---
-
-
-
-    /** Parse cs_test_... from the Stripe Checkout URL (for diagnostics). */
-    private static String extractSessionIdFromUrl(String stripeUrl) {
-        if (stripeUrl == null) return null;
-        java.util.regex.Matcher m =
-                java.util.regex.Pattern.compile("(cs_test_[A-Za-z0-9]+)").matcher(stripeUrl);
-        return m.find() ? m.group(1) : null;
-    }
+    // --- helpers used by other tests in this class ---
 
     /** Null-safe string helper for logs/asserts. */
     private static String safe(String s) {
         return s == null ? "" : s;
     }
 
-    /** Simple console step banner for readable logs. */
-    private static void step(String title) {
-        System.out.println("\n====== " + title + " ======\n");
-    }
 
 
 
