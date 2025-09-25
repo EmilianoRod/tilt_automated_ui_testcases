@@ -105,6 +105,14 @@ public class BaseTest {
 
     @BeforeMethod(alwaysRun = true)
     public void setUp(Method method) {
+
+
+        String adminEmail = Config.getAdminEmail();
+        String adminPass  = Config.getAdminPassword();
+        if (adminEmail == null || adminEmail.isBlank() || adminPass == null || adminPass.isBlank()) {
+            throw new SkipException("[Config] Admin credentials are not set (admin.email/ADMIN_EMAIL/ADMIN_USER and admin.password/ADMIN_PASSWORD/ADMIN_PASS).");
+        }
+
         // If some test throws a custom guard, show the exact reason in logs
         if (fixedInbox == null) {
             throw new SkipException("[BaseTest][Guard] fixedInbox is null before test " + method.getName()

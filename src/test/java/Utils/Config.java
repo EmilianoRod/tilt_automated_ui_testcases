@@ -242,13 +242,18 @@ public class Config {
         return v != null ? v : "screenshots";
     }
 
+
+
     public static String getAdminEmail() {
-        return getAny("admin.email", "ADMIN_EMAIL");
+        // add ADMIN_USER as an alias
+        return getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
     }
 
     public static String getAdminPassword() {
-        return getAny("admin.password", "ADMIN_PASSWORD");
+        // add ADMIN_PASS as an alias
+        return getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
     }
+
 
     // ---------- Stripe helpers ----------
 
