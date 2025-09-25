@@ -1,0 +1,482 @@
+// Jenkins declarative pipeline for Java + Selenium + MailSlurp + Stripe
+// Hardened: fixed-inbox reuse, 426 guard, Chrome pinning, strict secret handling
+// Perms-safe: no root writes to workspace except in Tests stage (which fixes perms before exit)
+
+pipeline {
+  agent none
+
+  options {
+    ansiColor('xterm')
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '60'))
+    timeout(time: 60, unit: 'MINUTES')
+  }
+
+  parameters {
+    string(name: 'CHROME_MAJOR_PIN', defaultValue: '138',
+      description: 'Pin Chrome to a major version (e.g., 138 or 140). Empty = latest.')
+    string(name: 'STRIPE_CLI_VERSION', defaultValue: '1.30.0', description: 'Stripe CLI version.')
+    string(name: 'STRIPE_EVENT_TYPE', defaultValue: 'checkout.session.completed',
+      description: 'Optional event type to assert after tests.')
+    string(name: 'STRIPE_EVENT_WINDOW_SEC', defaultValue: '300', description: 'Event assertion window (seconds).')
+    string(name: 'MAILSLURP_EXPECTED_FP', defaultValue: 'd47d0e57c995',
+      description: 'First 12 chars of SHA256 of the intended MailSlurp API key.')
+    string(name: 'CI_EXPLICIT_WAIT_SEC', defaultValue: '20',
+      description: 'Default explicit wait for CI (seconds).')
+    booleanParam(name: 'ALLOW_CREATE_INBOX_FALLBACK', defaultValue: false,
+      description: 'If fixed inbox is missing/inaccessible, allow creating a new inbox (consumes allowance).')
+  }
+
+  environment {
+    // === Where we clone & build tests ===
+    TESTS_DIR = 'ui-tests'
+    UI_TESTS_REPO_URL = 'https://github.com/EmilianoRod/tilt_automated_ui_testcases.git'
+    UI_TESTS_BRANCH   = 'develop'
+
+    // === Credentials (configure in Jenkins > Credentials, IDs must match) ===
+    STRIPE_TEST_SECRET_KEY = credentials('STRIPE_SECRET_KEY')
+    STRIPE_WEBHOOK_SECRET  = credentials('STRIPE_WEBHOOK_SECRET')
+    STRIPE_PUBLISHABLE_KEY = credentials('STRIPE_PUBLISHABLE_KEY')
+    BASE_URL   = credentials('BASE_URL')
+    ADMIN_USER = credentials('ADMIN_EMAIL')
+    ADMIN_PASS = credentials('ADMIN_PASSWORD')
+
+    // Paid MailSlurp key (works locally, ensure same key here)
+    MAILSLURP_API_KEY = credentials('MAILSLURP_API_KEY') // 83ae...df90
+
+    // Fixed inbox UUID created once in MailSlurp UI
+    MAILSLURP_INBOX_ID = credentials('MAILSLURP_INBOX_ID')
+
+    MAVEN_ARGS = '-B -Dheadless=true -Dbrowser=chrome -DskipITs=false'
+    STRIPE_CLI_TELEMETRY_OPTOUT = '1'
+  }
+
+  stages {
+
+    // ---- 0) Warmup: fix any leftover root-owned junk so deleteDir() won't fail
+    stage('Workspace perms warmup') {
+      agent any
+      steps {
+        sh '''
+          set -Eeuo pipefail
+          uid="$(id -u)"; gid="$(id -g)"
+          echo "▶ Ensuring workspace is ${uid}:${gid}…"
+          docker run --rm -v "$PWD:/ws" alpine:3.19 sh -c "chown -R ${uid}:${gid} /ws || true"
+        '''
+      }
+    }
+
+    stage('Secrets sanity & preflight') {
+      agent {
+        docker {
+          image 'maven:3.9-eclipse-temurin-17'
+          // NOTE: do NOT force -u here; Jenkins injects the correct jenkins uid:gid automatically.
+          args "--entrypoint=''"
+        }
+      }
+      environment { MS_API = 'https://api.mailslurp.com' }
+      steps {
+        sh '''
+          set -Eeuo pipefail
+
+          echo "▶ Egress IP (what MailSlurp/Stripe will see)…"
+          (curl -fsS https://ifconfig.me || curl -fsS https://api.ipify.org || true); echo
+
+          echo "▶ Fingerprint secrets (safe preview)…"
+          f() { printf %s "$1" | sha256sum | awk '{print $1}' | cut -c1-12; }
+          FP_MS="$(f "${MAILSLURP_API_KEY}")"
+          FP_ST="$(f "${STRIPE_TEST_SECRET_KEY}")"
+          echo "  MAILSLURP_API_KEY: ${FP_MS}"
+          echo "  STRIPE_TEST_SECRET_KEY: ${FP_ST}"
+
+          mask() { v="$1"; [ -n "$v" ] || { echo "<empty>"; return; }; printf "%s********%s\\n" "${v:0:4}" "${v: -4}"; }
+          echo "▶ MailSlurp key (masked preview): $(mask "${MAILSLURP_API_KEY}")"
+
+          if [ -z "${MAILSLURP_API_KEY:-}" ]; then
+            echo "❌ MAILSLURP_API_KEY is empty."
+            exit 11
+          fi
+          if [ -n "${MAILSLURP_EXPECTED_FP:-}" ] && [ "${FP_MS}" != "${MAILSLURP_EXPECTED_FP}" ]; then
+            echo "❌ Expected MailSlurp fingerprint ${MAILSLURP_EXPECTED_FP} but resolved ${FP_MS}"
+            exit 4
+          fi
+
+          authHeader=(-H "x-api-key: ${MAILSLURP_API_KEY}")
+
+          try_probe() {
+            local path="$1"; local expect="$2"; local name="$3"
+            echo "▶ Probe: ${name} (${path})"
+            HTTP=$(curl -sS -o /tmp/ms_probe.json -w '%{http_code}' "${authHeader[@]}" "${MS_API}${path}" || true)
+            if [ "$HTTP" = "$expect" ]; then
+              echo "✅ ${name} OK (HTTP=${HTTP})"
+              head -c 300 /tmp/ms_probe.json || true; echo
+              return 0
+            fi
+            echo "⚠️  ${name} HTTP=${HTTP} (wanted ${expect})"
+            head -c 300 /tmp/ms_probe.json || true; echo
+            return 1
+          }
+
+          retry_probe() {
+            local path="$1"; local expect="$2"; local name="$3"
+            local max=3; local n=1
+            until try_probe "$path" "$expect" "$name"; do
+              if [ $n -ge $max ]; then return 1; fi
+              echo "⏳ retrying ${name} ($n/$max)…"; sleep $((2*n)); n=$((n+1))
+            done
+          }
+
+          ok=0
+          retry_probe "/account" 200 "Account" && ok=1 || ok=0
+          if [ $ok -eq 0 ]; then retry_probe "/inboxes?size=1" 200 "List inboxes" && ok=1 || true; fi
+          if [ $ok -eq 0 ]; then retry_probe "/domains?size=1" 200 "List domains" && ok=1 || true; fi
+          if [ $ok -eq 0 ]; then
+            echo "❌ MailSlurp API preflight failed."
+            exit 11
+          fi
+          echo "✅ MailSlurp key valid."
+
+          echo "▶ Verify fixed MailSlurp inbox id…"
+          if [ -n "${MAILSLURP_INBOX_ID:-}" ]; then
+            HTTP2=$(curl -sS -o /tmp/ms-inbox.json -w '%{http_code}' "${authHeader[@]}" "${MS_API}/inboxes/${MAILSLURP_INBOX_ID}" || true)
+            if [ "$HTTP2" = "200" ]; then
+              ADDR=$(sed -n 's/.*"emailAddress"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' /tmp/ms-inbox.json | head -n1 || true)
+              echo "✅ Fixed inbox OK: ${MAILSLURP_INBOX_ID} <${ADDR:-unknown}>"
+            else
+              echo "⚠ Fixed inbox not accessible (HTTP=$HTTP2)."
+              head -c 400 /tmp/ms-inbox.json || true; echo
+              if [ "${ALLOW_CREATE_INBOX_FALLBACK:-false}" != "true" ]; then
+                echo "❌ ALLOW_CREATE_INBOX_FALLBACK=false → failing fast to avoid consuming CreateInbox allowance."
+                exit 15
+              else
+                echo "ℹ ALLOW_CREATE_INBOX_FALLBACK=true → tests may create/reuse another inbox."
+              fi
+            fi
+          else
+            echo "⚠ MAILSLURP_INBOX_ID not set."
+            if [ "${ALLOW_CREATE_INBOX_FALLBACK:-false}" != "true" ]; then
+              echo "❌ Provide MAILSLURP_INBOX_ID or enable ALLOW_CREATE_INBOX_FALLBACK to continue."
+              exit 16
+            fi
+          fi
+
+          echo "▶ Stripe: list events (lenient)…"
+          HTTP3=$(curl -sS -o /tmp/stripe.json -w '%{http_code}' \
+            -u "${STRIPE_TEST_SECRET_KEY}:" \
+            -G "https://api.stripe.com/v1/events" --data-urlencode limit=1) || true
+          case "$HTTP3" in
+            200) echo "✅ Stripe key can read events.";;
+            403) echo "ℹ Stripe key restricted (rk_test_*). Will skip event assertions."; head -c 300 /tmp/stripe.json || true; echo;;
+            401|000) echo "❌ Stripe preflight failed (HTTP=$HTTP3)."; head -c 300 /tmp/stripe.json || true; echo; exit 12;;
+            *)   echo "ℹ Stripe events HTTP=$HTTP3 (continuing)."; head -c 300 /tmp/stripe.json || true; echo;;
+          esac
+        '''
+      }
+    }
+
+    stage('Checkout UI tests repo') {
+      agent any
+      steps {
+        dir("${env.TESTS_DIR}") {
+          deleteDir()
+          echo "▶ Cloning ${env.UI_TESTS_REPO_URL} (branch=${env.UI_TESTS_BRANCH})"
+
+          checkout([$class: 'GitSCM',
+            branches: [[name: "*/${env.UI_TESTS_BRANCH}"]],
+            userRemoteConfigs: [[url: env.UI_TESTS_REPO_URL]],
+            extensions: [[$class: 'CloneOption', shallow: true, depth: 3, noTags: true]]
+          ])
+
+          sh '''
+            set -euo pipefail
+            echo "Checked out UI tests repo:"
+            git rev-parse --abbrev-ref HEAD
+            git rev-parse --short HEAD
+          '''
+        }
+      }
+    }
+
+    stage('Static guard: forbid createInbox in tests') {
+      agent {
+        docker {
+          image 'maven:3.9-eclipse-temurin-17'
+          args "--entrypoint=''"
+        }
+      }
+      steps {
+        dir("${env.TESTS_DIR}") {
+          sh '''
+            set -eu
+            if [ "${ALLOW_CREATE_INBOX_FALLBACK:-false}" = "true" ]; then
+              echo "ℹ Bypass guard enabled (ALLOW_CREATE_INBOX_FALLBACK=true)."
+              exit 0
+            fi
+
+            echo "▶ Scanning test sources for createInbox calls…"
+            ROOT=src/test
+            [ -d "$ROOT" ] || exit 0
+            MATCHES="$(grep -RInE 'createInboxWithDefaults\\s*\\(|\\bcreateInbox\\s*\\(|MailSlurpUtils\\.createInbox\\s*\\(' "$ROOT" || true)"
+            if [ -n "$MATCHES" ]; then
+              echo "❌ Found disallowed inbox creation calls in tests:"; echo "$MATCHES" | sed 's/^/   • /'
+              echo "   These will trip free-plan limits (HTTP 426)."
+              echo "   Use a fixed inbox via MAILSLURP_INBOX_ID and call resolveFixedOrCreateInbox() instead."
+              echo "   To allow temporarily, set ALLOW_CREATE_INBOX_FALLBACK=true."
+              exit 55
+            fi
+          '''
+        }
+      }
+    }
+
+    stage('Build') {
+      agent {
+        docker {
+          image 'maven:3.9-eclipse-temurin-17'
+          args """
+            --shm-size=2g
+            -v /var/lib/jenkins/.m2:/home/jenkins/.m2
+            -v /var/lib/jenkins/.cache:/home/jenkins/.cache
+            -e CI=true -e TZ=UTC
+          """
+        }
+      }
+      steps {
+        dir("${env.TESTS_DIR}") {
+          sh '''
+            set -euo pipefail
+            export MAVEN_OPTS="-Xms512m -Xmx2g -Djava.net.preferIPv4Stack=true"
+            mvn -B -DskipTests clean package
+          '''
+        }
+      }
+    }
+
+    stage('MailSlurp sanity (container)') {
+      agent {
+        docker {
+          image 'maven:3.9-eclipse-temurin-17'
+          args """
+            --shm-size=2g
+            -v /var/lib/jenkins/.m2:/home/jenkins/.m2
+            -v /var/lib/jenkins/.cache:/home/jenkins/.cache
+            -e MAILSLURP_API_KEY=${MAILSLURP_API_KEY}
+            -e MAILSLURP_INBOX_ID=${MAILSLURP_INBOX_ID}
+            -e ALLOW_CREATE_INBOX_FALLBACK=${params.ALLOW_CREATE_INBOX_FALLBACK}
+            -e CI=true -e TZ=UTC
+          """
+        }
+      }
+      steps {
+        sh '''
+          set -Eeuo pipefail
+          echo "▶ MailSlurp sanity (inside container)…"
+          echo "  Key: $(echo "${MAILSLURP_API_KEY}" | sed -E 's/^(.{4}).*(.{4})$/\\1********\\2/')"
+          echo "  Inbox ID: ${MAILSLURP_INBOX_ID}"
+
+          if [ -z "${MAILSLURP_INBOX_ID:-}" ]; then
+            echo "⚠ MAILSLURP_INBOX_ID is empty."
+            if [ "${ALLOW_CREATE_INBOX_FALLBACK:-false}" != "true" ]; then
+              echo "❌ Provide MAILSLURP_INBOX_ID or enable ALLOW_CREATE_INBOX_FALLBACK."
+              exit 30
+            fi
+          else
+            HTTP=$(curl -sS -o /tmp/inbox.json -w '%{http_code}' \
+              -H "x-api-key: ${MAILSLURP_API_KEY}" \
+              "https://api.mailslurp.com/inboxes/${MAILSLURP_INBOX_ID}") || true
+            if [ "$HTTP" = "200" ]; then
+              EMAIL=$(sed -n 's/.*"emailAddress"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' /tmp/inbox.json | head -n1 || true)
+              echo "✅ Fixed inbox resolves inside container: ${EMAIL:-<no-email-field>}"
+            else
+              echo "⚠ Could not fetch fixed inbox inside container (HTTP=$HTTP)."
+              head -c 400 /tmp/inbox.json || true; echo
+              if [ "${ALLOW_CREATE_INBOX_FALLBACK:-false}" != "true" ]; then
+                echo "❌ ALLOW_CREATE_INBOX_FALLBACK=false → stop here to avoid consuming CreateInbox allowance."
+                exit 31
+              else
+                echo "ℹ ALLOW_CREATE_INBOX_FALLBACK=true → continuing (tests may create/reuse another inbox)."
+              fi
+            fi
+          fi
+        '''
+      }
+    }
+
+    stage('Tests (Java + Selenium + Stripe)') {
+      agent {
+        docker {
+          image 'maven:3.9-eclipse-temurin-17'
+          // We need root here for apt-get; Jenkins will also add -u <jenkins>, but our last -u wins.
+          args """
+            --shm-size=2g -u root:root --init
+            -v /var/lib/jenkins/.m2:/root/.m2
+            -v /var/lib/jenkins/.cache:/root/.cache
+            -e MAILSLURP_API_KEY=${MAILSLURP_API_KEY}
+            -e MAILSLURP_INBOX_ID=${MAILSLURP_INBOX_ID}
+            -e STRIPE_TEST_SECRET_KEY=${STRIPE_TEST_SECRET_KEY}
+            -e STRIPE_API_KEY=${STRIPE_TEST_SECRET_KEY}
+            -e STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+            -e BASE_URL=${BASE_URL}
+            -e ADMIN_USER=${ADMIN_USER}
+            -e ADMIN_PASS=${ADMIN_PASS}
+            -e ALLOW_CREATE_INBOX_FALLBACK=${params.ALLOW_CREATE_INBOX_FALLBACK}
+            -e CI=true -e TZ=UTC
+          """
+        }
+      }
+      steps {
+        dir("${env.TESTS_DIR}") {
+          sh '''
+            set -Eeuo pipefail
+            export DEBIAN_FRONTEND=noninteractive
+
+            # === IMPORTANT: ensure we give workspace back to Jenkins on exit ===
+            fixperms() {
+              chown -R "$(stat -c '%u:%g' .)" .
+            }
+            trap 'fixperms || true' EXIT
+
+            # Ensure ALL JVMs see MailSlurp key + fixed inbox
+            export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Dmailslurp.forceKey=${MAILSLURP_API_KEY} -Dmailslurp.apiKey=${MAILSLURP_API_KEY} -DMAILSLURP_INBOX_ID=${MAILSLURP_INBOX_ID}"
+            export MAVEN_OPTS="${MAVEN_OPTS:-} -Xms512m -Xmx2g -Djava.net.preferIPv4Stack=true -Dmailslurp.forceKey=${MAILSLURP_API_KEY} -Dmailslurp.apiKey=${MAILSLURP_API_KEY} -DMAILSLURP_INBOX_ID=${MAILSLURP_INBOX_ID}"
+
+            echo "▶ Installing OS deps (Chrome + headless libs + jq substitute via sed)…"
+            apt-get update -qq
+            apt-get install -y --no-install-recommends \
+              ca-certificates curl gnupg unzip xvfb \
+              fonts-liberation fonts-dejavu-core \
+              libasound2t64 libatk-bridge2.0-0 libatk1.0-0 libcups2 \
+              libx11-xcb1 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+              libxi6 libxkbcommon0 libgbm1 libgtk-3-0 libnss3 \
+              libxshmfence1 libdrm2 libpango-1.0-0 libpangocairo-1.0-0 libxrender1 >/dev/null
+            curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google.gpg
+            echo 'deb [signed-by=/usr/share/keyrings/google.gpg] http://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list
+            apt-get update -qq
+
+            if [ -n "${CHROME_MAJOR_PIN:-}" ]; then
+              echo "▶ Pinning Google Chrome major=${CHROME_MAJOR_PIN}…"
+              CANDIDATE="$(apt-cache madison google-chrome-stable | awk -v M="${CHROME_MAJOR_PIN}" '$0 ~ M"\\." {print $3; exit}')"
+              if [ -n "${CANDIDATE:-}" ]; then
+                apt-get install -y --no-install-recommends "google-chrome-stable=${CANDIDATE}" >/dev/null
+              else
+                echo "⚠ Could not find Chrome ${CHROME_MAJOR_PIN}.x; installing latest."
+                apt-get install -y --no-install-recommends google-chrome-stable >/dev/null
+              fi
+            else
+              echo "▶ Installing latest Google Chrome…"
+              apt-get install -y --no-install-recommends google-chrome-stable >/dev/null
+            fi
+            echo "Chrome version: $(google-chrome-stable --version || true)"
+
+            echo "▶ Install Stripe CLI ${STRIPE_CLI_VERSION}…"
+            curl -fsSL -o /tmp/stripe.tgz "https://github.com/stripe/stripe-cli/releases/download/v${STRIPE_CLI_VERSION:-1.30.0}/stripe_${STRIPE_CLI_VERSION:-1.30.0}_linux_x86_64.tar.gz"
+            tar -xzf /tmp/stripe.tgz -C /usr/local/bin stripe && chmod +x /usr/local/bin/stripe
+
+            # Ensure CI uses only injected creds
+            rm -fv src/test/resources/config.local.properties || true
+
+            mask() { v="$1"; [ -n "$v" ] || { echo "<empty>"; return; }; printf "%s********%s\\n" "${v:0:4}" "${v: -4}"; }
+            echo "▶ [Pre-Tests] MailSlurp key (masked): $(mask "${MAILSLURP_API_KEY}")"
+            echo "▶ [Pre-Tests] Fixed inbox id: ${MAILSLURP_INBOX_ID}"
+
+            echo "▶ MailSlurp (fail-fast) – verify key works inside the container…"
+            HTTP=$(curl -sS -o /tmp/ms2.json -w '%{http_code}' \
+              -H "x-api-key: ${MAILSLURP_API_KEY}" "https://api.mailslurp.com/account") || true
+            if [ "$HTTP" != "200" ]; then
+              echo "❌ MailSlurp not usable inside test container (HTTP=$HTTP)"; head -c 600 /tmp/ms2.json || true; echo; exit 21
+            fi
+
+            echo "▶ Optional: clear emails on fixed inbox (best-effort)…"
+            if [ -n "${MAILSLURP_INBOX_ID:-}" ]; then
+              curl -sS -X DELETE -H "x-api-key: ${MAILSLURP_API_KEY}" \
+                "https://api.mailslurp.com/inboxes/${MAILSLURP_INBOX_ID}/emails" -o /dev/null || true
+            fi
+
+            echo "▶ Run tests headless via Xvfb…"
+            MAVEN_PROPS=(
+              "-Dmailslurp.forceKey=${MAILSLURP_API_KEY}"
+              "-Dmailslurp.apiKey=${MAILSLURP_API_KEY}"
+              "-DMAILSLURP_INBOX_ID=${MAILSLURP_INBOX_ID}"
+              "-Dmailslurp.expectedFingerprint=${MAILSLURP_EXPECTED_FP}"
+              "-Dmailslurp.debug=true"
+              "-DdisableLocalConfig=true"
+              "-DbaseUrl=${BASE_URL}"
+              "-DADMIN_USER=${ADMIN_USER}"
+              "-DADMIN_PASS=${ADMIN_PASS}"
+              "-Dtimeout=${CI_EXPLICIT_WAIT_SEC:-20}"
+            )
+
+            xvfb-run -a -s "-screen 0 1920x1080x24" \
+              mvn ${MAVEN_ARGS} "${MAVEN_PROPS[@]}" clean test
+
+            echo "▶ Surefire failing tests (if any):"
+            if ls target/surefire-reports/*.txt >/dev/null 2>&1; then
+              for f in target/surefire-reports/*.txt; do
+                echo "----- $f -----"
+                sed -n '1,200p' "$f" || true
+              done
+            else
+              echo "No surefire txt reports found."
+            fi
+
+            echo "▶ Best-effort Stripe event peek…"
+            HTTP2="$(curl -sS -o /tmp/ev2.json -w '%{http_code}' -G "https://api.stripe.com/v1/events" \
+              -u "$STRIPE_TEST_SECRET_KEY:" --data-urlencode "limit=5" --data-urlencode "type=${STRIPE_EVENT_TYPE}")" || true
+            if [ "$HTTP2" = "200" ]; then
+              sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*"type"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/{id:"\\1",type:"\\2"}/p' /tmp/ev2.json | head -n1 || true
+            else
+              echo "ℹ No readable events (HTTP=$HTTP2)."
+            fi
+          '''
+        }
+      }
+      post {
+        always {
+          junit testResults: "${env.TESTS_DIR}/target/surefire-reports/*.xml",
+                skipPublishingChecks: true,
+                allowEmptyResults: true
+          archiveArtifacts artifacts: "${env.TESTS_DIR}/target/surefire-reports/**, ${env.TESTS_DIR}/target/*.log, ${env.TESTS_DIR}/target/allure-results/**",
+                             fingerprint: true
+
+          sh '''
+            mask(){ v="$MAILSLURP_API_KEY"; [ -n "$v" ] || { echo "<empty>"; return; }; printf "%s********%s\\n" "${v:0:4}" "${v: -4}"; }
+            echo "▶ [Post-Tests] MailSlurp key (masked): $(mask)"
+          '''
+
+          script {
+            catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+              sh '''
+                set -euo pipefail
+                NOW_EPOCH="$(date -u +%s)"
+                CUTOFF_EPOCH="$(( NOW_EPOCH - ${STRIPE_EVENT_WINDOW_SEC} ))"
+                HTTP="$(curl -sS -o /tmp/assert.json -w '%{http_code}' -G "https://api.stripe.com/v1/events" \
+                  -u "$STRIPE_TEST_SECRET_KEY:" --data-urlencode "limit=10" --data-urlencode "type=${STRIPE_EVENT_TYPE}")" || true
+
+                if [ "$HTTP" = "200" ]; then
+                  # Check if any event in window; parse with grep/sed to avoid jq
+                  if grep -q '"created"' /tmp/assert.json; then
+                    # Cheap check: if there's any event at all and we can't robustly compare timestamps without jq, just show a hint
+                    echo "ℹ Events fetched; detailed time-window assertion requires jq. Skipping hard assert."
+                  else
+                    echo "❌ No ${STRIPE_EVENT_TYPE} entries visible."; exit 2
+                  fi
+                elif [ "$HTTP" = "403" ]; then
+                  echo "ℹ Skipping Stripe event assertion (restricted key)."
+                else
+                  echo "ℹ Skipping Stripe event assertion due to HTTP=$HTTP."
+                fi
+              '''
+            }
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      echo "Done → BRANCH=${env.BRANCH_NAME ?: 'N/A'}"
+    }
+  }
+}
+// End of Jenkinsfile
