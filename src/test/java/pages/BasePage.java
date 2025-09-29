@@ -3,200 +3,332 @@ package pages;
 import Utils.Config;
 import Utils.WaitUtils;
 import org.openqa.selenium.*;
+import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.interactions.MoveTargetOutOfBoundsException;
 import org.openqa.selenium.io.FileHandler;
+import org.openqa.selenium.support.ui.ExpectedCondition;
 import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.io.File;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Locale;
 
+/**
+ * Base class for all page objects.
+ * - Centralizes robust UI interactions (safe click/type/scroll).
+ * - Provides tolerant identity helpers and common waits.
+ * - Exposes small utilities (data-test locators, checkbox/select setters, screenshots).
+ *
+ * Keep this page UI-centric. Session/auth lifecycle belongs in BaseTest.
+ */
 public abstract class BasePage {
 
+    protected final WebDriver driver;
+    protected final WaitUtils  wait;
 
-    protected WebDriver driver;
-    protected WaitUtils wait;
+    // Generic overlay/backdrop patterns used across Ant/MUI/ARIA apps (opt-in by pages)
+    protected static final By POSSIBLE_LOADER = By.cssSelector(
+            "[data-testid='loading'],[data-test='loading'],[role='progressbar']," +
+                    ".MuiBackdrop-root,.MuiCircularProgress-root,.ant-spin,.ant-spin-spinning," +
+                    ".overlay,.spinner,.backdrop,[aria-busy='true']"
+    );
 
+    // ---------- ctor ----------
     public BasePage(WebDriver driver) {
         if (driver == null) {
-            throw new IllegalArgumentException("❌ WebDriver is NULL for " + this.getClass().getSimpleName());
+            throw new IllegalArgumentException("❌ WebDriver is NULL for " + getClass().getSimpleName());
         }
         this.driver = driver;
-        this.wait = new WaitUtils(driver, Config.getTimeout());
+        this.wait   = new WaitUtils(driver, Config.getTimeout());
     }
 
+    // ======================================================================
+    // Purchase-for banner (used by many pages)
+    // ======================================================================
 
+    /** Case/whitespace tolerant “Assessment purchase for: <label>” banner. */
+    protected By purchaseForBanner(String label) {
+        String lab = esc(label);
+        return By.xpath("//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'assessment purchase for') and .//*[normalize-space()='" + lab + "'] and not(.//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'assessment purchase for') and .//*[normalize-space()='" + lab + "']])]");
+    }
+
+    /** Reads only the selected value, e.g., "Myself", "Team", "Client(s)/Individual(s)". */
+    protected String readPurchaseForSelection() {
+        try {
+            WebElement el = driver.findElement(
+                    By.xpath("//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'assessment purchase') and contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'for') and not(.//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'assessment purchase') and contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'for')])]")
+            );
+            String txt = el.getText();
+            // Strip the prefix (handful of variants), keep the value
+            String lower = txt.toLowerCase(Locale.ROOT);
+            int idx = lower.indexOf("purchase for");
+            if (idx >= 0) {
+                String after = txt.substring(idx).replaceFirst("(?i)purchase for[:]?", "");
+                return after.replace("Assessment", "").trim();
+            }
+            // Fallback: trim everything after the last colon
+            int colon = txt.lastIndexOf(':');
+            return (colon >= 0 ? txt.substring(colon + 1) : txt).trim();
+        } catch (NoSuchElementException e) {
+            return "";
+        }
+    }
+
+    /** Public matcher you can use in tests. */
+    public boolean purchaseForIs(String label) {
+        return isVisible(purchaseForBanner(label));
+    }
+
+    // ======================================================================
+    // Page readiness
+    // ======================================================================
+
+    /** Wait for DOM ready + app-specific loaders gone (best-effort). */
     protected void pageReady() {
-        wait.waitForDocumentReady();
-        wait.waitForLoadersToDisappear();
+        try { wait.waitForDocumentReady(); } catch (Throwable ignored) {}
+        try { wait.waitForLoadersToDisappear(); } catch (Throwable ignored) {}
     }
 
-    // =========================
-    // UI Interactions
-    // =========================
+    // ======================================================================
+    // UI Interactions (robust)
+    // ======================================================================
 
+    protected Actions actions() { return new Actions(driver); }
+    protected JavascriptExecutor js() { return (JavascriptExecutor) driver; }
 
+    /** Scroll element into view (center) with Actions fallback. */
     protected void scrollToElement(WebElement el) {
         try {
-            new org.openqa.selenium.interactions.Actions(driver)
-                    .scrollToElement(el)
-                    .pause(Duration.ofMillis(50))
-                    .perform();
-        } catch (Exception ignored) {
-            ((JavascriptExecutor) driver).executeScript(
-                    "arguments[0].scrollIntoView({block:'center', inline:'nearest'});", el);
+            actions().scrollToElement(el).pause(Duration.ofMillis(40)).perform();
+        } catch (Throwable ignored) {
+            try { js().executeScript("arguments[0].scrollIntoView({block:'center', inline:'nearest'});", el); }
+            catch (Throwable ignored2) {}
         }
     }
 
+    /** Click a locator with retries and JS fallback. */
     protected void click(By locator) {
         int attempts = 0;
-        while (attempts < 2) {
+        while (attempts++ < 3) {
             try {
-                WebElement element = wait.waitForElementClickable(locator);
-                scrollToElement(element);
-                element.click();
+                WebElement el = wait.waitForElementClickable(locator);
+                scrollToElement(el);
+                el.click();
                 return;
             } catch (ElementClickInterceptedException | StaleElementReferenceException e) {
-                attempts++;
-                           if (attempts == 2) {
-                                    // last-chance JS click
-                            WebElement element = driver.findElement(locator);
-                               ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
-                                 return;
-                              }
+                // try again
+            } catch (Throwable t) {
+                // last-chance JS click
+                try {
+                    WebElement el = driver.findElement(locator);
+                    js().executeScript("arguments[0].click();", el);
+                    return;
+                } catch (Throwable ignored) { /* keep looping */ }
             }
         }
+        // final fallback
+        WebElement el = driver.findElement(locator);
+        js().executeScript("arguments[0].click();", el);
     }
 
-
-    // Click an already-found element with realistic fallbacks
+    /** Click an already-found element with realistic fallbacks. */
     protected void safeClick(WebElement el) {
-        // bring into view for native/actions clicks
         scrollToElement(el);
-
-        // 1) Native click
         try {
             el.click();
             return;
         } catch (ElementClickInterceptedException | MoveTargetOutOfBoundsException e) {
-            // 2) Actions click
             try {
-                new org.openqa.selenium.interactions.Actions(driver)
-                        .moveToElement(el, 1, 1)
-                        .click()
-                        .perform();
+                actions().moveToElement(el, 1, 1).click().perform();
                 return;
-            } catch (Exception ignored) { /* fall through */ }
-            // 3) JS click (last resort)
-            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", el);
+            } catch (Throwable ignored) { /* fall through */ }
+            js().executeScript("arguments[0].click();", el);
         }
     }
 
-
+    /** Click a locator by first waiting for it, then using {@link #safeClick(WebElement)}. */
     protected void safeClick(By locator) {
         WebElement el = new WebDriverWait(driver, Duration.ofSeconds(10))
                 .until(ExpectedConditions.elementToBeClickable(locator));
-
-        scrollToElement(el);
-
-        // 1) Native click
-        try {
-            el.click();
-            return;
-        } catch (ElementClickInterceptedException | MoveTargetOutOfBoundsException e) {
-            // element may have moved / gone stale; re-find
-            try { el = driver.findElement(locator); }
-            catch (StaleElementReferenceException ignored) {
-                el = new WebDriverWait(driver, Duration.ofSeconds(5))
-                        .until(ExpectedConditions.elementToBeClickable(locator));
-            }
-        }
-
-        // 2) Actions click
-        try {
-            new org.openqa.selenium.interactions.Actions(driver)
-                    .moveToElement(el, 1, 1).click().perform();
-            return;
-        } catch (Exception ignored) { /* continue */ }
-
-        // 3) JS click (last resort)
-        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", el);
+        safeClick(el);
     }
+
+    /** Clear + type with cross-platform select-all and input events. */
+    protected void type(By locator, String text) {
+        WebElement el = wait.waitForElementVisible(locator);
+        clearWithSelectAll(el);
+        el.sendKeys(text);
+        // Dispatch input event (some React apps need it)
+        try { js().executeScript("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", el); }
+        catch (Throwable ignored) {}
+    }
+
+    /** Clear & type with an already-found element. */
+    protected void type(WebElement el, String text) {
+        clearWithSelectAll(el);
+        el.sendKeys(text);
+        try { js().executeScript("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", el); }
+        catch (Throwable ignored) {}
+    }
+
+    /** Idempotent checkbox setter. */
+    protected void setCheckbox(By locator, boolean shouldBeChecked) {
+        WebElement box = wait.waitForElementVisible(locator);
+        scrollToElement(box);
+        boolean checked = false;
+        try { checked = box.isSelected(); } catch (Throwable ignored) {}
+        if (checked != shouldBeChecked) safeClick(box);
+    }
+
+    /** Select by visible text; falls back to sending keys. */
+    protected void selectByVisibleText(By selectLocator, String visibleText) {
+        WebElement el = wait.waitForElementVisible(selectLocator);
+        try {
+            new Select(el).selectByVisibleText(visibleText);
+        } catch (Throwable ignored) {
+            safeClick(el);
+            el.sendKeys(visibleText);
+            el.sendKeys(Keys.ENTER);
+        }
+    }
+
+    /** Send ENTER to an element. */
+    protected void pressEnter(By locator) {
+        WebElement el = wait.waitForElementVisible(locator);
+        el.sendKeys(Keys.ENTER);
+    }
+
+    /** Send ESCAPE to the focused element. */
+    protected void pressEscape() {
+        try { actions().sendKeys(Keys.ESCAPE).perform(); } catch (Throwable ignored) {}
+    }
+
+    // ======================================================================
+    // Reads / predicates
+    // ======================================================================
 
     protected String getText(By locator) {
         return wait.waitForElementVisible(locator).getText();
     }
 
     protected boolean isVisible(By locator) {
-        try {
-            return wait.waitForElementVisible(locator).isDisplayed();
-        } catch (TimeoutException e) {
-            return false;
-        }
+        try { return wait.waitForElementVisible(locator).isDisplayed(); }
+        catch (TimeoutException e) { return false; }
     }
 
-    protected void type(By locator, String text) {
-        WebElement element = wait.waitForElementVisible(locator);
-
-           // cross‑platform select-all (Control on Win/Linux, Command on macOS)
-                    Keys mod = System.getProperty("os.name").toLowerCase().contains("mac") ? Keys.COMMAND : Keys.CONTROL;
-           element.sendKeys(Keys.chord(mod, "a"), Keys.DELETE);
-           element.sendKeys(text);
+    protected boolean isPresent(By locator) {
+        try { return !driver.findElements(locator).isEmpty(); }
+        catch (Throwable t) { return false; }
     }
 
     protected boolean isClickable(By locator) {
-        try {
-            wait.waitForElementClickable(locator);
-            return true;
-        } catch (TimeoutException e) {
-            return false;
-        }
+        try { wait.waitForElementClickable(locator); return true; }
+        catch (TimeoutException e) { return false; }
     }
 
+    // ======================================================================
+    // Screenshots
+    // ======================================================================
 
-    // =========================
-    // 🔹 Screenshot Utility
-    // =========================
+    /** Saves a screenshot under ./screenshots/{name}.png (best-effort). */
     protected void takeScreenshot(String name) {
         File screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
         try {
-            FileHandler.createDir(new File("screenshots"));
-            FileHandler.copy(screenshot, new File("screenshots/" + name + ".png"));
+            File dir = new File("screenshots");
+            FileHandler.createDir(dir);
+            FileHandler.copy(screenshot, new File(dir, name + ".png"));
         } catch (IOException e) {
             throw new RuntimeException("Failed to save screenshot: " + name, e);
         }
     }
 
+    // ======================================================================
+    // Wait wrappers (thin delegates to WaitUtils + a few extras)
+    // ======================================================================
 
-
-    // =========================
-    // Wait Wrappers
-    // =========================
-
-    protected WebElement waitForElementVisible(By locator) {
-        return wait.waitForElementVisible(locator);
-    }
-
-    protected WebElement waitForElementClickable(By locator) {
-        return wait.waitForElementClickable(locator);
-    }
-
-    protected boolean waitForElementInvisible(By locator) {
-        return wait.waitForElementInvisible(locator);
-    }
-
-    protected boolean waitForUrlContains(String partialUrl) {
-        return wait.waitForUrlContains(partialUrl);
-    }
-
-    protected boolean waitForTitleContains(String partialTitle) {
-        return wait.waitForTitleContains(partialTitle);
-    }
+    protected WebElement waitForElementVisible(By locator) { return wait.waitForElementVisible(locator); }
+    protected WebElement waitForElementClickable(By locator){ return wait.waitForElementClickable(locator); }
+    protected boolean    waitForElementInvisible(By locator){ return wait.waitForElementInvisible(locator); }
+    protected boolean    waitForUrlContains(String partial)  { return wait.waitForUrlContains(partial); }
+    protected boolean    waitForTitleContains(String partial){ return wait.waitForTitleContains(partial); }
 
     protected void waitForAttributeToContain(By locator, String attribute, String value) {
-           wait.until(ExpectedConditions.attributeContains(locator, attribute, value));
-        ;
+        wait.until(ExpectedConditions.attributeContains(locator, attribute, value));
     }
 
+    /** Best-effort “network idle”: waits for document.readyState === 'complete' and no visible loaders. */
+    protected void waitForNetworkIdle(Duration timeout) {
+        WebDriverWait w = new WebDriverWait(driver, timeout);
+        try {
+            w.until((ExpectedCondition<Boolean>) d ->
+                    "complete".equals(js().executeScript("return document.readyState"))
+            );
+        } catch (Throwable ignored) {}
+        try {
+            w.until(ExpectedConditions.invisibilityOfElementLocated(POSSIBLE_LOADER));
+        } catch (Throwable ignored) {}
+    }
+
+    // ======================================================================
+    // Identity helpers
+    // ======================================================================
+
+    /**
+     * Generic "isCurrentPage" check:
+     *  - URL must contain the given fragment (if not null/empty)
+     *  - At least one of the locators must be visible within a short timeout (default 3s)
+     */
+    public static boolean isCurrentPage(WebDriver driver, String urlFragment, By... mustHaveLocators) {
+        return isCurrentPage(driver, urlFragment, Duration.ofSeconds(3), mustHaveLocators);
+    }
+
+    /**
+     * Overload with explicit timeout.
+     */
+    public static boolean isCurrentPage(WebDriver driver, String urlFragment, Duration timeout, By... mustHaveLocators) {
+        try {
+            if (urlFragment != null && !urlFragment.isBlank()) {
+                String url = driver.getCurrentUrl();
+                if (url == null || !url.contains(urlFragment)) return false;
+            }
+            if (mustHaveLocators == null || mustHaveLocators.length == 0) return true;
+
+            WebDriverWait w = new WebDriverWait(driver, timeout);
+            for (By locator : mustHaveLocators) {
+                try {
+                    WebElement el = w.until(ExpectedConditions.visibilityOfElementLocated(locator));
+                    if (el != null && el.isDisplayed()) return true;
+                } catch (TimeoutException ignored) { /* try next */ }
+            }
+            return false;
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    // ======================================================================
+    // Small utilities
+    // ======================================================================
+
+    /** Escapes single quotes for XPaths. */
+    protected static String esc(String s) { return s == null ? "" : s.replace("'", "\\'"); }
+
+    /** Quick data-test helpers. */
+    protected By byDataTest(String value)   { return By.cssSelector("[data-test='" + value + "']"); }
+    protected By byDataTestId(String value) { return By.cssSelector("[data-testid='" + value + "']"); }
+
+    /** Clear input via CMD/CTRL+A + Delete with JS fallback. */
+    private void clearWithSelectAll(WebElement el) {
+        try { el.sendKeys(Keys.chord(Keys.COMMAND, "a"), Keys.DELETE); } catch (Throwable ignored) {}
+        try { el.sendKeys(Keys.chord(Keys.CONTROL,  "a"), Keys.DELETE); } catch (Throwable ignored) {}
+        try {
+            String current = String.valueOf(el.getAttribute("value"));
+            if (current != null && !current.isEmpty()) {
+                js().executeScript("arguments[0].value=''; arguments[0].dispatchEvent(new Event('input',{bubbles:true}));", el);
+            }
+        } catch (Throwable ignored) {}
+    }
 }

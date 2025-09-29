@@ -25,7 +25,8 @@ public class DriverManager {
     public static void quit() {
         WebDriver d = TL.get();
         if (d != null) {
-            try { d.quit(); } finally { TL.remove(); }
+            try { d.quit(); }
+            finally { TL.remove(); }
         }
     }
 }

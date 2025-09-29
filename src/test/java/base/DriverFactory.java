@@ -2,46 +2,60 @@ package base;
 
 import Utils.Config;
 import io.github.bonigarcia.wdm.WebDriverManager;
+import org.openqa.selenium.PageLoadStrategy;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.logging.LogType;
 import org.openqa.selenium.logging.LoggingPreferences;
-import org.openqa.selenium.safari.SafariDriver;
 
 import java.util.logging.Level;
 
 public class DriverFactory {
 
-
-
     public static WebDriver createDriver() {
-        String browser = Config.getBrowser().toLowerCase();
+        String browser = String.valueOf(Config.getBrowser()).toLowerCase();
 
         switch (browser) {
             case "chrome":
             default:
+                // Ensure a compatible chromedriver is present
                 WebDriverManager.chromedriver().setup();
+
                 ChromeOptions options = new ChromeOptions();
+                options.setAcceptInsecureCerts(true);
+
+                // Faster & less flaky first-paints → avoids renderer stalls
+                options.setPageLoadStrategy(PageLoadStrategy.EAGER);
+
+                // Logs used by BaseTest teardown (browser + performance)
                 LoggingPreferences logPrefs = new LoggingPreferences();
                 logPrefs.enable(LogType.PERFORMANCE, Level.ALL);
                 logPrefs.enable(LogType.BROWSER, Level.ALL);
                 options.setCapability("goog:loggingPrefs", logPrefs);
 
-                // headless from config (defaults to true via your Config)
+                // Headless (from config)
                 if (Config.isHeadless()) {
                     options.addArguments("--headless=new");
                 }
 
-                // a couple of safe defaults for CI/local parity
-                options.addArguments("--window-size=1920,1080");
-                options.addArguments("--disable-dev-shm-usage");
-                options.addArguments("--no-sandbox");
+                // Stable flags for local & CI
+                options.addArguments(
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--disable-backgrounding-occluded-windows",
+                        "--disable-features=PaintHolding",
+                        "--window-size=1366,900"
+                );
 
-                options.setAcceptInsecureCerts(true);
+                // Optional: respect a custom Chrome binary if provided
+                String chromeBinary = System.getProperty("CHROME_BINARY");
+                if (chromeBinary != null && !chromeBinary.isBlank()) {
+                    options.setBinary(chromeBinary);
+                }
+
                 return new ChromeDriver(options);
         }
     }
-
-
 }

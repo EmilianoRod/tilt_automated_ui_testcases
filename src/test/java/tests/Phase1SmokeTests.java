@@ -102,34 +102,7 @@ public class Phase1SmokeTests extends BaseTest {
         }
     }
 
-    // ==================== login helper ====================
 
-    /** Throttle-aware login with diagnostics and a one-time retry (no “effectively final” lambda issues). */
-    private DashboardPage safeLoginAsAdmin(LoginPage loginPage, String email, String pass, Duration wait) {
-        DashboardPage dashboard = loginPage.login(email, pass);
-        try {
-            new WebDriverWait(driver, wait).until(ExpectedConditions.urlContains("/dashboard"));
-            return dashboard;
-        } catch (org.openqa.selenium.TimeoutException te) {
-            // Dump a few first lines to reveal banners like “Too many attempts”
-            String bodyText = "";
-            try { bodyText = driver.findElement(By.tagName("body")).getText(); } catch (Exception ignore) {}
-            System.out.println("[LoginFail] Still on sign-in. First lines:");
-            Arrays.stream(Objects.toString(bodyText, "").split("\\R"))
-                    .limit(10)
-                    .map(String::trim)
-                    .forEach(l -> System.out.println("  " + l));
-
-            String low = Objects.toString(bodyText, "").toLowerCase(Locale.ROOT);
-            if (low.contains("too many") || low.contains("try again later") || low.contains("rate")) {
-                try { Thread.sleep(8000); } catch (InterruptedException ignored) {}
-                dashboard = loginPage.login(email, pass);
-                new WebDriverWait(driver, wait).until(ExpectedConditions.urlContains("/dashboard"));
-                return dashboard;
-            }
-            throw te;
-        }
-    }
 
     // ==================== small utils ====================
 
@@ -207,7 +180,8 @@ public class Phase1SmokeTests extends BaseTest {
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
-        DashboardPage dashboardPage = safeLoginAsAdmin(loginPage, ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+        DashboardPage dashboardPage =
+                loginPage.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
         Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard did not load after login");
 
         step("Go to Shop and start purchase flow");

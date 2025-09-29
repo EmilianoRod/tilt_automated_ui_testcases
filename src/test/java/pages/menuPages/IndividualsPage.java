@@ -303,7 +303,7 @@ public class IndividualsPage extends BasePage {
 
     // ======= Utilities =======
 
-    private boolean isPresent(By by) { return !driver.findElements(by).isEmpty(); }
+//    private boolean isPresent(By by) { return !driver.findElements(by).isEmpty(); }
 
 
     private boolean looksLikeEmail(String s) {
