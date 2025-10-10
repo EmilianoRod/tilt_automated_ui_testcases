@@ -11,7 +11,7 @@ import pages.Shop.OrderPreviewPage;
 import pages.Shop.PurchaseRecipientSelectionPage;
 import pages.Shop.Stripe.StripeCheckoutPage;
 import pages.menuPages.DashboardPage;
-import pages.menuPages.IndividualsPage;
+import pages.Individuals.IndividualsPage;
 import pages.menuPages.ShopPage;
 
 import java.time.Duration;

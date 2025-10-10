@@ -15,6 +15,8 @@ import java.io.File;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Base class for all page objects.
@@ -88,16 +90,28 @@ public abstract class BasePage {
 
     /** Wait for DOM ready + app-specific loaders gone (best-effort). */
     protected void pageReady() {
-        try { wait.waitForDocumentReady(); } catch (Throwable ignored) {}
-        try { wait.waitForLoadersToDisappear(); } catch (Throwable ignored) {}
+        try {
+            wait.waitForDocumentReady();
+        } catch (Throwable ignored) {
+
+        }
+        try {
+            wait.waitForLoadersToDisappear();
+        } catch (Throwable ignored) {
+
+        }
     }
 
     // ======================================================================
     // UI Interactions (robust)
     // ======================================================================
 
-    protected Actions actions() { return new Actions(driver); }
-    protected JavascriptExecutor js() { return (JavascriptExecutor) driver; }
+    protected Actions actions() {
+        return new Actions(driver);
+    }
+    protected JavascriptExecutor js() {
+        return (JavascriptExecutor) driver;
+    }
 
     /** Scroll element into view (center) with Actions fallback. */
     protected void scrollToElement(WebElement el) {
@@ -162,7 +176,7 @@ public abstract class BasePage {
         clearWithSelectAll(el);
         el.sendKeys(text);
         // Dispatch input event (some React apps need it)
-        try { js().executeScript("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", el); }
+        try {js().executeScript("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", el); }
         catch (Throwable ignored) {}
     }
 
@@ -330,5 +344,12 @@ public abstract class BasePage {
                 js().executeScript("arguments[0].value=''; arguments[0].dispatchEvent(new Event('input',{bubbles:true}));", el);
             }
         } catch (Throwable ignored) {}
+    }
+
+    // --- small helper to pull the first email-looking token from a row's text ---
+    private String extractEmail(String text) {
+        if (text == null) return "";
+        Matcher m = Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE).matcher(text);
+        return m.find() ? m.group() : "";
     }
 }

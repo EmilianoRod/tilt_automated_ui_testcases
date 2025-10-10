@@ -1,5 +1,6 @@
 package tests;
 import Utils.*;
+
 import base.BaseTest;
 import com.mailslurp.clients.ApiException;
 import com.mailslurp.models.Email;
@@ -7,30 +8,28 @@ import com.mailslurp.models.InboxDto;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.NoSuchElementException;
-import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.SkipException;
 import org.testng.annotations.Test;
-import pages.Shop.AssessmentEntryPage;
-import pages.Shop.PurchaseRecipientSelectionPage;
-import pages.Shop.OrderPreviewPage;
-import pages.menuPages.DashboardPage;
-import pages.LoginPage;
+
 import org.json.JSONObject;
-import pages.menuPages.IndividualsPage;
+import pages.LoginPage;
+import pages.Shop.AssessmentEntryPage;
+import pages.Shop.OrderPreviewPage;
+import pages.Shop.PurchaseRecipientSelectionPage;
+import pages.menuPages.DashboardPage;
+import pages.Individuals.IndividualsPage;
 import pages.menuPages.ShopPage;
+
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import static Utils.Config.joinUrl;
-
-
 
 
 public class Phase1SmokeTests extends BaseTest {
@@ -218,7 +217,7 @@ public class Phase1SmokeTests extends BaseTest {
                 (trig.requestLogUrl != null ? " | requestLog=" + trig.requestLogUrl : ""));
 
         step("Navigate to post-payment confirmation");
-        driver.navigate().to(Config.joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+        driver.navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
 
         step("Individuals page shows the newly invited user");
         new IndividualsPage(driver)

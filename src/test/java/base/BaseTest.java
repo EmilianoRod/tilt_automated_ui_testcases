@@ -39,6 +39,13 @@ public class BaseTest {
     public void mailSlurpSuiteInit() {
         System.setProperty("mailslurp.debug", System.getProperty("mailslurp.debug", "true"));
 
+        // 🔕 Global bypass: if the suite doesn't require email, skip resolving inbox.
+        if (!isEmailRequiredForSuite()) {
+            logger.info("[MailSlurp][Suite] Email not required (mailslurp.required=false). Skipping inbox resolution.");
+            fixedInbox = null; // explicit; setUp will tolerate this for ui-only tests
+            return;
+        }
+
         final String fixedIdRaw = Config.getAny("mailslurp.inboxId", "MAILSLURP_INBOX_ID");
         final String fixedId = fixedIdRaw == null ? null : fixedIdRaw.trim();
         final boolean allowCreate = Config.getMailSlurpAllowCreate();
@@ -52,7 +59,11 @@ public class BaseTest {
         try {
             if (fixedId != null && !fixedId.isBlank()) {
                 fixedInbox = MailSlurpUtils.getInboxById(UUID.fromString(fixedId));
-                if (fixedInbox == null) throw new SkipException("[MailSlurp][Suite] getInboxById returned null for id: " + fixedId);
+                if (fixedInbox == null) {
+                    logger.warn("[MailSlurp][Suite] getInboxById returned null for id: {} — proceeding without inbox (email-required tests will skip).", fixedId);
+                    fixedInbox = null;
+                    return;
+                }
 
                 logger.info("[MailSlurp][Suite] Using fixed inbox {} <{}>", fixedInbox.getId(), fixedInbox.getEmailAddress());
 
@@ -63,24 +74,31 @@ public class BaseTest {
                 catch (Exception e) { logger.warn("[MailSlurp][Suite] Could not clear inbox emails: {}", e.getMessage()); }
             } else if (allowCreate) {
                 fixedInbox = MailSlurpUtils.resolveFixedOrCreateInbox();
-                if (fixedInbox == null) throw new SkipException("[MailSlurp][Suite] resolveFixedOrCreateInbox returned null (creation blocked/quota?)");
+                if (fixedInbox == null) {
+                    logger.warn("[MailSlurp][Suite] resolveFixedOrCreateInbox returned null (creation blocked/quota?) — proceeding without inbox.");
+                    return;
+                }
 
                 logger.info("[MailSlurp][Suite] Resolved/created inbox {} <{}>", fixedInbox.getId(), fixedInbox.getEmailAddress());
                 System.setProperty("mailslurp.inboxId", fixedInbox.getId().toString());
                 System.setProperty("MAILSLURP_INBOX_ID", fixedInbox.getId().toString());
             } else {
-                throw new SkipException("[MailSlurp][Suite] No fixed inbox configured and inbox creation is disabled (mailslurp.allowCreate=false).");
+                // IMPORTANT: do not throw — log & allow ui-only tests to run
+                logger.warn("[MailSlurp][Suite] No fixed inbox configured and inbox creation is disabled (mailslurp.allowCreate=false). Proceeding without inbox.");
+                fixedInbox = null;
             }
         } catch (IllegalArgumentException e) {
-            throw new SkipException("[MailSlurp][Suite] MAILSLURP_INBOX_ID is not a valid UUID: " + fixedId);
+            logger.warn("[MailSlurp][Suite] MAILSLURP_INBOX_ID is not a valid UUID: {} — proceeding without inbox.", fixedId);
+            fixedInbox = null;
         } catch (ApiException e) {
-            if (e.getCode() == 404)  throw new SkipException("[MailSlurp][Suite] Fixed inbox not found: " + fixedId);
-            if (e.getCode() == 426)  throw new SkipException("[MailSlurp][Suite] CreateInbox quota exhausted (426). Provide MAILSLURP_INBOX_ID or upgrade quota.");
-            throw new SkipException("[MailSlurp][Suite] MailSlurp API error (" + e.getCode() + "): " + e.getMessage());
-        } catch (SkipException se) {
-            throw se;
+            if (e.getCode() == 404)  logger.warn("[MailSlurp][Suite] Fixed inbox not found: {} — proceeding without inbox.", fixedId);
+            else if (e.getCode() == 426) logger.warn("[MailSlurp][Suite] CreateInbox quota exhausted (426). Provide MAILSLURP_INBOX_ID or upgrade quota. Proceeding without inbox.");
+            else logger.warn("[MailSlurp][Suite] MailSlurp API error ({}): {} — proceeding without inbox.", e.getCode(), e.getMessage());
+            fixedInbox = null;
         } catch (Exception e) {
-            throw new SkipException("[MailSlurp][Suite] Unexpected error resolving inbox: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            logger.warn("[MailSlurp][Suite] Unexpected error resolving inbox: {}: {} — proceeding without inbox.",
+                    e.getClass().getSimpleName(), e.getMessage());
+            fixedInbox = null;
         }
     }
 
@@ -92,9 +110,13 @@ public class BaseTest {
         if (adminEmail == null || adminEmail.isBlank() || adminPass == null || adminPass.isBlank()) {
             throw new SkipException("[Config] Admin credentials are not set (admin.email/ADMIN_EMAIL/ADMIN_USER and admin.password/ADMIN_PASSWORD/ADMIN_PASS).");
         }
-        if (fixedInbox == null) {
-            throw new SkipException("[BaseTest][Guard] fixedInbox is null before test " + method.getName()
-                    + " (check mailslurp.inboxId/MAILSLURP_INBOX_ID or allowCreate)");
+
+        // 🔒 Only enforce MailSlurp if the test (and suite) require email.
+        if (isEmailRequiredForTest(method) && isEmailRequiredForSuite()) {
+            if (fixedInbox == null) {
+                throw new SkipException("[BaseTest][Guard] fixedInbox is null before test " + method.getName()
+                        + " (email required; set mailslurp.inboxId or enable mailslurp.allowCreate)");
+            }
         }
 
         // 1) Thread-safe driver
@@ -114,7 +136,11 @@ public class BaseTest {
 
         START.set(System.currentTimeMillis());
         logger.info("========== STARTING TEST: {} ==========", method.getName());
-        logger.info("[MailSlurp][TestCtx] Inbox {} <{}>", fixedInbox.getId(), fixedInbox.getEmailAddress());
+        if (isEmailRequiredForTest(method) && isEmailRequiredForSuite() && fixedInbox != null) {
+            logger.info("[MailSlurp][TestCtx] Inbox {} <{}>", fixedInbox.getId(), fixedInbox.getEmailAddress());
+        } else {
+            logger.info("[MailSlurp][TestCtx] Email not required for this test.");
+        }
     }
 
     // -------- Per-test teardown --------
@@ -309,5 +335,22 @@ public class BaseTest {
 
     private static void safeWriteString(Path path, String text) {
         try { Files.write(path, (text == null ? "" : text).getBytes(StandardCharsets.UTF_8)); } catch (Exception ignored) {}
+    }
+
+    // =================== MailSlurp requirement switches ===================
+    /** Global switch via config: mailslurp.required=true|false (default true). */
+    private static boolean isEmailRequiredForSuite() {
+        String raw = Utils.Config.getAny("mailslurp.required", "MAILSLURP_REQUIRED");
+        return raw == null || raw.isBlank() || Boolean.parseBoolean(raw); // default true
+    }
+
+    /** Per-test switch via TestNG groups: add groups={"ui-only"} to skip MailSlurp. */
+    private static boolean isEmailRequiredForTest(Method m) {
+        org.testng.annotations.Test ann = m.getAnnotation(org.testng.annotations.Test.class);
+        if (ann == null) return true;
+        for (String g : ann.groups()) {
+            if ("ui-only".equalsIgnoreCase(g)) return false;
+        }
+        return true;
     }
 }

@@ -5,8 +5,7 @@ import org.testng.Assert;
 import org.testng.annotations.Test;
 import pages.LoginPage;
 import pages.menuPages.DashboardPage;
-import pages.menuPages.IndividualsPage;
-import pages.menuPages.SettingsPage;
+import pages.Individuals.IndividualsPage;
 import pages.menuPages.ShopPage;
 
 public class TiltSmokeTest extends BaseTest {

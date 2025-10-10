@@ -1,10 +1,10 @@
 package pages.menuPages;
 
-import Utils.WaitUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import pages.BasePage;
+import pages.Individuals.IndividualsPage;
 
 public class DashboardPage extends BasePage {
 
@@ -13,7 +13,7 @@ public class DashboardPage extends BasePage {
     private By dashboardHeader = By.xpath("//header[@class='sc-742c83c9-0 bMxPLh']");
     private By userName = By.xpath("//div[@id='__next']//div//div//main//header//div//div//a");
     private By newAssessmentBtn = By.xpath("//button[normalize-space()='New Assessment']");
-    private By individualsButton = By.xpath("//nav//button[1]");
+    private By individualsButton = By.xpath("//nav//button[normalize-space()='Individuals']");
     private By shopButton = By.xpath("//button[normalize-space()='Shop']");
 
 
