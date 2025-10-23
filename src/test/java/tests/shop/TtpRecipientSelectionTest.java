@@ -20,7 +20,7 @@ public class TtpRecipientSelectionTest extends BaseTest {
 
 
 
-    @Test(description = "Next is disabled until a recipient is chosen; selecting 'Myself' enables it and advances to Purchase Information.")
+    @Test(groups = "ui-only", description = "Next is disabled until a recipient is chosen; selecting 'Myself' enables it and advances to Purchase Information.")
     public void cannotProceedWithoutSelection_thenSelectMyself() throws InterruptedException {
         DashboardPage dashboard = BaseTest.startFreshSession(driver);
 

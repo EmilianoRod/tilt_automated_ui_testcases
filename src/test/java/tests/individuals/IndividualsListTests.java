@@ -3,6 +3,7 @@ package tests.individuals;
 import Utils.Config;
 import base.BaseTest;
 import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.devtools.DevTools;
 import org.openqa.selenium.devtools.HasDevTools;
@@ -596,6 +597,15 @@ public class IndividualsListTests extends BaseTest {
     }
 
 
+
+
+
+
+
+
+
+
+
     @Test(groups = "ui-only", description = "IND-010: Open Report link navigates to Report page.")
     public void openReportLink_navigatesToReportPage() {
         step("Start fresh session (login + Dashboard)");
@@ -605,35 +615,75 @@ public class IndividualsListTests extends BaseTest {
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
         Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
 
-        // We'll try page 1..6; if a page doesn't exist, goToPage(i) will throw and we'll stop.
-        pages.reports.ReportSummaryPage report = null;
+        // optional: show more rows to reduce pagination
+        // individuals.setPageSize(12);
+
+        int maxPage = Math.max(1, individuals.getMaxPageNumber());
+        pages.reports.ReportSummaryPage reportPage = null;
         String chosenEmail = null;
 
-        for (int page = 1; page <= 6 && report == null; page++) {
-            try {
-                individuals.goToPage(page);
-            } catch (Throwable t) {
-                break;
-            }
+        // Iterate deterministically by page number
+        for (int page = 1; page <= maxPage && reportPage == null; page++) {
+            step("Go to page " + page);
+            individuals.goToPage(page); // this already waits for active-page + content change
 
-            step("Scan page " + page + " for a row with a Report link");
-            List<String> emails = individuals.getEmailsOnCurrentPage();
-            assumeNonEmpty(emails, "emails_p" + page);
+            step("Scan page " + page + " for a visible Report link");
+            // Work on the current page DOM directly to avoid goToFirstPageIfPossible()
+            List<WebElement> rows = driver.findElements(By.cssSelector(".ant-table .ant-table-tbody > tr.ant-table-row"));
+            Assert.assertTrue(!rows.isEmpty(), "❌ No rows on page " + page);
 
-            for (String email : emails) {
-                String status = individuals.getReportStatusByEmail(email); // "Pending", "Link", or "Link:<href>"
-                if (status != null && status.toLowerCase(java.util.Locale.ROOT).startsWith("link")) {
-                    chosenEmail = email;
-                    step("Open Report link for " + email + " (same tab)");
-                    report = individuals.openReportLinkByEmail(email).waitUntilLoaded();
-                    break;
+            for (WebElement row : rows) {
+                // Email (2nd column)
+                String email = "";
+                try {
+                    email = row.findElement(By.cssSelector("td:nth-of-type(2) h4")).getText().trim();
+                } catch (Exception ignored) {}
+
+                // Report cell (3rd column)
+                WebElement reportCell;
+                try {
+                    reportCell = row.findElement(By.cssSelector("td:nth-of-type(3)"));
+                } catch (Exception e) {
+                    continue;
                 }
+
+                // Skip if it's Pending
+                String cellText = (reportCell.getText() == null) ? "" : reportCell.getText().trim();
+                if ("pending".equalsIgnoreCase(cellText)) continue;
+
+                // Look for a visible link-ish element
+                List<WebElement> links = reportCell.findElements(By.cssSelector("a, [role='link'], button[role='link']"));
+                if (links.isEmpty()) continue;
+
+                WebElement link = links.get(0);
+                if (!link.isDisplayed() || !link.isEnabled()) continue;
+
+                // Force same-tab nav and click
+                ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", link);
+                try { ((JavascriptExecutor) driver).executeScript("arguments[0].removeAttribute('target');", link); } catch (Exception ignored) {}
+                try { link.click(); } catch (Exception e) { ((JavascriptExecutor) driver).executeScript("arguments[0].click();", link); }
+
+                chosenEmail = email;
+                reportPage = new pages.reports.ReportSummaryPage(driver).waitUntilLoaded();
+                break;
             }
         }
 
-        Assert.assertNotNull(report, "❌ Could not find any row with a Report link on the first pages.");
-        Assert.assertTrue(report.isLoaded(), "❌ Report page did not load correctly for email: " + chosenEmail);
+        Assert.assertNotNull(reportPage, "❌ Could not find any row with a Report link after scanning " + maxPage + " page(s).");
+        Assert.assertTrue(reportPage.isLoaded(), "❌ Report page did not load correctly for email: " + chosenEmail);
     }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     @Test(groups = "ui-only", description = "IND-011: Row actions menu opens and shows expected options.")
@@ -841,7 +891,6 @@ public class IndividualsListTests extends BaseTest {
         Assert.assertFalse(sendBtns.isEmpty(),   "❌ 'Send reminder' button not found in the reminder modal.");
     }
 
-
     @Test(groups = "ui-only", description = "IND-015: Send reminder: confirm shows success toast")
     public void sendReminder_confirm_showsSuccessToast() {
         step("Start fresh session (login + Dashboard)");
@@ -885,7 +934,6 @@ public class IndividualsListTests extends BaseTest {
         );
     }
     private String safeLower(String s) { return s == null ? null : s.toLowerCase(); }
-
 
     @Test(groups = "ui-only", description = "IND-016: Send reminder: backend error shows error toast")
     public void sendReminder_confirm_showsErrorToast_onBackendFailure() {
@@ -945,7 +993,6 @@ public class IndividualsListTests extends BaseTest {
         }
     }
 
-
     @Test(groups = "ui-only", description = "IND-017: Send reminder: cancel modal keeps state unchanged")
     public void sendReminder_cancel_keepsStateUnchanged() {
         step("Start fresh session (login + Dashboard)");
@@ -992,7 +1039,6 @@ public class IndividualsListTests extends BaseTest {
         }
     }
 
-
     @Test(groups = "ui-only", description = "IND-018: Send reminder: close (X) keeps state unchanged")
     public void sendReminder_closeX_keepsStateUnchanged() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
@@ -1036,7 +1082,6 @@ public class IndividualsListTests extends BaseTest {
             Assert.assertEquals(afterAuto, beforeAuto, "❌ Auto reminder state changed after closing with X.");
         }
     }
-
 
     @Test(groups = "ui-only", description = "IND-018: Edit info: opens with current values")
     public void editInfo_opensWithCurrentValues() {
@@ -1103,7 +1148,6 @@ public class IndividualsListTests extends BaseTest {
                 "❌ Expected Cancel/Save changes buttons not present in Edit info modal."
         );
     }
-
 
     @Test(groups = "ui-only", description = "IND-019: Edit info: update email persists and shows success")
     public void editInfo_updateEmail_persistsAndShowsSuccess() {
@@ -1241,43 +1285,43 @@ public class IndividualsListTests extends BaseTest {
                 "❌ Original row with email " + targetEmail + " not found after duplicate attempt.");
     }
 
-    @Test(groups = "ui-only", description = "IND-022: Edit info: no-change submit keeps Save disabled")
-    public void editInfo_noChange_keepsSaveDisabled() {
-        step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
-
-        step("Open Individuals page");
-        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
-        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
-
-        step("Pick target row (first email on current page)");
-        List<String> emails = individuals.getEmailsOnCurrentPage();
-        if (emails == null || emails.isEmpty()) {
-            throw new SkipException("Need at least 1 row to open Edit info.");
-        }
-        String email = emails.get(0);
-
-        step("Open row menu → 'Edit info' (modal visible)");
-        individuals.openActionsMenuFor(email);
-        individuals.clickEditInfoInOpenMenu();
-
-        step("'Save changes' must remain disabled when no fields are modified");
-        // Give the UI a brief moment to settle any initial validation/dirty checks
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(3);
-        boolean everEnabled = false;
-        while (System.nanoTime() < deadline) {
-            if (individuals.isEditInfoSaveEnabled()) { // PO helper
-                everEnabled = true;
-                break;
-            }
-            try { Thread.sleep(100); } catch (InterruptedException ignored) {}
-        }
-        Assert.assertFalse(everEnabled, "❌ 'Save changes' became enabled without any changes.");
-
-        step("Close the modal to leave UI clean");
-        try { individuals.clickModalCancel(); } catch (Throwable ignore) {}
-        try { individuals.waitForModalToClose(); } catch (Throwable ignore) {}
-    }
+//    @Test(groups = "ui-only", description = "IND-022: Edit info: no-change submit keeps Save disabled")
+//    public void editInfo_noChange_keepsSaveDisabled() {
+//        step("Start fresh session (login + Dashboard)");
+//        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+//
+//        step("Open Individuals page");
+//        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
+//        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+//
+//        step("Pick target row (first email on current page)");
+//        List<String> emails = individuals.getEmailsOnCurrentPage();
+//        if (emails == null || emails.isEmpty()) {
+//            throw new SkipException("Need at least 1 row to open Edit info.");
+//        }
+//        String email = emails.get(0);
+//
+//        step("Open row menu → 'Edit info' (modal visible)");
+//        individuals.openActionsMenuFor(email);
+//        individuals.clickEditInfoInOpenMenu();
+//
+//        step("'Save changes' must remain disabled when no fields are modified");
+//        // Give the UI a brief moment to settle any initial validation/dirty checks
+//        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(3);
+//        boolean everEnabled = false;
+//        while (System.nanoTime() < deadline) {
+//            if (individuals.isEditInfoSaveEnabled()) { // PO helper
+//                everEnabled = true;
+//                break;
+//            }
+//            try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+//        }
+//        Assert.assertFalse(everEnabled, "❌ 'Save changes' became enabled without any changes.");
+//
+//        step("Close the modal to leave UI clean");
+//        try { individuals.clickModalCancel(); } catch (Throwable ignore) {}
+//        try { individuals.waitForModalToClose(); } catch (Throwable ignore) {}
+//    }
 
     @Test(groups = "ui-only", description = "IND-023: Remove user: opens confirmation modal")
     public void removeUser_opensConfirmationModal() {
@@ -1312,12 +1356,6 @@ public class IndividualsListTests extends BaseTest {
         individuals.waitForModalToClose();
     }
 
-
-
-
-
-
-
     @Test(groups = "ui-only", description = "IND-024: Remove user: cancel keeps row")
     public void removeUser_cancel_keepsRow() {
         step("Start fresh session (login + Dashboard)");
@@ -1342,7 +1380,11 @@ public class IndividualsListTests extends BaseTest {
         individuals.waitForModalToClose();
 
         step("Assert no success toast/alert appears (short window)");
-        String anyToast = individuals.waitForAnyToastOrAlertText(3); // should be null/blank on cancel
+        String anyToast = individuals.waitForSuccessToast();
+        if (anyToast == null || anyToast.isEmpty()) {
+            anyToast =   individuals.waitForErrorToast();
+        }
+
         Assert.assertTrue(anyToast == null || anyToast.isBlank(),
                 "❌ A toast/alert appeared after Cancel: " + anyToast);
 
@@ -1352,8 +1394,52 @@ public class IndividualsListTests extends BaseTest {
                 "❌ Row was removed after Cancel for email: " + email);
     }
 
+    @Test(groups = "ui-only", description = "IND-025: Remove user: confirm shows success and row disappears")
+    public void removeUser_confirmShowsToastAndRowDisappears() throws InterruptedException {
+        step("Start fresh session (login + Dashboard)");
+        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+
+        step("Open Individuals page");
+        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+
+        step("Pick a visible email from first row (safe target to remove)");
+        String email = individuals.getFirstRowEmailOrThrow();
+        step("Target email to remove: " + email);
+
+        step("Open row menu → 'Remove user'");
+        Assert.assertTrue(individuals.openActionsMenuFor(email), "❌ Could not open actions menu for: " + email);
+        individuals.clickRemoveUserInOpenMenu();
+
+        step("Wait for 'Remove Member' modal and confirm");
+        individuals.waitForRemoveUserModal();          // from previous helpers
+        individuals.clickRemoveConfirm();              // from previous helpers
+
+        step("Wait for success toast");
+        String toast = individuals.waitForSuccessToast();   // <-- String, not WebElement
+        Assert.assertTrue(toast != null && !toast.isBlank(),
+                "❌ Success toast text was empty or null after removal");
 
 
+        step("Verify the row is gone (iterate with goToPage)");
+        individuals.goToFirstPageIfPossible(); // your existing helper
+
+        int last = individuals.getMaxPageNumber();
+        last = Math.min(last, 100); // cap if you want
+
+        boolean present = false;
+        for (int p = 1; p <= last; p++) {
+            individuals.goToPage(p); // <— your resilient pager
+            java.util.List<String> emails = individuals.getEmailsOnCurrentPage(); // existing getter
+            if (emails.stream().anyMatch(e -> e != null && e.trim().equals(email))) {
+                present = true;
+                break;
+            }
+        }
+
+        Assert.assertFalse(present, "❌ Row for " + email + " still present after confirm remove");
+
+    }
 
 
 

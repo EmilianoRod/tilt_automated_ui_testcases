@@ -1,0 +1,26 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd" >
+<suite name="Unified-CI-Suite" verbose="1" parallel="false">
+
+    <!-- Global params -->
+    <parameter name="baseUrl" value="https://tilt-dashboard-dev.tilt365.com"/>
+    <parameter name="timeoutSec" value="30"/>
+
+    <!-- Run both smoke + ui-only; exclude mobile group entirely -->
+    <test name="UI-All">
+        <groups>
+            <run>
+                <include name="smoke"/>
+                <include name="ui-only"/>
+                <exclude name="ui-mobile"/>
+            </run>
+        </groups>
+
+        <classes>
+            <class name="tests.individuals.IndividualsListTests"/>
+            <class name="tests.teams.TeamAssessmentPurchaseAndAssignment"/>
+            <class name="tests.Phase1SmokeTests"/>
+            <class name="tests.OrderPreviewCouponFlowTests"/>
+
+        </classes>
+    </test>
+</suite>

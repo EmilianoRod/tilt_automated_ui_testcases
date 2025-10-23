@@ -624,6 +624,19 @@ public class IndividualsPage extends BasePage {
     }
 
 
+    /** Returns the highest numeric page shown in the pagination (fallback 1). */
+    public int getMaxPageNumber() {
+        int max = 1;
+        for (WebElement li : driver.findElements(pageItems)) { // pageItems: existing locator
+            String txt = li.getText() == null ? "" : li.getText().trim();
+            if (txt.matches("\\d+")) {
+                int n = Integer.parseInt(txt);
+                if (n > max) max = n;
+            }
+        }
+        return max;
+    }
+
 
 
     public void goToPage(int pageNumber) {
@@ -766,7 +779,8 @@ public class IndividualsPage extends BasePage {
 
 
 
-    @FunctionalInterface private interface SupplierWithException<T> {
+    @FunctionalInterface
+    public interface SupplierWithException<T> {
         T get() throws Exception;
     }
 
@@ -807,7 +821,9 @@ public class IndividualsPage extends BasePage {
     }
 
     @Step("Assert individual appears (UI) with optional network evidence + backend cross-check: {email}")
-    public void assertAppearsWithEvidence(String baseUrl, String email) {
+    public void assertAppearsWithEvidence(String baseUrl, String email) throws InterruptedException {
+//        Thread.sleep(5000);
+
         // Flags (override via -DINDIV_CDP_CAPTURE, -DINDIV_BACKEND_CHECK, -DINDIV_CDP_WAIT_SEC)
         final boolean captureNetwork = Boolean.parseBoolean(System.getProperty("INDIV_CDP_CAPTURE", "true"));
         final boolean backendCheck   = Boolean.parseBoolean(System.getProperty("INDIV_BACKEND_CHECK", "false")); // default off to run without API wiring
@@ -2022,6 +2038,108 @@ public class IndividualsPage extends BasePage {
         WebElement btn = wdw.until(org.openqa.selenium.support.ui.ExpectedConditions.elementToBeClickable(modal.findElement(REMOVE_MODAL_REMOVE_BTN)));
         btn.click();
     }
+
+    /** Returns the email from the first visible row. Throws if no rows or empty cell. */
+    public String getFirstRowEmailOrThrow() {
+        // Ensure table is rendered
+        wdw.until(d -> !driver.findElements(tableRows).isEmpty());
+        java.util.List<WebElement> rows = driver.findElements(tableRows);
+        if (rows.isEmpty()) throw new NoSuchElementException("No rows found in Individuals table.");
+
+        String email = safeText(() -> emailCellInRow(rows.get(0)).getText()).trim();
+        if (email.isEmpty()) throw new NoSuchElementException("First row email cell is empty.");
+        return email;
+    }
+
+    /** True if the user row exists anywhere (handles pagination via existing helper). */
+    public boolean isRowPresent(String email) {
+        return isUserListedByEmail(email);
+    }
+
+    /** Waits until the row for the given email disappears (any page). */
+    public boolean waitRowToDisappear(String email, java.time.Duration timeout) {
+        try {
+            new WebDriverWait(driver, timeout)
+                    .until(d -> {
+                        try { return !isUserListedByEmail(email); }
+                        catch (org.openqa.selenium.StaleElementReferenceException ignored) { return false; }
+                    });
+            return true;
+        } catch (org.openqa.selenium.TimeoutException e) {
+            return false;
+        }
+    }
+
+
+
+
+
+    // Take a small snapshot of the table so we can detect change after clicking next/prev.
+    private String tableSignature() {
+        // Use whatever you already have for rows; falls back to common AntD bodies.
+        List<WebElement> rows = driver.findElements(
+                By.cssSelector(".ant-table-tbody tr, .ant-table .ant-table-row")
+        );
+
+        StringBuilder sb = new StringBuilder();
+        int take = Math.min(rows.size(), 5);
+        for (int i = 0; i < take; i++) {
+            String txt = rows.get(i).getText();
+            if (txt != null) sb.append(txt.trim()).append("|");
+        }
+        sb.append("#").append(rows.size()); // include count
+        return sb.toString();
+    }
+
+    /** Waits until the table signature actually changes (or spinner ends). Never throws; returns true if changed. */
+// Never throws. True = table refreshed; false = no change / timed out.
+    public boolean waitForTableRefreshedSafe() {
+        try {
+            waitForTableRefreshed();   // your existing method
+            return true;
+        } catch (org.openqa.selenium.TimeoutException ignore) {
+            return false;
+        }
+    }
+
+    /** Try go next; never throws. Returns true only if a refresh actually happened. */
+    public boolean goToNextPageIfPossibleSafe() {
+        try {
+            // reuse your existing next-page method; only swallow its refresh timeout
+            boolean clicked = goToNextPageIfPossible(); // if this method itself can throw, wrap below
+            // if your goToNextPageIfPossible() doesn't call wait, do:
+            // boolean clicked = clickNextPageIfEnabled(); return clicked && waitForTableRefreshedSafe();
+
+            // if it returned true but no refresh was detected (rare), normalize to false
+            if (!waitForTableRefreshedSafe()) return false;
+            return clicked;
+        } catch (org.openqa.selenium.TimeoutException ignore) {
+            return false;
+        }
+    }
+
+
+
+    /** Chequeo sólo en la página actual usando helpers existentes. */
+    private boolean isEmailOnCurrentPage(String email) {
+        try {
+            java.util.List<WebElement> rows = driver.findElements(tableRows);
+            for (WebElement r : rows) {
+                try {
+                    WebElement cell = emailCellInRow(r); // helper existente
+                    if (cell == null) continue;
+                    String t = cell.getText();
+                    if (email.equals((t == null) ? "" : t.trim())) return true;
+                } catch (org.openqa.selenium.StaleElementReferenceException ignored) {
+                    // fila reflowed; seguimos
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
 
 
 
