@@ -111,7 +111,7 @@ public class Phase1SmokeTests extends BaseTest {
     }
 
     /** Mask an email for logs. */
-    private static String maskEmail(String email) {
+    public static String maskEmail(String email) {
         if (email == null || email.isBlank()) return "(blank)";
         int at = email.indexOf('@');
         String user = at > -1 ? email.substring(0, at) : email;
@@ -151,8 +151,8 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-1: Verify that newly added users receive an email notification with login instructions
      * NOTE: Purchase must use a brand-new recipient email each run (fresh MailSlurp inbox locally).
      */
-    @Test
-    public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException {
+    @Test(groups = "ui-only")
+    public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException, InterruptedException {
         // ----- config / constants -----
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
         final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
@@ -278,7 +278,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-2: Store access-token after login
      * Verify that the frontend stores the access-token securely after a successful login (e.g., in memory or secure storage).
      */
-    @Test
+    @Test(groups = "ui-only")
     public void testStoreAccessTokenAfterLogin() throws InterruptedException {
         // --- Config / expected ---
         final String USER_EMAIL = System.getProperty("USER_EMAIL", "erodriguez+a@effectussoftware.com");
@@ -354,7 +354,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-3: Redirect unauthorized users to login page
      * Ensure the frontend redirects the user to the login page when an invalid or expired token is detected.
      */
-    @Test
+    @Test(groups = "ui-only")
     public void testRedirectUnauthorizedUsersToLoginPage() throws InterruptedException {
         final String USER_EMAIL = System.getProperty("USER_EMAIL", "erodriguez+a@effectussoftware.com");
         final String USER_PASS  = System.getProperty("USER_PASS",  "Password#1");
@@ -407,7 +407,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-4: Generate access-token on successful login
      * Verify that an access-token is issued upon successful login with valid credentials.
      */
-    @Test
+    @Test(groups = "ui-only")
     public void testGenerateAccessTokenOnSuccessfulLogin() throws InterruptedException {
         // Step 1: Login
         LoginPage loginPage = new LoginPage(driver);
@@ -433,7 +433,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-5: Access-token is not generated on failed login
      * Verify that login attempts with invalid credentials do not produce a token.
      */
-    @Test
+    @Test(groups = "ui-only")
     public void testAccessTokenIsNotGeneratedOnFailedLogin() throws InterruptedException {
         // Step 1: Navigate to login page
         LoginPage loginPage = new LoginPage(driver);
@@ -460,7 +460,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-6: Login success redirects user
      * Upon successful OTP entry, redirect user to their dashboard or home screen.
      */
-    @Test
+    @Test(groups = "ui-only")
     public void testLoginSuccessRedirectsUser() throws InterruptedException {
         // Step 1: Navigate to login page
         LoginPage loginPage = new LoginPage(driver);
@@ -493,7 +493,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-7: Redirect user appropriately post-login
      * Redirect user appropriately post-login.
      */
-    @Test
+    @Test(groups = "ui-only")
     public void testRedirectUserAppropriatelyPostLogin() throws InterruptedException {
         // Navigate to Login Page
         LoginPage loginPage = new LoginPage(driver);
@@ -522,7 +522,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-9: Show email input field on login screen
      * Ensure user sees a field to enter their email.
      */
-    @Test
+    @Test(groups = "ui-only")
     public void testShowEmailInputFieldOnLoginScreen() {
         // Navigate to Login Page
         LoginPage loginPage = new LoginPage(driver);
@@ -539,7 +539,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-10: Redirect to dashboard on successful login
      * After password is successfully verified, redirect the user to the dashboard page.
      */
-    @Test
+    @Test(groups = "ui-only")
     public void testRedirectToDashboardOnSuccessfulLogin() {
         // Step 1: Navigate to Login Page and login
         LoginPage loginPage = new LoginPage(driver);

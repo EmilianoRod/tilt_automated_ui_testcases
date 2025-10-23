@@ -46,7 +46,8 @@ public class DriverFactory {
                         "--disable-gpu",
                         "--disable-backgrounding-occluded-windows",
                         "--disable-features=PaintHolding",
-                        "--window-size=1366,900"
+                        "--window-size=1366,900",
+                        "--force-device-scale-factor=1"
                 );
 
                 // Optional: respect a custom Chrome binary if provided
