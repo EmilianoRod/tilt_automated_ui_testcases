@@ -1,8 +1,8 @@
 package Utils;
 
 import java.io.*;
-import java.nio.file.*;
-import java.util.*;
+        import java.nio.file.*;
+        import java.util.*;
 
 /**
  * Ultra-robust configuration loader.
@@ -325,4 +325,53 @@ public class Config {
                         + " | allowCreate=" + getMailSlurpAllowCreate()
         );
     }
+
+
+
+
+    // ---------- UI/runtime knobs for WebDriver ----------
+
+    public static String getUiLanguage() {
+        return firstNonBlank(getAny("ui.lang", "UI_LANG"), "en-US");
+    }
+
+    public static String getUiTimezone() {
+        return firstNonBlank(getAny("ui.tz", "UI_TZ"), "America/Montevideo");
+    }
+
+    public static String getWindowSize() {
+        // e.g., "1440,900"
+        return firstNonBlank(getAny("ui.window", "UI_WINDOW"), "1440,900");
+    }
+
+    public static String getDeviceScale() {
+        // string because Chrome flag expects string
+        return firstNonBlank(getAny("ui.scale", "UI_SCALE"), "1");
+    }
+
+    public static String getPageLoadStrategyName() {
+        // "normal" | "eager" | "none"
+        return firstNonBlank(getAny("pageLoad", "PAGE_LOAD"), "normal");
+    }
+
+    public static boolean useWebDriverManager() {
+        String v = getAny("useWDM", "USE_WDM");
+        return v != null && (v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes"));
+    }
+
+    public static String getChromeBinaryPath() {
+        return firstNonBlank(getAny("CHROME_BINARY", "chrome.binary"), "");
+    }
+
+    public static boolean isPerfLoggingEnabled() {
+        String v = getAny("logs.performance", "LOGS_PERFORMANCE");
+        return v != null && (v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes"));
+    }
+
+    public static boolean isBrowserLoggingEnabled() {
+        String v = getAny("logs.browser", "LOGS_BROWSER");
+        // default true unless explicitly disabled
+        return v == null || v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes");
+    }
+
 }
