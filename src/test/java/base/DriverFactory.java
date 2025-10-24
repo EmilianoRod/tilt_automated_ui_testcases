@@ -36,9 +36,13 @@ public class DriverFactory {
                     io.github.bonigarcia.wdm.WebDriverManager wdm = io.github.bonigarcia.wdm.WebDriverManager.chromedriver();
                     if (pin != null && !pin.isBlank()) {
                         wdm.browserVersion(pin + ".0");
+                    } else {
+                        // 👇 auto-pin to a devtools version you have on the classpath
+                        wdm.browserVersion("138.0");
                     }
                     wdm.setup();
                 }
+
 
                 ChromeOptions options = new ChromeOptions();
                 options.setAcceptInsecureCerts(true);
@@ -49,10 +53,13 @@ public class DriverFactory {
                 // Locale & timezone for deterministic formats
                 options.addArguments("--lang=" + Config.getUiLanguage());
                 options.addArguments("--timezone-for-testing=" + Config.getUiTimezone());
+                options.addArguments("--disable-extensions", "--no-first-run", "--no-default-browser-check");
+
 
                 // Headless
+                // headless: make sure the size is honored before the first paint
                 if (Config.isHeadless()) {
-                    options.addArguments("--headless=new");
+                    options.addArguments("--window-size=" + Config.getWindowSize());
                 }
 
                 // Stable flags (gate --no-sandbox to CI/root-in-container)
@@ -66,7 +73,10 @@ public class DriverFactory {
                 );
                 if (IS_CI) {
                     options.addArguments("--no-sandbox");
+                    options.addArguments("--no-sandbox", "--disable-dev-shm-usage");
+
                 }
+
 
                 // Optional: custom Chrome binary (NULL-SAFE)
                 String chromeBinary = Config.getChromeBinaryPath(); // should return "" when unset
@@ -92,12 +102,17 @@ public class DriverFactory {
                 options.setExperimentalOption("prefs", prefs);
 
                 // Logging (opt-in perf; browser logs on by default unless disabled)
+                // Logging (opt-in perf; browser logs on by default unless disabled)
                 if (Config.isPerfLoggingEnabled() || Config.isBrowserLoggingEnabled()) {
                     LoggingPreferences logs = new LoggingPreferences();
                     if (Config.isPerfLoggingEnabled())   logs.enable(LogType.PERFORMANCE, Level.ALL);
                     if (Config.isBrowserLoggingEnabled()) logs.enable(LogType.BROWSER, Level.ALL);
                     options.setCapability("goog:loggingPrefs", logs);
+
+                    // mark so callers can decide to call getLog("performance") safely
+                    options.setCapability("app:perfLoggingEnabled", Config.isPerfLoggingEnabled());
                 }
+
 
                 ChromeDriverService service = new ChromeDriverService.Builder()
                         .withVerbose(Boolean.parseBoolean(Config.getAny("chromedriver.verbose", "CHROMEDRIVER_VERBOSE")))

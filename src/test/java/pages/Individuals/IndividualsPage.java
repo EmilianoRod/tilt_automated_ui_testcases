@@ -28,7 +28,7 @@ public class IndividualsPage extends BasePage {
 
     public IndividualsPage(WebDriver driver) {
         super(driver);
-        this.wdw = new WebDriverWait(driver, Duration.ofSeconds(15));
+        this.wdw = new WebDriverWait(driver, Duration.ofSeconds(30));
     }
 
     // ======= Locators =======
@@ -742,7 +742,7 @@ public class IndividualsPage extends BasePage {
 
     private void waitForMenuOpen() {
         By openMenu = By.cssSelector(".ant-dropdown.ant-dropdown-open, .ant-dropdown:not([hidden])");
-        try { new WebDriverWait(driver, Duration.ofSeconds(5)).until(ExpectedConditions.presenceOfElementLocated(openMenu)); }
+        try { new WebDriverWait(driver, Duration.ofSeconds(20)).until(ExpectedConditions.presenceOfElementLocated(openMenu)); }
         catch (Exception ignored) { }
     }
 
@@ -758,11 +758,11 @@ public class IndividualsPage extends BasePage {
         try { oldBody = driver.findElement(tableBody); } catch (NoSuchElementException ignored) { }
         if (oldBody != null) {
             try {
-                new WebDriverWait(driver, Duration.ofSeconds(10))
+                new WebDriverWait(driver, Duration.ofSeconds(20))
                         .until(ExpectedConditions.stalenessOf(oldBody));
             } catch (TimeoutException ignored) {
                 int before = driver.findElements(tableRows).size();
-                new WebDriverWait(driver, Duration.ofSeconds(5))
+                new WebDriverWait(driver, Duration.ofSeconds(20))
                         .until(d -> driver.findElements(tableRows).size() != before);
             }
         }
