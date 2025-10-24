@@ -3,9 +3,8 @@ package pages;
 import Utils.Config;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.openqa.selenium.By;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.ui.ExpectedCondition;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import pages.menuPages.DashboardPage;
@@ -64,42 +63,113 @@ public class LoginPage extends BasePage {
 
     // ==================== login helper ====================
 
-    /** Throttle-aware login with diagnostics and a one-time retry (no “effectively final” lambda issues). */
-    public DashboardPage safeLoginAsAdmin( String email, String pass, Duration wait) {
+    /** Throttle-aware login with narrowed error waits + always-one refresh+retry. */
+    public DashboardPage safeLoginAsAdmin(String email, String pass, Duration wait) {
+        WebDriverWait w = new WebDriverWait(driver, wait);
 
-        // wait until we are on the login page (optional)
-        new WebDriverWait(driver, wait).until(ExpectedConditions.titleContains("Sign In"));
+        // make sure we're actually on sign-in
+        try {
+            w.until(ExpectedConditions.or(
+                    ExpectedConditions.titleContains("Sign In"),
+                    ExpectedConditions.visibilityOfElementLocated(emailField),
+                    ExpectedConditions.urlContains("/auth/sign-in")
+            ));
+        } catch (TimeoutException te) {
+            driver.navigate().refresh();
+            w.until(ExpectedConditions.or(
+                    ExpectedConditions.titleContains("Sign In"),
+                    ExpectedConditions.visibilityOfElementLocated(emailField),
+                    ExpectedConditions.urlContains("/auth/sign-in")
+            ));
+        }
+
+        // selectors: avoid broad ".error" which can short-circuit
+        By errorBanner = By.cssSelector("[data-test='login-error'], .ant-alert-error, .ant-message-error, [role='alert']");
+
+        // condition: success URL reached?
+        ExpectedCondition<Boolean> successUrl = d -> {
+            String u = d.getCurrentUrl();
+            return u != null && u.contains("/dashboard");
+        };
+
+        // condition: a *known* login error (text-based), not just any visible alert
+        ExpectedCondition<Boolean> knownLoginError = d -> {
+            String text = "";
+            try {
+                for (WebElement el : d.findElements(errorBanner)) {
+                    if (el.isDisplayed()) { text = el.getText(); if (text != null && !text.isBlank()) break; }
+                }
+            } catch (Exception ignore) {}
+            // fall back to body text (some apps render errors outside alerts)
+            if (text == null || text.isBlank()) {
+                try { text = d.findElement(By.tagName("body")).getText(); } catch (Exception ignore) {}
+            }
+            String low = Objects.toString(text, "").toLowerCase(Locale.ROOT);
+            return low.contains("invalid email or password")
+                    || low.contains("too many attempts")
+                    || low.contains("try again later")
+                    || low.contains("rate limit");
+        };
+
+        // single attempt (used twice)
+        Runnable attempt = () -> {
+            WebElement emailEl = w.until(ExpectedConditions.elementToBeClickable(emailField));
+            WebElement passEl  = w.until(ExpectedConditions.elementToBeClickable(passwordField));
+            emailEl.clear(); emailEl.sendKeys(email);
+            passEl.clear();  passEl.sendKeys(pass);
+
+            try {
+                w.until(ExpectedConditions.elementToBeClickable(loginButton)).click();
+            } catch (ElementClickInterceptedException e) {
+                WebElement btn = driver.findElement(loginButton);
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click()", btn);
+            }
+
+            // wait for either success or a *real* login error
+            try {
+                new WebDriverWait(driver, wait.plusSeconds(8)).until(
+                        ExpectedConditions.or(successUrl, knownLoginError)
+                );
+            } catch (TimeoutException ignore) { /* fall through and classify below */ }
+
+            if (Boolean.TRUE.equals(successUrl.apply(driver))) return; // success
+
+            // print a brief body preview for diagnostics
+            String body = "";
+            try { body = driver.findElement(By.tagName("body")).getText(); } catch (Exception ignore) {}
+            System.out.println("[LoginFail] body preview (first lines):");
+            Arrays.stream(Objects.toString(body, "").split("\\R")).limit(12)
+                    .map(String::trim).forEach(l -> System.out.println("  • " + l));
+
+            // throw to signal failure of this attempt (retry logic below will handle)
+            throw new RuntimeException("__ATTEMPT_FAILED__");
+        };
+
+        // first attempt
+        try {
+            attempt.run();
+            return new DashboardPage(driver);
+        } catch (RuntimeException first) {
+            System.out.println("[Login] First attempt failed. Forcing refresh + retry.");
+        }
+
+        // hard refresh + retry (always)
+        driver.navigate().refresh();
+        try { Thread.sleep(1200L); } catch (InterruptedException ignored) {}
+        w.until(ExpectedConditions.or(
+                ExpectedConditions.titleContains("Sign In"),
+                ExpectedConditions.visibilityOfElementLocated(emailField),
+                ExpectedConditions.urlContains("/auth/sign-in")
+        ));
 
         try {
-
-            type(emailField,email);
-            type(passwordField,pass);
-            click(loginButton);
-
-            new WebDriverWait(driver, wait).until(ExpectedConditions.urlContains("/dashboard"));
+            attempt.run();
             return new DashboardPage(driver);
-        } catch (org.openqa.selenium.TimeoutException te) {
-            // dump a few lines for diagnosis and check banners
-            String bodyText = "";
-            try { bodyText = driver.findElement(By.tagName("body")).getText(); } catch (Exception ignore) {}
-            System.out.println("[LoginFail] body preview:");
-            Arrays.stream(Objects.toString(bodyText, "")
-                            .split("\\R"))
-                    .limit(10)
-                    .map(String::trim)
-                    .forEach(l -> System.out.println("  • " + l));
-
-            String low = Objects.toString(bodyText, "").toLowerCase(Locale.ROOT);
-            if (low.contains("too many attempts") || low.contains("try again later") || low.contains("rate")) {
-                try { Thread.sleep(8_000L); } catch (InterruptedException ignored) {}
-                // retry once
-                click(loginButton);// or re-enter creds if needed
-                new WebDriverWait(driver, wait).until(ExpectedConditions.urlContains("/dashboard"));
-                return new DashboardPage(driver);
-            }
-            throw te;
+        } catch (RuntimeException second) {
+            throw new TimeoutException("Login did not reach /dashboard after refresh+retry.");
         }
     }
+
 
 
 

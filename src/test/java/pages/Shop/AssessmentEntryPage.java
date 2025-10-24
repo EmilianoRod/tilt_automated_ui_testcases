@@ -743,8 +743,8 @@ public class AssessmentEntryPage extends BasePage {
         long end = System.currentTimeMillis() + 1500;
         while (System.currentTimeMillis() < end) {
             try {
-                actual = String.valueOf(el.getAttribute("value"));
-                if (target.equals(actual)) { ok = true; break; }
+                actual = String.valueOf(el.getAttribute("value").trim());
+                if (target.trim().equals(actual)) { ok = true; break; }
             } catch (Throwable ignored) {}
             try { Thread.sleep(50); } catch (InterruptedException ignored) {}
         }

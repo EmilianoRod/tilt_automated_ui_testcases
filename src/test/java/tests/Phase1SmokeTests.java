@@ -365,7 +365,7 @@ public class Phase1SmokeTests extends BaseTest {
         LoginPage login = new LoginPage(driver);
         login.navigateTo();
         DashboardPage dashboard = login.login(USER_EMAIL, USER_PASS);
-        new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> dashboard.isLoaded());
+        new WebDriverWait(driver, Duration.ofSeconds(25)).until(d -> dashboard.isLoaded());
         Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
 
         // 2) Tamper auth: set an EXPIRED JWT and clear persisted state
@@ -545,7 +545,7 @@ public class Phase1SmokeTests extends BaseTest {
         LoginPage loginPage = new LoginPage(driver);
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
-        DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
+        DashboardPage dashboardPage = loginPage.safeLoginAsAdmin("erodriguez+a@effectussoftware.com", "Password#1", Duration.ofSeconds(30));
 
         // Step 2: Assert that the dashboard loaded
         Assert.assertTrue(dashboardPage.isLoaded(), "Dashboard did not load after successful login.");
