@@ -23,7 +23,7 @@ public class ManualEntryValidationTests extends BaseTest {
     @Test(groups = {"shop","preview","validation","smoke"})
     public void testManualEntryInvalidEmailBlocksProceed_FullFlow() {
         // Login
-        LoginPage login = new LoginPage(driver);
+        LoginPage login = new LoginPage(driver());
         login.navigateTo();
         DashboardPage dashboard = login.login(Config.getAdminEmail(), Config.getAdminPassword());
         Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
@@ -35,7 +35,7 @@ public class ManualEntryValidationTests extends BaseTest {
         select.clickNext();
 
         // Manual entry for a single recipient
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver);
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver());
         entry.selectManualEntry();
         entry.enterNumberOfIndividuals("1");
 

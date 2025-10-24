@@ -22,7 +22,7 @@ public class TtpRecipientSelectionTest extends BaseTest {
 
     @Test(groups = "ui-only", description = "Next is disabled until a recipient is chosen; selecting 'Myself' enables it and advances to Purchase Information.")
     public void cannotProceedWithoutSelection_thenSelectMyself() throws InterruptedException {
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Go to Shop and start purchase flow of TTP");
         ShopPage shopPage = dashboard.goToShop();
@@ -46,16 +46,16 @@ public class TtpRecipientSelectionTest extends BaseTest {
         sel.clickNextCta();
 
         step("Validate we are on Purchase Information (Myself path has no Order preview)");
-        waitForLoadersToDisappear(driver, Duration.ofSeconds(10));
+        waitForLoadersToDisappear(driver(), Duration.ofSeconds(10));
         boolean onPurchaseInfo = BasePage.isCurrentPage(
-                driver,
+                driver(),
                 "/dashboard/shop/ttp",
                 PurchaseInformation.H2_PURCHASE_INFORMATION
         );
 
-        Assert.assertTrue(onPurchaseInfo, "Expected Purchase Information. URL: " + driver.getCurrentUrl());
+        Assert.assertTrue(onPurchaseInfo, "Expected Purchase Information. URL: " + driver().getCurrentUrl());
 
-        PurchaseInformation pi = new PurchaseInformation(driver).waitUntilLoaded();
+        PurchaseInformation pi = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(pi.headerVisible(), "Purchase Information header should be visible.");
         Assert.assertTrue(pi.payWithStripeVisible(), "'Pay With stripe' CTA should be visible.");
         Assert.assertEquals(pi.getPurchaseForText(), "Myself");

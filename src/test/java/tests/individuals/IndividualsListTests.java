@@ -16,9 +16,11 @@ import org.testng.asserts.SoftAssert;
 import pages.LoginPage;
 import pages.menuPages.DashboardPage;
 import pages.Individuals.IndividualsPage;
+import pages.reports.ReportSummaryPage;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.function.Supplier;
 
 
 import static io.qameta.allure.Allure.step;
@@ -33,7 +35,7 @@ public class IndividualsListTests extends BaseTest {
     public void displayIndividualsList_showsRequiredColumns() {
 
         step("Start fresh session (login + land on Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
 
         step("Open Individuals page from Dashboard nav");
@@ -96,7 +98,7 @@ public class IndividualsListTests extends BaseTest {
     public void searchIndividuals_filtersToMatchingEntries() {
 
         step("Start fresh session (login + land on Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page from Dashboard nav");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -221,7 +223,7 @@ public class IndividualsListTests extends BaseTest {
     public void sortIndividuals_ordersUpdateCorrectly() {
 
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -282,7 +284,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(description = "Individuals: Auto reminder toggle persists after refresh (ON then OFF)")
     public void autoReminderToggle_persistsAfterRefresh_onThenOff() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -299,7 +301,7 @@ public class IndividualsListTests extends BaseTest {
         step("Set Auto reminder = ON for " + email);
         individuals.setAutoReminder(email, true);
 
-        driver.navigate().refresh();
+        driver().navigate().refresh();
         individuals.waitUntilLoaded();
 
         step("Assert Auto reminder remains ON for " + email);
@@ -309,7 +311,7 @@ public class IndividualsListTests extends BaseTest {
         step("Set Auto reminder = OFF for " + email);
         individuals.setAutoReminder(email, false);
 
-        driver.navigate().refresh();
+        driver().navigate().refresh();
         individuals.waitUntilLoaded();
 
         step("Assert Auto reminder remains OFF for " + email);
@@ -337,7 +339,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(description = "IND-003: Sort by Name (A–Z) orders ascending (case/accents ignored).")
     public void sortByName_ordersAscending() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -383,7 +385,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(description = "IND-005 & IND-006: Sort by Date (Newest/Oldest) in a single flow with idempotence checks.")
     public void sortByDate_newest_oldest_inOne() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -429,7 +431,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(description = "IND-007: Pagination: next/prev page updates rows and returning restores page 1 snapshot.")
     public void pagination_nextPrev_changesRows_andRestores() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -466,7 +468,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-008: Page size selector changes rows per page (10/20).")
     public void pageSize_changesRowCount() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -477,7 +479,7 @@ public class IndividualsListTests extends BaseTest {
         assumeNonEmpty(namesInitial, "namesInitial");
 
         // Helper to count rows via existing API (no new helpers)
-        java.util.function.Supplier<Integer> rowCount = () -> individuals.getNamesOnCurrentPage().size();
+        Supplier<Integer> rowCount = () -> individuals.getNamesOnCurrentPage().size();
 
         // Snapshot signature to detect content change after size switch
         List<String> sigBefore = makeOrderSignature(individuals);
@@ -546,7 +548,7 @@ public class IndividualsListTests extends BaseTest {
     // If you already have an isActivePage helper elsewhere, use that; otherwise:
     private boolean isActivePage(String n) {
         try {
-            return driver.findElements(By.cssSelector("li.ant-pagination-item.ant-pagination-item-active"))
+            return driver().findElements(By.cssSelector("li.ant-pagination-item.ant-pagination-item-active"))
                     .stream().anyMatch(li -> n.equals(li.getText().trim()));
         } catch (Exception e) { return false; }
     }
@@ -555,7 +557,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-009: Report column shows 'Pending' or a clickable link.")
     public void reportColumn_showsPendingOrLink() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -609,7 +611,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-010: Open Report link navigates to Report page.")
     public void openReportLink_navigatesToReportPage() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -619,7 +621,7 @@ public class IndividualsListTests extends BaseTest {
         // individuals.setPageSize(12);
 
         int maxPage = Math.max(1, individuals.getMaxPageNumber());
-        pages.reports.ReportSummaryPage reportPage = null;
+        ReportSummaryPage reportPage = null;
         String chosenEmail = null;
 
         // Iterate deterministically by page number
@@ -629,7 +631,7 @@ public class IndividualsListTests extends BaseTest {
 
             step("Scan page " + page + " for a visible Report link");
             // Work on the current page DOM directly to avoid goToFirstPageIfPossible()
-            List<WebElement> rows = driver.findElements(By.cssSelector(".ant-table .ant-table-tbody > tr.ant-table-row"));
+            List<WebElement> rows = driver().findElements(By.cssSelector(".ant-table .ant-table-tbody > tr.ant-table-row"));
             Assert.assertTrue(!rows.isEmpty(), "❌ No rows on page " + page);
 
             for (WebElement row : rows) {
@@ -659,12 +661,12 @@ public class IndividualsListTests extends BaseTest {
                 if (!link.isDisplayed() || !link.isEnabled()) continue;
 
                 // Force same-tab nav and click
-                ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", link);
-                try { ((JavascriptExecutor) driver).executeScript("arguments[0].removeAttribute('target');", link); } catch (Exception ignored) {}
-                try { link.click(); } catch (Exception e) { ((JavascriptExecutor) driver).executeScript("arguments[0].click();", link); }
+                ((JavascriptExecutor) driver()).executeScript("arguments[0].scrollIntoView({block:'center'});", link);
+                try { ((JavascriptExecutor) driver()).executeScript("arguments[0].removeAttribute('target');", link); } catch (Exception ignored) {}
+                try { link.click(); } catch (Exception e) { ((JavascriptExecutor) driver()).executeScript("arguments[0].click();", link); }
 
                 chosenEmail = email;
-                reportPage = new pages.reports.ReportSummaryPage(driver).waitUntilLoaded();
+                reportPage = new ReportSummaryPage(driver()).waitUntilLoaded();
                 break;
             }
         }
@@ -689,7 +691,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-011: Row actions menu opens and shows expected options.")
     public void rowActionsMenu_opensAndShowsOptions() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -709,7 +711,7 @@ public class IndividualsListTests extends BaseTest {
         step("Collect visible menu items from the open AntD dropdown/popover");
         // Grab the last visible dropdown/popover (AntD)
         By panelBy = By.cssSelector(".ant-dropdown:not([hidden]), .ant-popover:not([hidden])");
-        WebElement panel = new WebDriverWait(driver, java.time.Duration.ofSeconds(5))
+        WebElement panel = new WebDriverWait(driver(), java.time.Duration.ofSeconds(5))
                 .until(org.openqa.selenium.support.ui.ExpectedConditions.visibilityOfElementLocated(panelBy));
 
         // Items usually are role='menuitem' or AntD item classes
@@ -736,14 +738,14 @@ public class IndividualsListTests extends BaseTest {
         softly.assertAll();
 
         // optional cleanup (close the menu)
-        try { driver.switchTo().activeElement().sendKeys(org.openqa.selenium.Keys.ESCAPE); } catch (Exception ignored) {}
+        try { driver().switchTo().activeElement().sendKeys(org.openqa.selenium.Keys.ESCAPE); } catch (Exception ignored) {}
     }
 
 
     @Test(groups = "ui-only", description = "IND-012: Auto reminder: toggle ON persists after refresh")
     public void autoReminder_toggleOn_persistsAfterRefresh() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -765,7 +767,7 @@ public class IndividualsListTests extends BaseTest {
         individuals.setAutoReminder(email, true);
 
         step("Refresh the browser");
-        driver.navigate().refresh();
+        driver().navigate().refresh();
 
         step("Wait for Individuals to reload and reopen the same row’s actions menu");
         individuals.waitUntilLoaded();
@@ -783,7 +785,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-013: Auto reminder: toggle OFF persists after refresh")
     public void autoReminder_toggleOff_persistsAfterRefresh() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -807,7 +809,7 @@ public class IndividualsListTests extends BaseTest {
         individuals.setAutoReminder(email, false);
 
         step("Refresh the browser");
-        driver.navigate().refresh();
+        driver().navigate().refresh();
 
         step("Wait for Individuals to reload and reopen the same row’s actions menu");
         individuals.waitUntilLoaded();
@@ -825,7 +827,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-014: Send reminder: opens modal with preview")
     public void sendReminder_opensModal_withPrefilledPreview() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -848,7 +850,7 @@ public class IndividualsListTests extends BaseTest {
         individuals.clickSendReminderInOpenMenu();
 
         step("Wait for the 'Send reminder' modal to appear");
-        WebDriverWait wdw = new WebDriverWait(driver, java.time.Duration.ofSeconds(8));
+        WebDriverWait wdw = new WebDriverWait(driver(), java.time.Duration.ofSeconds(8));
         By modalRoot = By.xpath("(" +
                 "//*[contains(@class,'ant-modal') and " +
                 "  not(contains(@style,'display: none')) and " +
@@ -894,7 +896,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-015: Send reminder: confirm shows success toast")
     public void sendReminder_confirm_showsSuccessToast() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -937,13 +939,13 @@ public class IndividualsListTests extends BaseTest {
 
     @Test(groups = "ui-only", description = "IND-016: Send reminder: backend error shows error toast")
     public void sendReminder_confirm_showsErrorToast_onBackendFailure() {
-        // --- Guard: CDP only on Chromium drivers ---
-        if (!(driver instanceof HasDevTools)) {
-            throw new SkipException("CDP not available on this driver; cannot simulate backend error.");
+        // --- Guard: CDP only on Chromium driver()s ---
+        if (!(driver() instanceof HasDevTools)) {
+            throw new SkipException("CDP not available on this driver(); cannot simulate backend error.");
         }
 
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -957,7 +959,7 @@ public class IndividualsListTests extends BaseTest {
         String email = emails.get(0);
 
         // --- Begin CDP: block the reminder endpoint so the request fails ---
-        DevTools devTools = ((HasDevTools) driver).getDevTools();
+        DevTools devTools = ((HasDevTools) driver()).getDevTools();
         devTools.createSession();
         devTools.send(Network.enable(Optional.empty(), Optional.empty(), Optional.empty()));
         // Tweak patterns if your endpoint differs (e.g., "/api/*reminder*", "/send_reminder")
@@ -996,7 +998,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-017: Send reminder: cancel modal keeps state unchanged")
     public void sendReminder_cancel_keepsStateUnchanged() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -1042,7 +1044,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-018: Send reminder: close (X) keeps state unchanged")
     public void sendReminder_closeX_keepsStateUnchanged() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -1086,7 +1088,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-018: Edit info: opens with current values")
     public void editInfo_opensWithCurrentValues() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -1152,7 +1154,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-019: Edit info: update email persists and shows success")
     public void editInfo_updateEmail_persistsAndShowsSuccess() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -1185,7 +1187,7 @@ public class IndividualsListTests extends BaseTest {
         step("Toast text: " + toast);
 
         step("Refresh Individuals and verify new Email appears in the table");
-        driver.navigate().refresh();
+        driver().navigate().refresh();
         individuals.waitUntilLoaded();
         // Reuse your table accessor: row should be findable by the NEW email
         String nameForNewEmail = individuals.getNameByEmail(newEmail); // returns "" if not found
@@ -1198,7 +1200,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-020: Edit info: invalid email blocks save")
     public void editInfo_invalidEmail_blocksSave() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -1228,7 +1230,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-021: Edit info: duplicate email shows error and does not persist")
     public void editInfo_duplicateEmail_showsError_andDoesNotPersist() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -1276,7 +1278,7 @@ public class IndividualsListTests extends BaseTest {
         try { individuals.clickModalCancel(); } catch (Throwable ignore) {} // if modal stayed open
         try { individuals.waitForModalToClose(); } catch (Throwable ignore) {}
 
-        driver.navigate().refresh();
+        driver().navigate().refresh();
         individuals.waitUntilLoaded();
 
         // The original row should still be findable by its original email
@@ -1288,7 +1290,7 @@ public class IndividualsListTests extends BaseTest {
 //    @Test(groups = "ui-only", description = "IND-022: Edit info: no-change submit keeps Save disabled")
 //    public void editInfo_noChange_keepsSaveDisabled() {
 //        step("Start fresh session (login + Dashboard)");
-//        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+//        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 //
 //        step("Open Individuals page");
 //        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -1326,7 +1328,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-023: Remove user: opens confirmation modal")
     public void removeUser_opensConfirmationModal() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -1359,7 +1361,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-024: Remove user: cancel keeps row")
     public void removeUser_cancel_keepsRow() {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
@@ -1397,7 +1399,7 @@ public class IndividualsListTests extends BaseTest {
     @Test(groups = "ui-only", description = "IND-025: Remove user: confirm shows success and row disappears")
     public void removeUser_confirmShowsToastAndRowDisappears() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
-        DashboardPage dashboard = BaseTest.startFreshSession(driver);
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
         step("Open Individuals page");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();

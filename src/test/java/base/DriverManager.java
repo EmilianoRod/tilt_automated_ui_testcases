@@ -29,4 +29,16 @@ public class DriverManager {
             finally { TL.remove(); }
         }
     }
+
+    public static WebDriver peek() { return TL.get(); } // may be null
+    public static boolean isInitialized() { return TL.get() != null; }
+    public static WebDriver getOrInit() {
+        WebDriver d = TL.get();
+        if (d == null) {
+            d = DriverFactory.createDriver();
+            TL.set(d);
+        }
+        return d;
+    }
+
 }

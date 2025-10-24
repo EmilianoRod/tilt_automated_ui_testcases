@@ -17,7 +17,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Level;
 
-public class DriverFactory {
+public final class DriverFactory {
+
+    private DriverFactory() {}
 
     private static final boolean IS_CI =
             Optional.ofNullable(System.getenv("CI"))
@@ -25,7 +27,7 @@ public class DriverFactory {
                     .orElse(false);
 
     public static WebDriver createDriver() {
-        String browser = String.valueOf(Config.getBrowser()).toLowerCase(Locale.ROOT);
+        final String browser = String.valueOf(Config.getBrowser()).toLowerCase(Locale.ROOT);
 
         switch (browser) {
             case "chrome":
@@ -37,54 +39,50 @@ public class DriverFactory {
                     if (pin != null && !pin.isBlank()) {
                         wdm.browserVersion(pin + ".0");
                     } else {
-                        // 👇 auto-pin to a devtools version you have on the classpath
-                        wdm.browserVersion("138.0");
+                        wdm.browserVersion("138.0"); // sane default pin
                     }
                     wdm.setup();
                 }
 
-
                 ChromeOptions options = new ChromeOptions();
                 options.setAcceptInsecureCerts(true);
-
-                // Page load strategy (normal|eager|none)
                 options.setPageLoadStrategy(parsePageLoad(Config.getPageLoadStrategyName()));
 
                 // Locale & timezone for deterministic formats
-                options.addArguments("--lang=" + Config.getUiLanguage());
-                options.addArguments("--timezone-for-testing=" + Config.getUiTimezone());
-                options.addArguments("--disable-extensions", "--no-first-run", "--no-default-browser-check");
-
-
-                // Headless
-                // headless: make sure the size is honored before the first paint
-                if (Config.isHeadless()) {
-                    options.addArguments("--window-size=" + Config.getWindowSize());
-                }
-
-                // Stable flags (gate --no-sandbox to CI/root-in-container)
                 options.addArguments(
-                        "--disable-dev-shm-usage",
-                        "--disable-gpu",
-                        "--disable-features=PaintHolding",
+                        "--lang=" + Config.getUiLanguage(),
+                        "--timezone-for-testing=" + Config.getUiTimezone(),
+                        "--disable-extensions",
+                        "--no-first-run",
+                        "--no-default-browser-check",
                         "--disable-backgrounding-occluded-windows",
-                        "--window-size=" + Config.getWindowSize(),
+                        "--disable-features=PaintHolding",
+                        "--disable-gpu",
+                        "--disable-dev-shm-usage",
                         "--force-device-scale-factor=" + Config.getDeviceScale()
                 );
-                if (IS_CI) {
-                    options.addArguments("--no-sandbox");
-                    options.addArguments("--no-sandbox", "--disable-dev-shm-usage");
 
+                // Window size applied once; headless also needs an explicit size
+                String windowSize = "--window-size=" + Config.getWindowSize();
+                options.addArguments(windowSize);
+
+                if (Config.isHeadless()) {
+                    // Use new headless for modern Chrome
+                    options.addArguments("--headless=new", windowSize);
                 }
 
+                // Gate sandbox for CI/root-in-container
+                if (IS_CI) {
+                    options.addArguments("--no-sandbox");
+                }
 
-                // Optional: custom Chrome binary (NULL-SAFE)
+                // Optional custom Chrome binary
                 String chromeBinary = Config.getChromeBinaryPath(); // should return "" when unset
                 if (chromeBinary != null && !chromeBinary.isBlank()) {
                     options.setBinary(chromeBinary);
                 }
 
-                // Chrome prefs (speed-ups & determinism)
+                // Chrome prefs (determinism + faster runs)
                 Map<String, Object> prefs = new HashMap<>();
                 if (Boolean.parseBoolean(Config.getAny("chrome.disableImages", "CHROME_DISABLE_IMAGES"))) {
                     Map<String, Object> content = Map.of("images", 2); // 2 = block
@@ -98,21 +96,19 @@ public class DriverFactory {
                 if (downloadDir != null && !downloadDir.isBlank()) {
                     prefs.put("download.default_directory", Path.of(downloadDir).toAbsolutePath().toString());
                     prefs.put("download.prompt_for_download", false);
+                    // prevent “dangerous download” prompts that can stall headless
+                    prefs.put("safebrowsing.enabled", true);
                 }
                 options.setExperimentalOption("prefs", prefs);
 
-                // Logging (opt-in perf; browser logs on by default unless disabled)
-                // Logging (opt-in perf; browser logs on by default unless disabled)
+                // Logging (opt-in)
                 if (Config.isPerfLoggingEnabled() || Config.isBrowserLoggingEnabled()) {
                     LoggingPreferences logs = new LoggingPreferences();
                     if (Config.isPerfLoggingEnabled())   logs.enable(LogType.PERFORMANCE, Level.ALL);
                     if (Config.isBrowserLoggingEnabled()) logs.enable(LogType.BROWSER, Level.ALL);
                     options.setCapability("goog:loggingPrefs", logs);
-
-                    // mark so callers can decide to call getLog("performance") safely
                     options.setCapability("app:perfLoggingEnabled", Config.isPerfLoggingEnabled());
                 }
-
 
                 ChromeDriverService service = new ChromeDriverService.Builder()
                         .withVerbose(Boolean.parseBoolean(Config.getAny("chromedriver.verbose", "CHROMEDRIVER_VERBOSE")))
@@ -120,16 +116,16 @@ public class DriverFactory {
 
                 WebDriver driver = new ChromeDriver(service, options);
 
-                // Timeouts: keep implicit at 0; prefer explicit waits
+                // Timeouts: prefer explicit waits in parallel runs
                 long imp = Long.parseLong(Optional.ofNullable(Config.getAny("wd.implicitSec", "WD_IMPLICIT_SEC")).orElse("0"));
                 long pl  = Long.parseLong(Optional.ofNullable(Config.getAny("wd.pageLoadSec", "WD_PAGELOAD_SEC")).orElse("60"));
                 long js  = Long.parseLong(Optional.ofNullable(Config.getAny("wd.scriptSec", "WD_SCRIPT_SEC")).orElse("30"));
 
-                driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(imp));
+                driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(imp)); // ideally 0
                 driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(pl));
                 driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(js));
 
-                // Ensure clean shutdown even on abrupt exits
+                // Best-effort cleanup if JVM is torn down
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     try { driver.quit(); } catch (Throwable ignored) {}
                 }));
@@ -147,5 +143,3 @@ public class DriverFactory {
         }
     }
 }
-
-

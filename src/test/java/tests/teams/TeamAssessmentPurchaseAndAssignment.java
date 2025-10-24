@@ -67,7 +67,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
         // ----- app flow -----
         step("Login as admin");
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
         DashboardPage dashboardPage =
@@ -82,14 +82,14 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.clickNextCta();
 
 
-        PurchaseInformation info = new PurchaseInformation(driver).waitUntilLoaded();
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
                 "Expected banner: 'Assessment purchase for: Team'.");
 
 
         step("Select 'create a new team'");
         AssessmentEntryPage assessmentEntryPage =
-        new AssessmentEntryPage(driver)
+        new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectCreateNewTeam()
                 .setOrganizationName("QA Org")
@@ -102,7 +102,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
         // Wait until any inline error appears on either row
-        new WebDriverWait(driver, Duration.ofSeconds(8)).until(d -> {
+        new WebDriverWait(driver(), Duration.ofSeconds(8)).until(d -> {
             return (assessmentEntryPage.getEmailErrorAtRow(1) != null) ||
                     (assessmentEntryPage.getEmailErrorAtRow(2) != null);
         });
@@ -142,7 +142,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         }
 
         // ----- login -----
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
         DashboardPage dashboardPage =
@@ -157,12 +157,12 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.clickNextCta();
 
         // ----- banner sanity -----
-        PurchaseInformation info = new PurchaseInformation(driver).waitUntilLoaded();
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
                 "Expected banner: 'Assessment purchase for: Team'.");
 
         // ----- team entry -----
-        AssessmentEntryPage page = new AssessmentEntryPage(driver)
+        AssessmentEntryPage page = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectCreateNewTeam()
                 .setOrganizationName("QA Org")
@@ -175,7 +175,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
         // Wait for either: inline error OR clamp to 20
-        new WebDriverWait(driver, Duration.ofSeconds(10)).until(d -> {
+        new WebDriverWait(driver(), Duration.ofSeconds(10)).until(d -> {
             String err = page.getNumberOfIndividualsError();
             int value  = page.getNumberOfIndividuals();
             int rows   = page.renderedEmailRows();
@@ -217,7 +217,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         }
 
         // ----- login -----
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
         DashboardPage dashboardPage =
@@ -232,13 +232,13 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.clickNextCta();
 
         // ----- banner sanity -----
-        PurchaseInformation info = new PurchaseInformation(driver).waitUntilLoaded();
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(
                 info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
                 "Expected banner: 'Assessment purchase for: Team'.");
 
         // ----- team entry & switch to template path -----
-        AssessmentEntryPage page = new AssessmentEntryPage(driver)
+        AssessmentEntryPage page = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectCreateNewTeam()
                 .setOrganizationName("QA Org")
@@ -250,7 +250,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         page.selectDownloadTemplate();
 
         // Wait until upload panel is visible
-        new WebDriverWait(driver, Duration.ofSeconds(10)).until(d -> page.isUploadPanelVisible());
+        new WebDriverWait(driver(), Duration.ofSeconds(10)).until(d -> page.isUploadPanelVisible());
 
         // ----- build invalid CSV that parses rows but leaves required cells empty -----
         java.io.File invalid = page.createTempCsv(
@@ -264,14 +264,14 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         page.uploadCsvFile(invalid.getAbsolutePath());
 
         // Wait for either rows to render OR proceed to be disabled (some UIs block immediately)
-        new WebDriverWait(driver, Duration.ofSeconds(20))
+        new WebDriverWait(driver(), Duration.ofSeconds(20))
                 .until(d -> page.renderedEmailRows() > 0 || !page.isProceedToPaymentEnabled());
 
         // Try to surface inline validations via real user blurs/tabs
         safeTriggerValidationBlurs();
 
         // Give DOM a moment to paint errors or keep proceed disabled
-        new WebDriverWait(driver, Duration.ofSeconds(8))
+        new WebDriverWait(driver(), Duration.ofSeconds(8))
                 .until(d -> page.inlineRequiredErrorsCount() > 0 || !page.isProceedToPaymentEnabled());
 
         // Settle into a mode (GRID or UPLOAD)
@@ -280,7 +280,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         // If we’re on GRID, poke once more to ensure error badges are visible
         if (mode == Mode.GRID) {
             safeTriggerValidationBlurs();
-            new WebDriverWait(driver, Duration.ofSeconds(5))
+            new WebDriverWait(driver(), Duration.ofSeconds(5))
                     .until(d -> page.inlineRequiredErrorsCount() > 0 || !page.isProceedToPaymentEnabled());
         }
 
@@ -341,7 +341,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         }
 
         // ----- login -----
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
         DashboardPage dashboardPage =
@@ -356,13 +356,13 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.clickNextCta();
 
         // ----- banner sanity -----
-        PurchaseInformation info = new PurchaseInformation(driver).waitUntilLoaded();
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(
                 info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
                 "Expected banner: 'Assessment purchase for: Team'.");
 
         // ----- go to Upload Template path -----
-        AssessmentEntryPage page = new AssessmentEntryPage(driver)
+        AssessmentEntryPage page = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectCreateNewTeam()
                 .setOrganizationName("QA Org")
@@ -374,7 +374,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         page.selectDownloadTemplate();
 
         // Wait until upload panel visible
-        new WebDriverWait(driver, Duration.ofSeconds(10))
+        new WebDriverWait(driver(), Duration.ofSeconds(10))
                 .until(d -> page.isUploadPanelVisible());
 
         // ----- create CSV MISSING 'Email' header (app soft-rejects -> grid + inline errors) -----
@@ -389,7 +389,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         page.uploadCsvFile(csv.getAbsolutePath());
 
         // Wait until we land in any clear post-upload state (prefer grid)
-        new WebDriverWait(driver, Duration.ofSeconds(20)).until(d ->
+        new WebDriverWait(driver(), Duration.ofSeconds(20)).until(d ->
                 page.isManualGridVisible()
                         || (page.isUploadPanelVisible() && page.renderedEmailRows() == 0)
                         || !page.isProceedToPaymentEnabled()
@@ -398,14 +398,14 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         // If we’re on grid, trigger blurs so inline messages paint
         if (page.isManualGridVisible()) {
             page.triggerManualValidationBlurs();
-            new WebDriverWait(driver, Duration.ofSeconds(6))
+            new WebDriverWait(driver(), Duration.ofSeconds(6))
                     .until(d -> page.inlineRequiredErrorsCount() > 0 || !page.isProceedToPaymentEnabled());
         }
 
         // If we’re on grid, trigger blurs so inline messages paint
         if (page.isManualGridVisible()) {
             page.triggerManualValidationBlurs();
-            new WebDriverWait(driver, Duration.ofSeconds(10))
+            new WebDriverWait(driver(), Duration.ofSeconds(10))
                     .until(d -> !page.collectInlineErrorTexts().isEmpty()   // visible, non-empty error texts
                             || !page.isProceedToPaymentEnabled());        // or CTA disabled
         }
@@ -468,7 +468,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         String email2 = email1.replace("@", "+p2@");
 
         // Flow to preview with 2 members
-        LoginPage login = new LoginPage(driver);
+        LoginPage login = new LoginPage(driver());
         login.navigateTo();
         login.waitUntilLoaded();
         DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
@@ -480,10 +480,10 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.selectTeam();
         sel.clickNextCta();
 
-        PurchaseInformation info = new PurchaseInformation(driver).waitUntilLoaded();
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM));
 
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver)
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectCreateNewTeam()
                 .setOrganizationName("QA Org")
@@ -559,7 +559,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         String email2 = email1.replace("@", "+p2@");
 
         // ===== Navigate to Order Preview with 2 members selected =====
-        LoginPage login = new LoginPage(driver);
+        LoginPage login = new LoginPage(driver());
         login.navigateTo();
         login.waitUntilLoaded();
         DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
@@ -572,10 +572,10 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.selectTeam();
         sel.clickNextCta();
 
-        PurchaseInformation info = new PurchaseInformation(driver).waitUntilLoaded();
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM));
 
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver)
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectCreateNewTeam()
                 .setOrganizationName("QA Org")
@@ -671,7 +671,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         dbg(DEBUG, "Recipients: email1=" + email1 + " | email2=" + email2);
 
         // ===== Navigate to Order Preview with 2 members selected =====
-        LoginPage login = new LoginPage(driver);
+        LoginPage login = new LoginPage(driver());
         login.navigateTo();
         login.waitUntilLoaded();
         DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
@@ -687,11 +687,11 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.clickNextCta();
         dbg(DEBUG, "Recipient selection done.");
 
-        PurchaseInformation info = new PurchaseInformation(driver).waitUntilLoaded();
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM));
         dbg(DEBUG, "PurchaseInformation loaded + TEAM confirmed.");
 
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver)
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectCreateNewTeam()
                 .setOrganizationName("QA Org")
@@ -827,7 +827,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
         // ----- app flow to Preview -----
         step("Login as admin");
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
         DashboardPage dashboardPage =
@@ -842,7 +842,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.clickNext();
 
         step("Manual entry for 1 individual");
-        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver)
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectManualEntry()
                 .enterNumberOfIndividuals("1");
@@ -857,7 +857,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         // ----- throttle network -----
         step("Simulate slow network");
         org.openqa.selenium.devtools.DevTools devTools =
-                ((org.openqa.selenium.devtools.HasDevTools) driver).getDevTools();
+                ((org.openqa.selenium.devtools.HasDevTools) driver()).getDevTools();
         devTools.createSession();
         devTools.send(org.openqa.selenium.devtools.v138.network.Network.enable(
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()
@@ -867,15 +867,15 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()
         ));
 
-        final java.util.Set<String> handlesBefore = new java.util.HashSet<>(driver.getWindowHandles());
-        final String handleBefore = driver.getWindowHandle();
+        final java.util.Set<String> handlesBefore = new java.util.HashSet<>(driver().getWindowHandles());
+        final String handleBefore = driver().getWindowHandle();
         String stripeUrlForE2E = null;
 
         try {
             step("Click Pay once; button must show loading/disabled promptly");
             preview.clickPayWithStripe();
             // be a bit more patient under throttle
-            new WebDriverWait(driver, Duration.ofSeconds(8)).until(d -> preview.isPayBusy());
+            new WebDriverWait(driver(), Duration.ofSeconds(8)).until(d -> preview.isPayBusy());
             Assert.assertTrue(preview.isPayBusy(), "❌ Pay button should show a loading/disabled state after first click");
 
             step("Attempt a rapid second click; should NOT open another Stripe checkout");
@@ -883,11 +883,11 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
             try { Thread.sleep(700); } catch (InterruptedException ignored) {}
 
             int newStripeWindows = 0;
-            for (String h : driver.getWindowHandles()) {
+            for (String h : driver().getWindowHandles()) {
                 if (!handlesBefore.contains(h)) {
                     try {
-                        driver.switchTo().window(h);
-                        String u = driver.getCurrentUrl();
+                        driver().switchTo().window(h);
+                        String u = driver().getCurrentUrl();
                         if (u != null && u.contains("checkout.stripe.com")) {
                             newStripeWindows++;
                             if (stripeUrlForE2E == null) stripeUrlForE2E = u;
@@ -897,8 +897,8 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
             }
             if (newStripeWindows == 0) {
                 try {
-                    driver.switchTo().window(handleBefore);
-                    String u = driver.getCurrentUrl();
+                    driver().switchTo().window(handleBefore);
+                    String u = driver().getCurrentUrl();
                     if (u != null && u.contains("checkout.stripe.com")) {
                         newStripeWindows = 1;
                         if (stripeUrlForE2E == null) stripeUrlForE2E = u;
@@ -913,7 +913,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         } finally {
             step("Restore normal network");
             try { devTools.send(org.openqa.selenium.devtools.v138.network.Network.disable()); } catch (Exception ignored) {}
-            try { driver.switchTo().window(handleBefore); } catch (Exception ignored) {}
+            try { driver().switchTo().window(handleBefore); } catch (Exception ignored) {}
         }
 
         // ===== Optional E2E tail (best-effort, never fail UI signal) =====
@@ -935,10 +935,10 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
                         (trig.requestLogUrl != null ? " | requestLog=" + trig.requestLogUrl : ""));
 
                 step("Navigate to post-payment confirmation");
-                driver.navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+                driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
 
                 step("Individuals page shows the newly invited user");
-                new IndividualsPage(driver)
+                new IndividualsPage(driver())
                         .open(Config.getBaseUrl())
                         .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
                 System.out.println("✅ Individuals shows invited user: " + tempEmail);
@@ -984,7 +984,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
         // ----- Login → Shop → Team flow -----
         step("Login as admin");
-        LoginPage login = new LoginPage(driver);
+        LoginPage login = new LoginPage(driver());
         login.navigateTo();
         login.waitUntilLoaded();
         DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
@@ -998,7 +998,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.clickNextCta();
 
         step("Verify banner shows TEAM purchase");
-        PurchaseInformation info = new PurchaseInformation(driver).waitUntilLoaded();
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
                 "Expected banner: 'Assessment purchase for: Team'.");
 
@@ -1007,7 +1007,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         final String GRP = "Automation Squad";
 
         step("Fill team info + 3 members");
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver)
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectCreateNewTeam()
                 .setOrganizationName(ORG)
@@ -1156,7 +1156,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     private void saveSnapshot(String tag) {
         try {
             // screenshot
-            File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
+            File src = ((TakesScreenshot) driver()).getScreenshotAs(OutputType.FILE);
             File dest = new File("target/" + tag + ".png");
             dest.getParentFile().mkdirs();
             java.nio.file.Files.copy(src.toPath(), dest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
@@ -1168,7 +1168,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
             // html dump
             File html = new File("target/" + tag + ".html");
             html.getParentFile().mkdirs();
-            java.nio.file.Files.writeString(html.toPath(), driver.getPageSource());
+            java.nio.file.Files.writeString(html.toPath(), driver().getPageSource());
             System.out.println("[DEBUG] html dump saved: " + html.getAbsolutePath());
         } catch (Throwable t) {
             System.out.println("[DEBUG] html dump failed: " + t.getMessage());
@@ -1178,7 +1178,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     private void dumpBrowserConsole() {
         try {
             System.out.println("\n[DEBUG] BROWSER CONSOLE LOGS:");
-            driver.manage().logs().get(org.openqa.selenium.logging.LogType.BROWSER)
+            driver().manage().logs().get(org.openqa.selenium.logging.LogType.BROWSER)
                     .forEach(System.out::println);
         } catch (Throwable ignored) {}
     }
@@ -1211,7 +1211,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
     // ========== STEP 0: find candidate tables and pick the one that looks like the preview ==========
     private WebElement findPreviewTable(boolean DEBUG) {
-        List<WebElement> tables = driver.findElements(By.xpath("//table"));
+        List<WebElement> tables = driver().findElements(By.xpath("//table"));
         dbg(DEBUG, "[findPreviewTable] tables found: " + tables.size());
         if (tables.isEmpty()) throw new NoSuchElementException("No <table> found on page");
 
@@ -1260,7 +1260,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     // ========== STEP 2: scroll into view to defeat row virtualization ==========
     private void ensureTableVisible(WebElement table, boolean DEBUG) {
         try {
-            ((JavascriptExecutor) driver).executeScript(
+            ((JavascriptExecutor) driver()).executeScript(
                     "arguments[0].scrollIntoView({block:'center', inline:'nearest'});", table);
             dbg(DEBUG, "[ensureTableVisible] scrolled table into view");
         } catch (Exception e) {
@@ -1304,7 +1304,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         if (!mailtos.isEmpty()) return mailtos;
 
         // D) regex over table HTML (hidden attrs etc.)
-        String outer = String.valueOf(((JavascriptExecutor) driver).executeScript("return arguments[0].outerHTML;", table));
+        String outer = String.valueOf(((JavascriptExecutor) driver()).executeScript("return arguments[0].outerHTML;", table));
         var m = Pattern.compile("[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}", Pattern.CASE_INSENSITIVE).matcher(outer);
         LinkedHashSet<String> set = new LinkedHashSet<>();
         while (m.find()) set.add(m.group().toLowerCase(Locale.ROOT));
@@ -1324,7 +1324,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     private List<String> collectEmailsFromPreviewTable(boolean DEBUG) {
         dbg(DEBUG, "[collectEmailsFromPreviewTable] start");
         try {
-            new WebDriverWait(driver, Duration.ofSeconds(15))
+            new WebDriverWait(driver(), Duration.ofSeconds(15))
                     .until(d -> !d.findElements(By.xpath("//table//tbody//tr")).isEmpty());
         } catch (TimeoutException te) {
             dbg(true, "[collectEmailsFromPreviewTable] Timeout waiting rows. Dumping tables…");
@@ -1369,8 +1369,8 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         return list.size() <= 5 ? list.toString() : list.subList(0, 5).toString() + " … (+" + (list.size()-5) + ")";
     }
     private void highlight(By locator) {
-        List<WebElement> els = driver.findElements(locator);
-        JavascriptExecutor js = (JavascriptExecutor) driver;
+        List<WebElement> els = driver().findElements(locator);
+        JavascriptExecutor js = (JavascriptExecutor) driver();
         for (WebElement el : els) {
             try {
                 js.executeScript("arguments[0].style.outline='3px solid magenta'; arguments[0].style.background='rgba(255,0,255,0.08)';", el);
@@ -1380,7 +1380,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     }
     private void dumpTablesSummary(String tag) {
         System.out.println("=== [dumpTablesSummary][" + tag + "] URL=" + safeUrl() + " ===");
-        List<WebElement> tables = driver.findElements(By.xpath("//table"));
+        List<WebElement> tables = driver().findElements(By.xpath("//table"));
         System.out.println("tables: " + tables.size());
         for (int i = 0; i < tables.size(); i++) {
             WebElement t = tables.get(i);
@@ -1388,7 +1388,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
             List<WebElement> firstRows = t.findElements(By.xpath(".//tbody//tr[position()<=3]"));
             String outer = "";
             try {
-                outer = String.valueOf(((JavascriptExecutor) driver).executeScript("return arguments[0].outerHTML;", t));
+                outer = String.valueOf(((JavascriptExecutor) driver()).executeScript("return arguments[0].outerHTML;", t));
             } catch (Exception ignored) {}
             System.out.println("-- table[" + i + "] heads=" + texts(ths));
             System.out.println("   firstRows=" + texts(firstRows));
@@ -1397,7 +1397,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     }
     private void waitWithDiagnostics(Duration timeout, String name, ExpectedCondition<Boolean> cond, Runnable onTimeoutDump) {
         try {
-            new WebDriverWait(driver, timeout).until(cond);
+            new WebDriverWait(driver(), timeout).until(cond);
         } catch (TimeoutException te) {
             System.out.println(name + " TIMEOUT after " + timeout.getSeconds() + "s");
             try { onTimeoutDump.run(); } catch (Exception ignored) {}
@@ -1553,7 +1553,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
         // ----- app flow -----
         step("Login as admin");
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
         DashboardPage dashboardPage =
@@ -1568,11 +1568,11 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.clickNextCta(); // ← keep your method name
 
         step("Manual entry for 1 team member");
-        PurchaseInformation info = new PurchaseInformation(driver).waitUntilLoaded();
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
                 "Expected banner: 'Assessment purchase for: Team'.");
 
-        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver)
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectCreateNewTeam()
                 .setOrganizationName("QA Org")
@@ -1605,10 +1605,10 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
                 (trig.requestLogUrl != null ? " | requestLog=" + trig.requestLogUrl : ""));
 
         step("Navigate to post-payment confirmation");
-        driver.navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
 
         step("Individuals page shows the newly invited user");
-        new IndividualsPage(driver)
+        new IndividualsPage(driver())
                 .open(Config.getBaseUrl())
                 .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
         System.out.println("✅ User appears in Individuals: " + tempEmail);
@@ -1669,7 +1669,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 //                : ("qa.manual+" + System.currentTimeMillis() + "@tilt365.com"); // fallback (no inbox checks later)
 //
 //        step("Login as admin");
-//        LoginPage loginPage = new LoginPage(driver);
+//        LoginPage loginPage = new LoginPage(driver();
 //        loginPage.navigateTo();
 //        loginPage.waitUntilLoaded();
 //        DashboardPage dashboardPage =
@@ -1683,12 +1683,12 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 //        sel.selectTeam();
 //        sel.clickNextCta();
 //
-//        PurchaseInformation info = new PurchaseInformation(driver).waitUntilLoaded();
+//        PurchaseInformation info = new PurchaseInformation(driver().waitUntilLoaded();
 //        Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
 //                "Expected banner: 'Assessment purchase for: Team'.");
 //
 //        step("Manual entry for 1 individual (unique email)");
-//        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver)
+//        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver()
 //                .waitUntilLoaded()
 //                .selectCreateNewTeam()
 //                .setOrganizationName("QA Org")
@@ -1727,10 +1727,10 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 //        }
 //
 //        step("Navigate to post-payment confirmation");
-//        driver.navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+//        driver(.navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
 //
 //        // Assert the invite hit Individuals after payment (works only if webhook/trigger ran)
-//        IndividualsPage individuals = new IndividualsPage(driver)
+//        IndividualsPage individuals = new IndividualsPage(driver()
 //                .open(Config.getBaseUrl());
 //        individuals.assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
 //
@@ -1791,7 +1791,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         String last = "";
         while (System.currentTimeMillis() < end) {
             try {
-                String url = driver.getCurrentUrl();
+                String url = driver().getCurrentUrl();
                 last = url;
                 if (url != null && url.contains("checkout.stripe.com")) return true;
             } catch (Exception ignored) {}
@@ -1820,7 +1820,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
     /* ---------- small utility ---------- */
     private String safeUrl() {
-        try { return driver.getCurrentUrl(); } catch (Exception e) { return ""; }
+        try { return driver().getCurrentUrl(); } catch (Exception e) { return ""; }
     }
 
 
@@ -1829,7 +1829,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     private enum Mode { GRID, UPLOAD }
 
     private Mode waitForModeToSettle(AssessmentEntryPage page, Duration timeout) {
-        new WebDriverWait(driver, timeout).until(d ->
+        new WebDriverWait(driver(), timeout).until(d ->
                 page.isManualGridVisible() || page.isUploadPanelVisible());
         return page.isManualGridVisible() ? Mode.GRID : Mode.UPLOAD;
     }
@@ -1837,13 +1837,13 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     private void safeTriggerValidationBlurs() {
         try {
             // Prefer page helper if present
-            new AssessmentEntryPage(driver).triggerManualValidationBlurs();
+            new AssessmentEntryPage(driver()).triggerManualValidationBlurs();
         } catch (Throwable ignored) {
             // Fallback: tab across inputs to force blur
-            List<WebElement> inputs = driver.findElements(By.cssSelector("input[id^='users.']"));
+            List<WebElement> inputs = driver().findElements(By.cssSelector("input[id^='users.']"));
             for (WebElement el : inputs) {
                 try {
-                    ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'})", el);
+                    ((JavascriptExecutor) driver()).executeScript("arguments[0].scrollIntoView({block:'center'})", el);
                     el.click();
                     el.sendKeys(Keys.TAB);
                 } catch (Exception ignored2) { /* best effort */ }
@@ -1855,7 +1855,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
                              String mode, int rows, int inline, boolean proceedEnabled,
                              boolean uploadVisible, boolean radioSelected, String toast) {
         String url = "";
-        try { url = driver.getCurrentUrl(); } catch (Exception ignored) {}
+        try { url = driver().getCurrentUrl(); } catch (Exception ignored) {}
         System.out.printf(
                 "[SNAPSHOT AFTER_UPLOAD] mode=%s | rows=%d | inline=%d | proceedEnabled=%s | uploadVisible=%s | radioSelected=%s | toast='%s' | url=%s%n",
                 mode, rows, inline, proceedEnabled, uploadVisible, radioSelected, toast, url
@@ -1870,7 +1870,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
                 By.cssSelector("span[type='error']")
         );
         for (By by : locators) {
-            for (WebElement el : driver.findElements(by)) {
+            for (WebElement el : driver().findElements(by)) {
                 try {
                     if (!el.isDisplayed()) continue;
                     String txt = el.getText();
@@ -1888,7 +1888,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
     private void dumpPerFieldErrors() {
         // Pair each input id users.{row}.{field} with the nearest following error text element
-        List<WebElement> inputs = driver.findElements(By.cssSelector("input[id^='users.']"));
+        List<WebElement> inputs = driver().findElements(By.cssSelector("input[id^='users.']"));
         List<String> lines = new ArrayList<>();
         for (WebElement input : inputs) {
             try {
@@ -1926,7 +1926,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     private boolean hasAnyEmailError() {
         // Look for an email-specific message anywhere on the grid
         List<String> candidates = new ArrayList<>();
-        for (WebElement el : driver.findElements(By.cssSelector(".ant-form-item-explain-error, span[type='error']"))) {
+        for (WebElement el : driver().findElements(By.cssSelector(".ant-form-item-explain-error, span[type='error']"))) {
             try {
                 if (!el.isDisplayed()) continue;
                 String t = el.getText();
@@ -1955,7 +1955,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
                 By.xpath("//input[@aria-invalid='true' or @data-status='error' or contains(@class,'status-error')]")
         );
         for (By by : probes) {
-            List<WebElement> els = driver.findElements(by);
+            List<WebElement> els = driver().findElements(by);
             for (WebElement el : els) {
                 try {
                     if (el.isDisplayed()) return true;
