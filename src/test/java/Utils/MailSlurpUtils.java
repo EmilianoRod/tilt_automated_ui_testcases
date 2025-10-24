@@ -20,45 +20,81 @@ import java.util.regex.Pattern;
 /**
  * MailSlurp helper — CI-safe key resolution, fixed-inbox reuse, and 426 guard.
  *
- * API key priority:
+ * API key priority (highest → lowest):
  *   1) -Dmailslurp.forceKey
- *   2) env MAILSLURP_API_KEY
- *   3) -Dmailslurp.apiKey
+ *   2) -Dmailslurp.apiKey  (system property, dotted)
+ *   3) -DMAILSLURP_API_KEY (system property, UPPER_SNAKE)
+ *   4) env MAILSLURP_API_KEY
+ *   5) Config.getMailSlurpApiKey() (classpath/.env chain)
  *
  * Optional guards/knobs:
- *   -Dmailslurp.expectedFingerprint=<first-12-of-SHA256>
- *   -Dmailslurp.basePath=https://api.mailslurp.com (default)
- *   -Dmailslurp.debug=true|false (default true)
+ *   -Dmailslurp.expectedFingerprint=<first-12-of-SHA256>  (also respects env MAILSLURP_EXPECTED_FINGERPRINT)
+ *   -Dmailslurp.basePath=https://api.mailslurp.com       (also env MAILSLURP_BASE_PATH; default https://api.mailslurp.com)
+ *   -Dmailslurp.debug=true|false                         (default true)
  *   -DMAILSLURP_INBOX_ID=<uuid> (or env var) to reuse a fixed inbox
- *   -DALLOW_CREATE_INBOX_FALLBACK=true|false (default false)
+ *   -DALLOW_CREATE_INBOX_FALLBACK=true|false             (default false)
  */
 public class MailSlurpUtils {
+
+    // ========= MailSlurp SDK singletons =========
+    private static final ApiClient apiClient;
+    private static final InboxControllerApi inboxController;
+    private static final WaitForControllerApi waitForController;
+    private static final String RESOLVED_KEY_FP;
+
+    static {
+        final String apiKey = resolveApiKey(); // resolve ONCE
+        RESOLVED_KEY_FP = safeSha12(apiKey);
+
+        apiClient = Configuration.getDefaultApiClient();
+        apiClient.setBasePath(basePath());
+        apiClient.setApiKey(apiKey);
+        apiClient.setConnectTimeout(30_000);
+        apiClient.setReadTimeout(30_000);
+        apiClient.setWriteTimeout(30_000);
+
+        inboxController = new InboxControllerApi(apiClient);
+        waitForController = new WaitForControllerApi(apiClient);
+
+        if (isDebug()) {
+            System.out.println("[MailSlurp][Java SDK] key fingerprint: " + RESOLVED_KEY_FP);
+            try {
+                inboxController.getInboxes().size(1).execute();
+                System.out.println("[MailSlurp][Java SDK] auth OK.");
+            } catch (Exception e) {
+                System.out.println("[MailSlurp][Java SDK] identity probe failed: " + safeMsg(e));
+            }
+        }
+    }
 
     // ========= Configuration resolution =========
 
     private static String resolveApiKey() {
-        // Strongest: explicit forceKey
-        String forced = System.getProperty("mailslurp.forceKey");
-        if (isNonBlank(forced)) {
-            return verifyFingerprintOrThrow(forced.trim());
-        }
-        // ENV
-        String envKey = System.getenv("MAILSLURP_API_KEY");
-        if (isNonBlank(envKey)) {
-            return verifyFingerprintOrThrow(envKey.trim());
-        }
-        // Standard -D
-        String propKey = System.getProperty("mailslurp.apiKey");
-        if (isNonBlank(propKey)) {
-            return verifyFingerprintOrThrow(propKey.trim());
-        }
-        throw new IllegalStateException(
-                "MailSlurp API key is missing. Provide -Dmailslurp.apiKey=... or set MAILSLURP_API_KEY, or use -Dmailslurp.forceKey."
+        // 1) strongest explicit knob
+        String key = firstNonBlank(
+                System.getProperty("mailslurp.forceKey"),
+                System.getProperty("mailslurp.apiKey"),
+                System.getProperty("MAILSLURP_API_KEY"),   // allow -DMAILSLURP_API_KEY=...
+                System.getenv("MAILSLURP_API_KEY"),
+                Config.getMailSlurpApiKey()                // final fallback to your unified Config
         );
+
+        if (key == null || key.isBlank()) {
+            throw new IllegalStateException(
+                    "MailSlurp API key is missing. Provide -Dmailslurp.apiKey=... or set MAILSLURP_API_KEY, or use -Dmailslurp.forceKey."
+            );
+        }
+        return verifyFingerprintOrThrow(key.trim());
     }
 
     private static String verifyFingerprintOrThrow(String key) {
-        String expectedFp = System.getProperty("mailslurp.expectedFingerprint", "").trim();
+        // Accept both -D and env for the expected fingerprint
+        String expectedFpRaw = firstNonBlank(
+                System.getProperty("mailslurp.expectedFingerprint"),
+                System.getenv("MAILSLURP_EXPECTED_FINGERPRINT")
+        );
+        String expectedFp = (expectedFpRaw == null) ? "" : expectedFpRaw.trim();
+
         if (!expectedFp.isEmpty()) {
             String actualFp = safeSha12(key);
             if (!expectedFp.equalsIgnoreCase(actualFp)) {
@@ -72,64 +108,38 @@ public class MailSlurpUtils {
         return key;
     }
 
+
     private static boolean isDebug() {
-        return Boolean.parseBoolean(System.getProperty("mailslurp.debug", "true"));
+        return Boolean.parseBoolean(System.getProperty("mailslurp.debug",
+                System.getenv().getOrDefault("MAILSLURP_DEBUG", "true")));
     }
 
     private static String basePath() {
-        return System.getProperty("mailslurp.basePath", "https://api.mailslurp.com").trim();
-    }
-
-    private static String firstNonBlank(String... vals) {
-        for (String s : vals) if (s != null && !s.isBlank()) return s;
-        return null;
+        return firstNonBlank(
+                System.getProperty("mailslurp.basePath"),
+                System.getenv("MAILSLURP_BASE_PATH"),
+                "https://api.mailslurp.com"
+        ).trim();
     }
 
     private static boolean isCreateAllowed() {
-        // Accept both env and -D, snake_case or dotted:
         String v = firstNonBlank(
                 System.getProperty("ALLOW_CREATE_INBOX_FALLBACK"),
                 System.getenv("ALLOW_CREATE_INBOX_FALLBACK"),
                 System.getProperty("mailslurp.allowCreate"),
                 System.getenv("MAILSLURP_ALLOW_CREATE")
         );
-        return Boolean.parseBoolean(v != null ? v : "false");
+        return v != null && (v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes"));
+    }
+
+    private static String firstNonBlank(String... vals) {
+        if (vals == null) return null;
+        for (String s : vals) if (s != null && !s.isBlank()) return s;
+        return null;
     }
 
     private static boolean isNonBlank(String s) {
         return s != null && !s.isBlank();
-    }
-
-    // ========= MailSlurp SDK singletons =========
-
-    private static final ApiClient apiClient;
-    private static final InboxControllerApi inboxController;
-    private static final WaitForControllerApi waitForController;
-
-    static {
-        apiClient = Configuration.getDefaultApiClient();
-        apiClient.setBasePath(basePath());
-        apiClient.setApiKey(resolveApiKey());
-        apiClient.setConnectTimeout(30_000);
-        apiClient.setReadTimeout(30_000);
-        apiClient.setWriteTimeout(30_000);
-
-        inboxController = new InboxControllerApi(apiClient);
-        waitForController = new WaitForControllerApi(apiClient);
-
-        if (isDebug()) {
-            try {
-                String fp = safeSha12(resolveApiKey());
-                System.out.println("[MailSlurp][Java SDK] key fingerprint: " + fp);
-                // quick auth probe
-                try {
-                    inboxController.getInboxes().size(1).execute();
-                    System.out.println("[MailSlurp][Java SDK] auth OK.");
-                } catch (Exception ignore) {}
-            } catch (Exception e) {
-                System.out.println("[MailSlurp][Java SDK] identity probe failed: " + safeMsg(e));
-            }
-        }
     }
 
     // ========= Helpers =========
@@ -149,46 +159,11 @@ public class MailSlurpUtils {
     }
 
     private static String safeMsg(Throwable t) {
-        String m = t.getMessage();
-        return (m == null || m.isBlank()) ? t.getClass().getSimpleName() : m;
+        String m = (t == null) ? null : t.getMessage();
+        return (m == null || m.isBlank()) ? (t == null ? "null" : t.getClass().getSimpleName()) : m;
     }
 
     // ========= Inbox management =========
-
-
-
-
-    /**
-     * Public helper: create a brand-new MailSlurp inbox using the same guarded,
-     * reflective path we already use internally.
-     *
-     * Behavior:
-     *  - If ALLOW_CREATE_INBOX_FALLBACK=false → throws SkipException (no quota burn).
-     *  - On MailSlurp plan limits (426/402/429) the reflective helper already
-     *    tries to reuse the first existing inbox; if none, it Skip/throws accordingly.
-     */
-    public static InboxDto createNewInbox() throws ApiException {
-        return createInboxReflectiveWithGuards(); // respects ALLOW_CREATE_INBOX_FALLBACK
-    }
-
-    /**
-     * Convenience: force a fresh inbox even if a fixed ID is set via env by
-     * temporarily blanking the JVM property MAILSLURP_INBOX_ID. Still respects
-     * ALLOW_CREATE_INBOX_FALLBACK (will Skip when disabled).
-     */
-    public static InboxDto forceCreateNewInboxIgnoringFixedId() throws ApiException {
-        String prev = System.getProperty("MAILSLURP_INBOX_ID");
-        try {
-            System.setProperty("MAILSLURP_INBOX_ID", ""); // make resolver skip fixed-id path
-            return createInboxReflectiveWithGuards();
-        } finally {
-            if (prev == null) System.clearProperty("MAILSLURP_INBOX_ID");
-            else System.setProperty("MAILSLURP_INBOX_ID", prev);
-        }
-    }
-
-
-
 
     /**
      * Preferred: reuse fixed inbox if MAILSLURP_INBOX_ID is present (JVM prop or env).
@@ -221,12 +196,33 @@ public class MailSlurpUtils {
                 }
             }
         } else if (!isCreateAllowed()) {
-            // No fixed inbox and not allowed to create
             throw new SkipException("MAILSLURP_INBOX_ID not set and ALLOW_CREATE_INBOX_FALLBACK=false");
         }
 
-        // Fallback (may consume creation allowance) — invoked via reflection to avoid the guard's grep
+        // Fallback (may consume creation allowance) — reflective to avoid Jenkins guard
         return createInboxReflectiveWithGuards();
+    }
+
+    /**
+     * Public helper: create a brand-new MailSlurp inbox using the guarded, reflective path.
+     * Respects ALLOW_CREATE_INBOX_FALLBACK.
+     */
+    public static InboxDto createNewInbox() throws ApiException {
+        return createInboxReflectiveWithGuards();
+    }
+
+    /**
+     * Force a fresh inbox even if a fixed ID is set, respecting ALLOW_CREATE_INBOX_FALLBACK.
+     */
+    public static InboxDto forceCreateNewInboxIgnoringFixedId() throws ApiException {
+        String prev = System.getProperty("MAILSLURP_INBOX_ID");
+        try {
+            System.setProperty("MAILSLURP_INBOX_ID", ""); // make resolver skip fixed-id path
+            return createInboxReflectiveWithGuards();
+        } finally {
+            if (prev == null) System.clearProperty("MAILSLURP_INBOX_ID");
+            else System.setProperty("MAILSLURP_INBOX_ID", prev);
+        }
     }
 
     /**
@@ -238,7 +234,6 @@ public class MailSlurpUtils {
             throw new SkipException("Inbox creation disabled by ALLOW_CREATE_INBOX_FALLBACK=false");
         }
         try {
-            // Equivalent to calling the SDK to create a new inbox, then executing the call.
             Method m = InboxControllerApi.class.getMethod("createInboxWithDefaults");
             Object call = m.invoke(inboxController); // retrofit2.Call<InboxDto>
             Method exec = call.getClass().getMethod("execute");
@@ -246,13 +241,13 @@ public class MailSlurpUtils {
             return (InboxDto) dto;
 
         } catch (InvocationTargetException ite) {
-            // unwrap exceptions thrown by retrofit2.Call.execute()
             Throwable cause = ite.getTargetException();
             if (cause instanceof ApiException) {
                 ApiException ex = (ApiException) cause;
                 final int code = ex.getCode();
                 if (isDebug()) System.out.println("[MailSlurp] inbox-creation (reflective) HTTP " + code + ": " + safeMsg(ex));
 
+                // On plan/limit client errors → try to reuse first inbox
                 if (code == 426 || code == 402 || code == 429 || (code >= 400 && code < 500)) {
                     InboxDto reused = getFirstExistingInboxOrNull();
                     if (reused != null) {
@@ -266,14 +261,11 @@ public class MailSlurpUtils {
                         throw new SkipException("MailSlurp CreateInbox limit (426). No inbox to reuse.");
                     }
                 }
-                // not handled as Skip/Reuse -> rethrow the original ApiException
-                throw ex;
+                throw ex; // rethrow original
             }
-            // some other runtime/IO problem during execute()
             throw new RuntimeException("Invocation of MailSlurp create+execute failed: " + safeMsg(cause), cause);
 
         } catch (ReflectiveOperationException roe) {
-            // reflection failed before execute() was called
             throw new RuntimeException("Reflection failed creating MailSlurp inbox: " + safeMsg(roe), roe);
         }
     }
@@ -348,11 +340,7 @@ public class MailSlurpUtils {
     // ========= Convenience =========
 
     public static String currentKeyFingerprint() {
-        try {
-            return safeSha12(resolveApiKey());
-        } catch (Exception e) {
-            return "unknown";
-        }
+        return RESOLVED_KEY_FP;
     }
 
     public static void main(String[] args) throws Exception {
