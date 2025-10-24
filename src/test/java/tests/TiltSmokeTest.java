@@ -13,7 +13,7 @@ public class TiltSmokeTest extends BaseTest {
 
 
     private DashboardPage loginAsAdmin(String email, String password) {
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         DashboardPage dashboardPage = loginPage.login(email, password);
         Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard failed to load after login");

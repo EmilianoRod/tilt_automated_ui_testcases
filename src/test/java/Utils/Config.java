@@ -296,7 +296,7 @@ public class Config {
 
     public static boolean getMailSlurpAllowCreate() {
         String v = getAny("mailslurp.allowCreate", "MAILSLURP_ALLOW_CREATE");
-        if (v == null) return false; // default: fixed inbox mode
+        if (v == null) return true  ; // default: fixed inbox mode
         return v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes");
     }
 

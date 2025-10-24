@@ -1,5 +1,9 @@
 <!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd" >
-<suite name="Unified-CI-Suite" verbose="1" parallel="false">
+<suite name="Unified-CI-Suite"
+       verbose="1"
+       parallel="methods"
+       thread-count="4"
+       data-provider-thread-count="4">
 
     <!-- Global params -->
     <parameter name="baseUrl" value="https://tilt-dashboard-dev.tilt365.com"/>

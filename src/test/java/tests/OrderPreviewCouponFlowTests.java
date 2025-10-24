@@ -23,7 +23,7 @@ public class OrderPreviewCouponFlowTests extends BaseTest {
     @Test(groups = {"shop","preview","coupon","smoke"})
     public void testCouponDefaultUncheckedOnFirstLoad() throws InterruptedException {
         // Login
-        LoginPage login = new LoginPage(driver);
+        LoginPage login = new LoginPage(driver());
         login.navigateTo();
         DashboardPage dashboard = login.login(Config.getAdminEmail(), Config.getAdminPassword());
         Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
@@ -35,7 +35,7 @@ public class OrderPreviewCouponFlowTests extends BaseTest {
         select.clickNext();
 
         // Manual entry for a single recipient
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver);
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver());
         entry.selectManualEntry();
         entry.enterNumberOfIndividuals("1");
         String email = "qa+" + UUID.randomUUID().toString().substring(0,8) + "@example.com";
@@ -56,7 +56,7 @@ public class OrderPreviewCouponFlowTests extends BaseTest {
     @Test(groups = {"shop","preview","coupon"})
     public void testCouponResetsWhenNavigatingBackAndForward_FullFlow() {
         // Login
-        LoginPage login = new LoginPage(driver);
+        LoginPage login = new LoginPage(driver());
         login.navigateTo();
         DashboardPage dashboard = login.login(Config.getAdminEmail(), Config.getAdminPassword());
         Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
@@ -68,7 +68,7 @@ public class OrderPreviewCouponFlowTests extends BaseTest {
         select.clickNext();
 
         // Manual entry for a single recipient
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver);
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver());
         entry.selectManualEntry();
         entry.enterNumberOfIndividuals("1");
         String email = "qa+" + UUID.randomUUID().toString().substring(0,8) + "@example.com";
@@ -98,7 +98,7 @@ public class OrderPreviewCouponFlowTests extends BaseTest {
     @Test(groups = {"shop","preview","coupon"})
     public void testCouponDefaultRemainsUncheckedAfterBackForward_FullFlow() {
         // Login
-        LoginPage login = new LoginPage(driver);
+        LoginPage login = new LoginPage(driver());
         login.navigateTo();
         DashboardPage dashboard = login.login(Config.getAdminEmail(), Config.getAdminPassword());
         Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
@@ -110,7 +110,7 @@ public class OrderPreviewCouponFlowTests extends BaseTest {
         select.clickNext();
 
         // Manual entry for a single recipient
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver);
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver());
         entry.selectManualEntry();
         entry.enterNumberOfIndividuals("1");
         String email = "qa+" + UUID.randomUUID().toString().substring(0, 8) + "@example.com";

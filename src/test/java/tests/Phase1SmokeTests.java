@@ -62,7 +62,7 @@ public class Phase1SmokeTests extends BaseTest {
 
         final boolean allowCreate = Boolean.parseBoolean(
                 System.getProperty("ALLOW_CREATE_INBOX_FALLBACK",
-                        Objects.toString(System.getenv("ALLOW_CREATE_INBOX_FALLBACK"), "false")));
+                        Objects.toString(System.getenv("ALLOW_CREATE_INBOX_FALLBACK"), "true")));
 
         try {
             if (allowCreate) {
@@ -176,7 +176,7 @@ public class Phase1SmokeTests extends BaseTest {
 
         // ----- app flow -----
         step("Login as admin");
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
         DashboardPage dashboardPage =
@@ -191,7 +191,7 @@ public class Phase1SmokeTests extends BaseTest {
         sel.clickNext();
 
         step("Manual entry for 1 individual");
-        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver)
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectManualEntry()
                 .enterNumberOfIndividuals("1");
@@ -217,10 +217,10 @@ public class Phase1SmokeTests extends BaseTest {
                 (trig.requestLogUrl != null ? " | requestLog=" + trig.requestLogUrl : ""));
 
         step("Navigate to post-payment confirmation");
-        driver.navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
 
         step("Individuals page shows the newly invited user");
-        new IndividualsPage(driver)
+        new IndividualsPage(driver())
                 .open(Config.getBaseUrl())
                 .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
         System.out.println("✅ User appears in Individuals: " + tempEmail);
@@ -286,15 +286,15 @@ public class Phase1SmokeTests extends BaseTest {
         final int    USER_ID    = Integer.parseInt(System.getProperty("USER_ID", "313820"));
 
         // --- 1) Login ---
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
         DashboardPage dashboard = loginPage.login(USER_EMAIL, System.getProperty("USER_PASS", "Password#1"));
-        new WebDriverWait(driver, Duration.ofSeconds(15)).until(d -> dashboard.isLoaded());
+        new WebDriverWait(driver(), Duration.ofSeconds(15)).until(d -> dashboard.isLoaded());
         Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
 
         // --- 2) Wait for token to exist (no sleeps) ---
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+        WebDriverWait wait = new WebDriverWait(driver(), Duration.ofSeconds(10));
         String jwt = wait.until(d -> (String) ((JavascriptExecutor) d)
                 .executeScript("return window.localStorage.getItem('jwt');"));
         Assert.assertNotNull(jwt, "JWT not stored in localStorage['jwt']");
@@ -325,7 +325,7 @@ public class Phase1SmokeTests extends BaseTest {
         // Assert.assertEquals(payload.optString("aud"), "tilt-dashboard", "Audience mismatch");
 
         // --- 4) Validate redux-persist root ---
-        String persistRoot = (String) ((JavascriptExecutor) driver)
+        String persistRoot = (String) ((JavascriptExecutor) driver())
                 .executeScript("return window.localStorage.getItem('persist:root');");
         Assert.assertNotNull(persistRoot, "persist:root not stored");
 
@@ -362,14 +362,14 @@ public class Phase1SmokeTests extends BaseTest {
         final String PROTECTED  = "/dashboard/individuals"; //protected route
 
         // 1) Login (valid)
-        LoginPage login = new LoginPage(driver);
+        LoginPage login = new LoginPage(driver());
         login.navigateTo();
         DashboardPage dashboard = login.login(USER_EMAIL, USER_PASS);
-        new WebDriverWait(driver, Duration.ofSeconds(25)).until(d -> dashboard.isLoaded());
+        new WebDriverWait(driver(), Duration.ofSeconds(25)).until(d -> dashboard.isLoaded());
         Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
 
         // 2) Tamper auth: set an EXPIRED JWT and clear persisted state
-        JavascriptExecutor js = (JavascriptExecutor) driver;
+        JavascriptExecutor js = (JavascriptExecutor) driver();
 
         // Build an expired JWT-like string (doesn't need to be signed for client-side checks)
         long past = (System.currentTimeMillis() / 1000L) - 60; // 60s in the past
@@ -381,11 +381,11 @@ public class Phase1SmokeTests extends BaseTest {
         js.executeScript("window.localStorage.removeItem('persist:root');");
 
         // 3) Hit a protected route to trigger guards (route-change & API call)
-        driver.navigate().to(joinUrl(Config.getBaseUrl(), PROTECTED));
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), PROTECTED));
 
 
         // 4) Wait for redirect
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+        WebDriverWait wait = new WebDriverWait(driver(), Duration.ofSeconds(10));
         boolean redirected = wait.until(d ->
                 d.getCurrentUrl().contains(LOGIN_PATH)
         );
@@ -393,7 +393,7 @@ public class Phase1SmokeTests extends BaseTest {
 
 
         // 5) Sanity: verify key login UI is visible
-        boolean loginFormVisible = new WebDriverWait(driver, Duration.ofSeconds(10)).until(d -> {
+        boolean loginFormVisible = new WebDriverWait(driver(), Duration.ofSeconds(10)).until(d -> {
             try {
                 return d.findElement(By.cssSelector("input[type='email']")).isDisplayed()
                         && d.findElement(By.cssSelector("input[type='password']")).isDisplayed();
@@ -408,19 +408,19 @@ public class Phase1SmokeTests extends BaseTest {
      * Verify that an access-token is issued upon successful login with valid credentials.
      */
     @Test(groups = "ui-only")
-    public void testGenerateAccessTokenOnSuccessfulLogin() throws InterruptedException {
+    public void testGenerateAccessTokenOnSuccessfu0lLogin() throws InterruptedException {
         // Step 1: Login
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
         DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
 
         Assert.assertTrue(dashboardPage.isLoaded(), "Dashboard page did not load after login");
-        new WebDriverWait(driver, Duration.ofSeconds(10))
+        new WebDriverWait(driver(), Duration.ofSeconds(10))
                 .until(d -> dashboardPage.isLoaded());
 
         // Step 2: Access JWT from localStorage
-        JavascriptExecutor js = (JavascriptExecutor) driver;
+        JavascriptExecutor js = (JavascriptExecutor) driver();
         String jwt = (String) js.executeScript("return window.localStorage.getItem('jwt');");
 
         // Step 3: Basic validations
@@ -436,7 +436,7 @@ public class Phase1SmokeTests extends BaseTest {
     @Test(groups = "ui-only")
     public void testAccessTokenIsNotGeneratedOnFailedLogin() throws InterruptedException {
         // Step 1: Navigate to login page
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
 
@@ -448,7 +448,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(errorMsg != null && !errorMsg.isEmpty(), "Invalid email or password.");
 
         // Step 4: Check that no JWT token exists
-        JavascriptExecutor js = (JavascriptExecutor) driver;
+        JavascriptExecutor js = (JavascriptExecutor) driver();
         String jwt = (String) js.executeScript("return window.localStorage.getItem('jwt');");
         Assert.assertTrue(jwt == null || jwt.isEmpty(), "JWT was generated even though login failed");
 
@@ -463,7 +463,7 @@ public class Phase1SmokeTests extends BaseTest {
     @Test(groups = "ui-only")
     public void testLoginSuccessRedirectsUser() throws InterruptedException {
         // Step 1: Navigate to login page
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
 
@@ -471,16 +471,16 @@ public class Phase1SmokeTests extends BaseTest {
         DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
 
         // Wait for the dashboard to load
-        new WebDriverWait(driver, Duration.ofSeconds(10))
+        new WebDriverWait(driver(), Duration.ofSeconds(10))
                 .until(d -> dashboardPage.isLoaded());
 
         // Step 3: Verify the user was redirected to the dashboard
-        new WebDriverWait(driver, Duration.ofSeconds(10))
+        new WebDriverWait(driver(), Duration.ofSeconds(10))
                 .until(d -> d.getCurrentUrl().contains("/dashboard"));
         Assert.assertTrue(dashboardPage.isLoaded(), "User was not redirected to dashboard after login");
 
         // Optional: Assert URL for clarity
-        String currentUrl = driver.getCurrentUrl();
+        String currentUrl = driver().getCurrentUrl();
         Assert.assertTrue(currentUrl.contains("/dashboard"),
                 "Expected redirection to dashboard, but got: " + currentUrl);
 
@@ -496,7 +496,7 @@ public class Phase1SmokeTests extends BaseTest {
     @Test(groups = "ui-only")
     public void testRedirectUserAppropriatelyPostLogin() throws InterruptedException {
         // Navigate to Login Page
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
 
@@ -509,7 +509,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(isOnDashboard, "Dashboard did not load successfully after login.");
 
         // Verify redirected URL
-        String currentUrl = driver.getCurrentUrl();
+        String currentUrl = driver().getCurrentUrl();
         Assert.assertTrue(currentUrl.contains("/dashboard"), "User was not redirected to the dashboard.");
 
         // Optional: Verify the user's name is shown
@@ -525,7 +525,7 @@ public class Phase1SmokeTests extends BaseTest {
     @Test(groups = "ui-only")
     public void testShowEmailInputFieldOnLoginScreen() {
         // Navigate to Login Page
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
 
@@ -542,7 +542,7 @@ public class Phase1SmokeTests extends BaseTest {
     @Test(groups = "ui-only")
     public void testRedirectToDashboardOnSuccessfulLogin() {
         // Step 1: Navigate to Login Page and login
-        LoginPage loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
         loginPage.waitUntilLoaded();
         DashboardPage dashboardPage = loginPage.safeLoginAsAdmin("erodriguez+a@effectussoftware.com", "Password#1", Duration.ofSeconds(30));
@@ -551,7 +551,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(dashboardPage.isLoaded(), "Dashboard did not load after successful login.");
 
         // Step 3 (optional): Confirm URL contains '/dashboard'
-        String currentUrl = driver.getCurrentUrl();
+        String currentUrl = driver().getCurrentUrl();
         Assert.assertTrue(currentUrl.contains("/dashboard"), "User was not redirected to the dashboard.");
     }
 
