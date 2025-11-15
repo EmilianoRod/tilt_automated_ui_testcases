@@ -20,7 +20,7 @@ public final class ApiConfig {
 
     public static ApiConfig fromEnv() {
         return builder()
-            .baseUrl(System.getProperty("API_BASE_URL", System.getenv().getOrDefault("API_BASE_URL", "http://localhost:3000")))
+            .baseUrl(System.getProperty("API_BASE_URL", System.getenv().getOrDefault("API_BASE_URL", "https://tilt-dashboard-dev.tilt365.com")))
             .bearerToken(System.getProperty("API_BEARER", System.getenv("API_BEARER")))
             .apiKey(System.getProperty("API_KEY", System.getenv("API_KEY")))
             .callTimeoutSeconds(Integer.getInteger("API_TIMEOUT_SEC", 30))

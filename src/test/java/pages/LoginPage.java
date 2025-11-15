@@ -34,7 +34,7 @@ public class LoginPage extends BasePage {
         String url = Config.joinUrl(Config.getBaseUrl(), "/auth/sign-in");
         driver.get(url);
 
-        new WebDriverWait(driver, Duration.ofSeconds(Config.getTimeout()))
+        new WebDriverWait(driver, Config.getTimeout())
                 .until(ExpectedConditions.or(
                         ExpectedConditions.urlContains("/auth/sign-in"),
                         ExpectedConditions.urlContains("/auth-sign-in") // keep if your app sometimes uses this

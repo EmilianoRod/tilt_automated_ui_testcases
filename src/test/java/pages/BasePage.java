@@ -39,13 +39,16 @@ public abstract class BasePage {
     );
 
     // ---------- ctor ----------
+// ---------- ctor ----------
     public BasePage(WebDriver driver) {
         if (driver == null) {
             throw new IllegalArgumentException("❌ WebDriver is NULL for " + getClass().getSimpleName());
         }
         this.driver = driver;
-        this.wait   = new WaitUtils(driver, Config.getTimeout());
+        // ✅ just pass the Duration directly
+        this.wait = new WaitUtils(driver, Config.getTimeout());
     }
+
 
     // ======================================================================
     // Purchase-for banner (used by many pages)

@@ -1,0 +1,30 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="Local-Dev (Non-Headless)"
+       verbose="2"
+       preserve-order="true">
+
+    <listeners>
+        <listener class-name="listeners.TestListener"/>
+        <listener class-name="listeners.RetryTransformer"/>
+    </listeners>
+
+    <parameter name="baseUrl" value="https://tilt-dashboard-dev.tilt365.com"/>
+
+    <test name="Local Smoke (non-headless)">
+        <groups>
+            <run>
+                <include name="smoke"/>
+                <include name="ui-only"/>
+                <!-- keep ui-mobile excluded locally unless you need it -->
+                <!-- <exclude name="ui-mobile"/> -->
+            </run>
+        </groups>
+
+        <classes>
+            <!-- Minimal, stable local set. Add more classes as needed. -->
+            <class name="tests.Phase1SmokeTests"/>
+            <!-- <class name="tests.individuals.IndividualsListTests"/> -->
+            <!-- <class name="tests.OrderPreviewCouponFlowTests"/> -->
+        </classes>
+    </test>
+</suite>

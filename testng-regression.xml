@@ -4,8 +4,11 @@
     <listeners>
         <listener class-name="listeners.TestListener"/>
         <listener class-name="listeners.RetryTransformer"/>
-
     </listeners>
+
+
+    <parameter name="baseUrl" value="https://tilt-dashboard-dev.tilt365.com"/>
+
 
     <test name="Regression Tests">
         <groups>

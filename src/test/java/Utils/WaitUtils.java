@@ -25,9 +25,10 @@ public class WaitUtils {
                     ".ant-spin,.ant-spin-spinning," +
                     ".overlay,.spinner,.backdrop,[aria-busy='true']";
 
-    public WaitUtils(WebDriver driver, int timeoutSeconds) {
+    // ✅ FIXED: use Duration.max instead of Math.max
+    public WaitUtils(WebDriver driver, Duration timeout) {
         this.driver = driver;
-        this.defaultTimeout = Duration.ofSeconds(Math.max(3, timeoutSeconds));
+        this.defaultTimeout = Duration.ofSeconds(3).compareTo(timeout) > 0 ? Duration.ofSeconds(3) : timeout;
         this.wait = baseWait(defaultTimeout);
     }
 
@@ -135,7 +136,6 @@ public class WaitUtils {
     }
 
     // ---------- Page / DOM readiness ----------
-    /** document.readyState === 'complete' (best-effort). */
     public void waitForDocumentReady() {
         try {
             baseWait(defaultTimeout).until(d ->
@@ -144,7 +144,6 @@ public class WaitUtils {
         } catch (Exception ignored) {}
     }
 
-    /** Unified loader/backdrop wait using a single OR selector. */
     public void waitForLoadersToDisappear() {
         try {
             baseWait(defaultTimeout).until(d -> {
@@ -159,7 +158,6 @@ public class WaitUtils {
         } catch (Exception ignored) {}
     }
 
-    /** Optional: wait until there are no running CSS/Web animations. */
     public void waitForAnimationsToFinish(Duration timeout) {
         try {
             baseWait(timeout).until(d -> {
@@ -175,32 +173,24 @@ public class WaitUtils {
         } catch (Exception ignored) {}
     }
 
-    /**
-     * “Network idle–ish”: document ready, loaders gone, no running animations,
-     * and an optional window.__pendingRequests counter (if your app sets it).
-     */
     public void waitForNetworkIdleLike(Duration timeout) {
         try {
             baseWait(timeout).until(d -> {
                 JavascriptExecutor js = (JavascriptExecutor) d;
 
-                // readyState
                 String rs = String.valueOf(js.executeScript("return document.readyState"));
                 if (!"complete".equals(rs)) return false;
 
-                // overlays
                 for (WebElement e : d.findElements(By.cssSelector(LOADER_UNION_CSS))) {
                     try { if (e.isDisplayed()) return false; } catch (StaleElementReferenceException ignored) {}
                 }
 
-                // animations
                 Object anim = js.executeScript(
                         "try { var a=(document.getAnimations?document.getAnimations():[]);" +
                                 "      return a.filter(x=>x.playState==='running').length; } catch(e){ return 0; }");
                 long running = (anim instanceof Number) ? ((Number) anim).longValue() : 0L;
                 if (running > 0) return false;
 
-                // optional app counter
                 Object inflight = js.executeScript("return window.__pendingRequests || 0;");
                 long req = (inflight instanceof Number) ? ((Number) inflight).longValue() : 0L;
                 return req == 0L;
@@ -208,7 +198,6 @@ public class WaitUtils {
         } catch (Exception ignored) {}
     }
 
-    /** (Optional) Install a tiny fetch/XMLHttpRequest counter; call once after login if desired. */
     public void installNetworkInstrumentation() {
         try {
             ((JavascriptExecutor) driver).executeScript(
@@ -229,20 +218,17 @@ public class WaitUtils {
         } catch (Exception ignored) {}
     }
 
-    // ---------- Utilities ----------
     public void pause(long millis) {
         try { Thread.sleep(millis); }
         catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
     }
 
-    /** Run an action with a temporary timeout (does not mutate the default wait). */
     public <T> T withTimeout(Duration timeout, Supplier<T> action) {
         WebDriverWait temp = baseWait(timeout);
         try { return action.get(); }
-        finally { /* no global state to restore */ }
+        finally { }
     }
 
-    // ---------- Frame switching ----------
     public WebDriver waitForFrameAndSwitch(By frameLocator) {
         return wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(frameLocator));
     }
@@ -253,7 +239,6 @@ public class WaitUtils {
         return wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(index));
     }
 
-    // ---------- Static helpers (kept for compatibility) ----------
     public static boolean isVisible(WebDriver driver, By by, Duration max) {
         try {
             WebDriverWait w = new WebDriverWait(driver, max);
@@ -306,13 +291,11 @@ public class WaitUtils {
                 .until(d -> "complete".equals(((JavascriptExecutor) d).executeScript("return document.readyState")));
     }
 
-    /** Legacy; prefer {@link #waitForAnimationsToFinish(Duration)}. */
     @Deprecated
     public void tinyUiSettled(Duration max) {
         waitForAnimationsToFinish(max);
     }
 
-    // --- Invisibility with default timeout (compat) ---
     public boolean waitForInvisibility(By locator) {
         try {
             return baseWait(defaultTimeout).until(ExpectedConditions.invisibilityOfElementLocated(locator));
@@ -320,15 +303,6 @@ public class WaitUtils {
             return false;
         }
     }
-
-
-
-
-
-
-
-
-
 
     // Common loader/selectors you’ll likely see across pages.
     private static final List<By> DEFAULT_LOADERS = Arrays.asList(
@@ -355,21 +329,16 @@ public class WaitUtils {
                 for (WebElement el : drv.findElements(by)) {
                     try {
                         if (el.isDisplayed()) return false;
-                    } catch (StaleElementReferenceException ignored) { /* treat as gone */ }
+                    } catch (StaleElementReferenceException ignored) {}
                 }
             }
             return true;
         };
     }
 
-
-    // WaitUtils.java
     public static WebElement waitExactText(WebDriver d, By scope, String text, Duration t) {
         String xp = ".//*[self::p or self::span or self::div or self::label or self::strong]"
                 + "[normalize-space(.)=" + org.openqa.selenium.By.xpath("'" + text + "'").toString().replace("By.xpath: ", "") + "]";
         return new WebDriverWait(d, t).until(w -> w.findElement(scope).findElement(By.xpath(xp)));
     }
-
-
-
 }

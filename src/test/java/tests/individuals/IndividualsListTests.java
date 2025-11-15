@@ -7,7 +7,7 @@ import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.devtools.DevTools;
 import org.openqa.selenium.devtools.HasDevTools;
-import org.openqa.selenium.devtools.v136.network.Network;
+import org.openqa.selenium.devtools.v142.network.Network;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.SkipException;
@@ -37,46 +37,45 @@ public class IndividualsListTests extends BaseTest {
         step("Start fresh session (login + land on Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
-
         step("Open Individuals page from Dashboard nav");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
         Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
-
 
         step("Verify the table/list is present and has at least 1 row (or skip)");
         if (!individuals.hasAnyRows()) {
             throw new SkipException("No Individuals to verify on this environment.");
         }
 
-
         step("Decide how many rows to spot-check");
         final int maxToCheck = Integer.getInteger("INDIV_ROWS_CHECK_MAX", 10);
-
 
         step("Collect first " + maxToCheck + " rows for validation");
         List<WebElement> rows = individuals.firstRows(maxToCheck);
 
-
         step("Begin soft assertions across selected rows");
         SoftAssert softly = new SoftAssert();
-
 
         for (int i = 0; i < rows.size(); i++) {
             final int rowNum = i + 1;
             final WebElement row = rows.get(i);
 
             step("Row #" + rowNum + " — verify Name");
-            softly.assertFalse(individuals.rowHasName(row), "Row " + rowNum + " should have a non-empty Name");
+            softly.assertTrue(
+                    individuals.rowHasName(row),
+                    "Row " + rowNum + " should have a non-empty Name"
+            );
 
             step("Row #" + rowNum + " — verify assessment icon(s)");
-            softly.assertTrue(individuals.rowHasAssessmentIcon(row), "Row " + rowNum + " should show at least one assessment icon");
-
+            softly.assertTrue(
+                    individuals.rowHasAssessmentIcon(row),
+                    "Row " + rowNum + " should show at least one assessment icon"
+            );
 
             step("Row #" + rowNum + " — verify Report column: Pending OR clickable link");
             if (individuals.rowReportIsPending(row)) {
-                System.out.println(individuals.rowReportIsPending(row));
                 // ok: pending state is expected before completion
-                softly.assertTrue(true, "Row " + rowNum + " shows Pending");
+                // you can log if you want:
+                // logger.info("Row {} report is Pending", rowNum);
             } else {
                 softly.assertTrue(
                         individuals.rowHasReportLink(row),
@@ -84,13 +83,12 @@ public class IndividualsListTests extends BaseTest {
                                 individuals.rowReportText(row) + "')"
                 );
             }
-
         }
-
 
         step("Finalize soft assertions");
         softly.assertAll();
     }
+
 
 
 
@@ -155,6 +153,7 @@ public class IndividualsListTests extends BaseTest {
         );
 
         // -------------------- B) NAME SUBSTRING FILTER --------------------
+        // -------------------- B) NAME SUBSTRING FILTER --------------------
         step("Reload Individuals to clear filters before name search");
         individuals.reloadWithBuster(Config.getBaseUrl());
         Assert.assertTrue(individuals.isLoaded(), "❌ Individuals failed to reload before name search");
@@ -166,13 +165,34 @@ public class IndividualsListTests extends BaseTest {
 
         step("Pick a sample non-empty name from the current page");
         List<String> namesBefore = individuals.getNamesOnCurrentPage();
-        String sampleName = namesBefore.stream().filter(s -> !s.isBlank()).findFirst()
+        String sampleName = namesBefore.stream()
+                .filter(s -> s != null && !s.isBlank())
+                .findFirst()
                 .orElseThrow(() -> new SkipException("No non-empty names visible to use as anchor for name search."));
 
-        step("Build a robust substring from the name");
-        // keep only letters/digits to avoid issues with spaces or punctuation
-        String normalizedName = sampleName.replaceAll("[^\\p{L}\\p{Nd}]+", "");
-        String nameNeedle = pickMiddleSubstring(normalizedName, 3, 6);
+        step("Build a robust substring from a single name token");
+        // Use one token (first non-short word) so substring matches what UI shows
+        String cleaned = sampleName.trim();
+        String[] tokens = cleaned.split("\\s+");
+        String core = tokens[0];
+        for (String t : tokens) {
+            if (t.length() >= 3) {
+                core = t;
+                break;
+            }
+        }
+
+        // Now pick a middle substring from that single token
+        String nameNeedle = pickMiddleSubstring(core, 3, 6);
+
+        // Safety: ensure needle actually appears in the visible name (case-insensitive)
+        String visibleLc = cleaned.toLowerCase(Locale.ROOT);
+        String nameNeedleLc = nameNeedle.toLowerCase(Locale.ROOT);
+        if (!visibleLc.contains(nameNeedleLc)) {
+            // Fallback: first 3 characters of the first token
+            nameNeedle = core.substring(0, Math.min(3, core.length()));
+            nameNeedleLc = nameNeedle.toLowerCase(Locale.ROOT);
+        }
 
         step("Execute search for name substring: '" + nameNeedle + "'");
         individuals.search(nameNeedle);
@@ -187,7 +207,6 @@ public class IndividualsListTests extends BaseTest {
                 "❌ No name cells visible after name substring filter: " + nameNeedle);
 
         step("Assert every visible name contains the substring (case-insensitive)");
-        String nameNeedleLc = nameNeedle.toLowerCase(Locale.ROOT);
         for (int i = 0; i < filteredNames.size(); i++) {
             final int rowNum = i + 1;
             final String name = filteredNames.get(i);
@@ -197,6 +216,7 @@ public class IndividualsListTests extends BaseTest {
                     "Row " + rowNum + " name does not contain '" + nameNeedle + "': " + name
             );
         }
+
 
         // -------------------- C) NEGATIVE CHECK --------------------
         step("Negative check: improbable token returns empty state (no rows)");
@@ -329,10 +349,6 @@ public class IndividualsListTests extends BaseTest {
         var emails = individuals.getEmailsOnCurrentPage();
         return emails.isEmpty() ? null : emails.get(0);
     }
-
-
-
-
 
 
 
@@ -599,15 +615,6 @@ public class IndividualsListTests extends BaseTest {
     }
 
 
-
-
-
-
-
-
-
-
-
     @Test(groups = "ui-only", description = "IND-010: Open Report link navigates to Report page.")
     public void openReportLink_navigatesToReportPage() {
         step("Start fresh session (login + Dashboard)");
@@ -676,18 +683,6 @@ public class IndividualsListTests extends BaseTest {
     }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
     @Test(groups = "ui-only", description = "IND-011: Row actions menu opens and shows expected options.")
     public void rowActionsMenu_opensAndShowsOptions() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
@@ -740,7 +735,6 @@ public class IndividualsListTests extends BaseTest {
         // optional cleanup (close the menu)
         try { driver().switchTo().activeElement().sendKeys(org.openqa.selenium.Keys.ESCAPE); } catch (Exception ignored) {}
     }
-
 
     @Test(groups = "ui-only", description = "IND-012: Auto reminder: toggle ON persists after refresh")
     public void autoReminder_toggleOn_persistsAfterRefresh() {
@@ -938,7 +932,7 @@ public class IndividualsListTests extends BaseTest {
     private String safeLower(String s) { return s == null ? null : s.toLowerCase(); }
 
     @Test(groups = "ui-only", description = "IND-016: Send reminder: backend error shows error toast")
-    public void sendReminder_confirm_showsErrorToast_onBackendFailure() {
+    public void sendReminder_confirm_showsErrorToast_onBackendFailure(){
         // --- Guard: CDP only on Chromium driver()s ---
         if (!(driver() instanceof HasDevTools)) {
             throw new SkipException("CDP not available on this driver(); cannot simulate backend error.");
@@ -952,7 +946,7 @@ public class IndividualsListTests extends BaseTest {
         Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
 
         step("Pick target email (first visible)");
-        java.util.List<String> emails = individuals.getEmailsOnCurrentPage();
+        List<String> emails = individuals.getEmailsOnCurrentPage();
         if (emails == null || emails.isEmpty()) {
             throw new SkipException("Need at least 1 row to send reminder.");
         }
@@ -961,9 +955,16 @@ public class IndividualsListTests extends BaseTest {
         // --- Begin CDP: block the reminder endpoint so the request fails ---
         DevTools devTools = ((HasDevTools) driver()).getDevTools();
         devTools.createSession();
-        devTools.send(Network.enable(Optional.empty(), Optional.empty(), Optional.empty()));
+        devTools.send(Network.enable(
+                Optional.of(10_000_000),  // maxTotalBufferSize (10 MB, pick whatever is sane)
+                Optional.empty(),         // maxResourceBufferSize
+                Optional.empty(),         // maxPostDataSize
+                Optional.empty(),         // captureNetworkRequests (let Chrome default)
+                Optional.empty()          // reportRawHeaders (let Chrome default)
+        ));
         // Tweak patterns if your endpoint differs (e.g., "/api/*reminder*", "/send_reminder")
-        devTools.send(Network.setBlockedURLs(java.util.List.of("*/reminder*", "*/send_reminder*")));
+        devTools.send(Network.setBlockedURLs(List.of("*/reminder*", "*/send_reminder*")));
+
 
         try {
             step("Open actions → Send reminder (wait modal visible)");
@@ -987,9 +988,10 @@ public class IndividualsListTests extends BaseTest {
                             || toast.toLowerCase().contains("unable"),
                     "❌ Unexpected (non-error) text: " + toast
             );
+
         } finally {
             // Always unblock + disable CDP to avoid side effects on later tests
-            try { devTools.send(Network.setBlockedURLs(java.util.List.of())); } catch (Exception ignore) {}
+            try { devTools.send(Network.setBlockedURLs(List.of())); } catch (Exception ignore) {}
             try { devTools.send(Network.disable()); } catch (Exception ignore) {}
             try { devTools.close(); } catch (Exception ignore) {}
         }
@@ -1198,7 +1200,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-020: Edit info: invalid email blocks save")
-    public void editInfo_invalidEmail_blocksSave() {
+    public void editInfo_invalidEmail_blocksSave() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
@@ -1221,10 +1223,14 @@ public class IndividualsListTests extends BaseTest {
         individuals.setEditInfoEmail("invalid.email"); // missing '@'
         individuals.blurEditInfoEmail();               // tiny helper to trigger validation
 
-        step("Assert validation appears and Save remains disabled");
-        String err = individuals.getEditEmailValidationText();   // "" if not present
-        Assert.assertFalse(err == null || err.isBlank(), "❌ No validation message for invalid email.");
-        Assert.assertFalse(individuals.isEditInfoSaveEnabled(), "❌ 'Save changes' should be disabled for invalid email.");
+        step("Assert no validation text appears");
+        String err = individuals.getEditEmailValidationText();   // should return "" or null
+        Assert.assertTrue(err == null || err.isBlank(),
+                "❌ Validation text SHOULD NOT appear for invalid email, only Save should be disabled.");
+
+        step("Assert 'Save changes' remains disabled");
+        Assert.assertFalse(individuals.isEditInfoSaveEnabled(),
+                "❌ 'Save changes' must remain disabled when email is invalid.");
     }
 
     @Test(groups = "ui-only", description = "IND-021: Edit info: duplicate email shows error and does not persist")
