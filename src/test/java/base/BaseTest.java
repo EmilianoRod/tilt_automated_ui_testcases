@@ -16,16 +16,19 @@ import org.testng.annotations.*;
 import pages.LoginPage;
 import pages.menuPages.DashboardPage;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.file.*;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.openqa.selenium.Dimension;
 import org.openqa.selenium.WrapsDriver;
 
 public class BaseTest {
 
-    protected static final Logger logger = LogManager.getLogger(BaseTest.class);
+    public static final Logger logger = LogManager.getLogger(BaseTest.class);
     /** Suite-scoped inbox prepared in @BeforeSuite (if email-required). */
     protected static volatile InboxDto fixedInbox;
 
@@ -431,7 +434,7 @@ public class BaseTest {
         return (a.compareTo(b) >= 0) ? a : b;
     }
 
-    private static String maskEmail(String email) {
+    protected static String maskEmail(String email) {
         if (email == null || email.isBlank()) return "(blank)";
         int at = email.indexOf('@');
         String user = at > -1 ? email.substring(0, at) : email;
@@ -480,4 +483,60 @@ public class BaseTest {
             logger.warn("[Screenshot] Failed to capture: {}", e.getMessage());
         }
     }
+
+
+
+    public static String getChromeDownloadDir() {
+        return Paths.get("target/downloads").toAbsolutePath().toString();
+    }
+
+
+
+    protected Path waitForNewPdf(Path downloadDir,
+                                 Instant start,
+                                 Duration timeout) throws Exception {
+        return waitForNewFile(downloadDir, start, timeout, ".pdf");
+    }
+
+    protected Path waitForNewPng(Path downloadDir,
+                                 Instant start,
+                                 Duration timeout) throws Exception {
+        return waitForNewFile(downloadDir, start, timeout, ".png");
+    }
+
+    /**
+     * Generic file waiter: waits for a new file with the given extension.
+     */
+    protected Path waitForNewFile(Path downloadDir,
+                                  Instant start,
+                                  Duration timeout,
+                                  String extension) throws Exception {
+        final long end = System.currentTimeMillis() + timeout.toMillis();
+
+        while (System.currentTimeMillis() < end) {
+            try (var stream = Files.list(downloadDir)) {
+                Optional<Path> newest = stream
+                        .filter(p -> {
+                            try {
+                                return Files.isRegularFile(p)
+                                        && p.getFileName().toString().toLowerCase().endsWith(extension)
+                                        && Files.getLastModifiedTime(p).toMillis() >= start.toEpochMilli();
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        })
+                        .findFirst();
+
+                if (newest.isPresent()) {
+                    return newest.get();
+                }
+            } catch (Throwable ignored) {}
+
+            Thread.sleep(500);
+        }
+
+        return null;
+    }
+
+
 }

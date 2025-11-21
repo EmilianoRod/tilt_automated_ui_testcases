@@ -66,6 +66,7 @@ public class ShopPage extends BasePage {
 
     // ========= Load state =========
 
+    @Override
     public ShopPage waitUntilLoaded() {
         wait.waitForDocumentReady();
         wait.waitForLoadersToDisappear();

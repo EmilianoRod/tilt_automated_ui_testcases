@@ -173,11 +173,14 @@ public class LoginPage extends BasePage {
 
 
 
-    public void waitUntilLoaded() {
+    @Override
+    public LoginPage waitUntilLoaded() {
         wait.waitForDocumentReady();
         wait.waitForLoadersToDisappear();
         wait.waitForElementVisible(emailField);
+        return this;
     }
+
 
     public boolean isLoaded() {
         try {

@@ -1,6 +1,7 @@
 package pages.teams;
 
 import org.openqa.selenium.NoSuchElementException;
+import org.testng.SkipException;
 import pages.BasePage;
 
 import io.qameta.allure.Step;
@@ -10,6 +11,7 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import pages.BasePage;
 import pages.Individuals.IndividualsPage;
+import pages.reports.ReportSummaryPage;
 
 import java.time.Duration;
 import java.util.*;
@@ -61,12 +63,7 @@ public class TeamsPage extends BasePage {
                     "/following-sibling::div[1])[1]"
     ); //
 
-
-
     private final By firstColumn = By.xpath("//th[normalize-space()='Organization / Team name']");
-
-
-
 
 
     private By sortOptionByFullText(String fullText) {
@@ -127,13 +124,6 @@ public class TeamsPage extends BasePage {
         return row.findElement(By.cssSelector("td:nth-of-type(5) .ant-dropdown-trigger"));
     }
 
-
-
-
-
-
-
-
     // HELPERS
     private void waitForTableSettled() {
         wdw.until(ExpectedConditions.presenceOfElementLocated(tableRoot));
@@ -141,7 +131,6 @@ public class TeamsPage extends BasePage {
         // rows visible OR empty state visible
         wdw.until(d -> !d.findElements(tableRows).isEmpty() || !d.findElements(emptyState).isEmpty());
     }
-
 
 
     private String safeText(IndividualsPage.SupplierWithException<String> supplier) {
@@ -152,12 +141,115 @@ public class TeamsPage extends BasePage {
         }
     }
 
-
-
     @FunctionalInterface private interface SupplierWithException<T> {
         T get() throws Exception;
     }
 
+
+
+
+    public boolean isLoaded() {
+        try {
+            waitUntilLoaded();
+            return true;
+        } catch (TimeoutException e) {
+            return false;
+        }
+    }
+
+
+    /** True if this row has a Team True Tilt Aggregate report link/button in the Report column. */
+    private boolean rowHasCompletedTrueTiltAggregate(WebElement row) {
+        try {
+            WebElement cell = reportCellInRow(row);
+
+            // Quick text heuristic: anything with TTP in the badge / label
+            String text = cell.getText();
+            if (text != null && text.toUpperCase(Locale.ROOT).contains("TTP")) {
+                return true;
+            }
+
+            // Fallback: any link whose href looks like a TTP / team aggregate report
+            for (WebElement link : cell.findElements(By.cssSelector("a[href]"))) {
+                String href = link.getAttribute("href");
+                if (href != null && href.contains("/assess/ttp/")) {
+                    return true;
+                }
+            }
+        } catch (NoSuchElementException ignored) {
+            // no report cell / link in this row
+        }
+        return false;
+    }
+
+
+    /**
+     * Convenience alias for test readability – at Teams-page level.
+     * It just tries to locate at least one team with TTP aggregate using the method above.
+     */
+    public boolean hasAnyCompletedTrueTiltAggregateReport() throws InterruptedException {
+        try {
+            // Try to find one, but restore state even if we don't keep the page
+            TeamDetailsPage details = openFirstTeamWithCompletedAggregateReport();
+            // We found at least one ⇒ return true, but go back so callers can decide navigation.
+            driver.navigate().back();
+            waitUntilLoaded();
+            return true;
+        } catch (org.testng.SkipException e) {
+            return false;
+        }
+    }
+
+
+
+    /** Opens the first Team True Tilt Aggregate report found and returns the summary page. */
+    public ReportSummaryPage openFirstCompletedTrueTiltAggregateReport() {
+        goToFirstPageIfPossible();
+
+        do {
+            List<WebElement> rows = driver.findElements(tableRows);
+            for (WebElement row : rows) {
+                if (!rowHasCompletedTrueTiltAggregate(row)) continue;
+
+                WebElement cell = reportCellInRow(row);
+                WebElement linkToClick = null;
+
+                // Prefer a link whose text contains TTP
+                for (WebElement link : cell.findElements(By.cssSelector("a[href]"))) {
+                    String txt = link.getText();
+                    String href = link.getAttribute("href");
+                    if ((txt != null && txt.toUpperCase(Locale.ROOT).contains("TTP")) ||
+                            (href != null && href.contains("/assess/ttp/"))) {
+                        linkToClick = link;
+                        break;
+                    }
+                }
+
+                if (linkToClick == null) {
+                    throw new NoSuchElementException("Could not locate Team True Tilt Aggregate link in report cell.");
+                }
+
+                // Try to force same-tab navigation (sometimes target='_blank')
+                try {
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].setAttribute('target','_self');", linkToClick);
+                } catch (Exception ignored) {}
+
+                ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", linkToClick);
+
+                try {
+                    linkToClick.click();
+                } catch (Exception e) {
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", linkToClick);
+                }
+
+                switchToNewestTab(); // just in case a new tab still opened
+
+                return new ReportSummaryPage(driver).waitUntilLoaded();
+            }
+        } while (goToNextPageIfPossible());
+
+        throw new NoSuchElementException("No Team True Tilt Aggregate report link found in Teams table.");
+    }
 
 
 
@@ -170,6 +262,7 @@ public class TeamsPage extends BasePage {
     }
 
     @Step("Wait until Teams page & table are visible")
+    @Override
     public TeamsPage waitUntilLoaded() {
         wait.waitForDocumentReady();
         wait.waitForLoadersToDisappear();
@@ -418,26 +511,71 @@ public class TeamsPage extends BasePage {
 
     public void goToFirstPageIfPossible() {
         try {
-            if (isPresent(prevPageLi) && driver.findElement(prevPageLi).getAttribute("aria-disabled") == null) {
-                while (driver.findElement(prevPageLi).getAttribute("aria-disabled") == null) {
-                    driver.findElement(prevPageLi).click();
-                    waitForTableSettled();
+            if (!isPresent(prevPageLi)) return;
+
+            int safety = 0;
+            while (true) {
+                WebElement li = driver.findElement(prevPageLi);
+                String aria = li.getAttribute("aria-disabled");
+                String cls  = String.valueOf(li.getAttribute("class"));
+
+                boolean disabled = "true".equalsIgnoreCase(aria)
+                        || cls.contains("ant-pagination-disabled");
+
+                if (disabled) break;
+
+                // Click the <button> if present; fall back to li.click()
+                try {
+                    WebElement btn = li.findElement(By.tagName("button"));
+                    btn.click();
+                } catch (NoSuchElementException e) {
+                    li.click();
+                }
+
+                waitForTableSettled();
+
+                if (++safety > 20) {
+                    System.out.println("[TeamsPage] goToFirstPageIfPossible hit safety limit (20 clicks)");
+                    break;
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            System.out.println("[TeamsPage] goToFirstPageIfPossible failed: " + t);
+        }
     }
+
 
     public boolean goToNextPageIfPossible() {
         try {
+            if (!isPresent(nextPageLi)) return false;
+
             WebElement li = driver.findElement(nextPageLi);
-            if ("true".equals(li.getAttribute("aria-disabled"))) return false;
-            driver.findElement(nextPageBtn).click();
+            String aria = li.getAttribute("aria-disabled");
+            String cls  = String.valueOf(li.getAttribute("class"));
+
+            boolean disabled = "true".equalsIgnoreCase(aria)
+                    || cls.contains("ant-pagination-disabled");
+
+            if (disabled) {
+                return false;
+            }
+
+            // Click the button inside, or fallback
+            try {
+                WebElement btn = driver.findElement(nextPageBtn);
+                btn.click();
+            } catch (NoSuchElementException e) {
+                li.click();
+            }
+
             waitForTableSettled();
             return true;
         } catch (Throwable t) {
+            System.out.println("[TeamsPage] goToNextPageIfPossible exception: " + t);
             return false;
         }
     }
+
 
     /** Stable per-row signature for quick order asserts. */
     public List<String> getRowOrderSignature() {
@@ -455,5 +593,133 @@ public class TeamsPage extends BasePage {
     protected boolean isPresent(By by) {
         return !driver.findElements(by).isEmpty();
     }
+
+
+
+
+    /** Best-effort: switch to the newest browser tab/window if multiple are open. */
+    private void switchToNewestTab() {
+        try {
+            Set<String> handles = driver.getWindowHandles();
+            if (handles.size() <= 1) return;
+
+            String current = driver.getWindowHandle();
+            String newest = null;
+            for (String h : handles) {
+                newest = h; // last in iteration
+            }
+            if (newest != null && !Objects.equals(current, newest)) {
+                driver.switchTo().window(newest);
+            }
+        } catch (Throwable ignored) {
+            // If anything goes wrong, stay on current tab.
+        }
+    }
+
+
+    /**
+     * Opens Team Details for the first team (across pages) that has at least one
+     * TTP aggregate report. If none is found, throws SkipException so the smoke
+     * test is SKIPPED instead of FAILED.
+     */
+    public TeamDetailsPage openFirstTeamWithCompletedAggregateReport() {
+        // Always start from first page to have deterministic behavior
+        goToFirstPageIfPossible();
+
+        int pageCount = 0;
+
+        while (true) {
+            if (pageCount++ > 20) {
+                throw new SkipException("⚠ Safety guard: scanned >20 pages on Teams without finding a TTP aggregate.");
+            }
+
+            waitForTableSettled();
+
+            List<WebElement> rows = driver.findElements(tableRows);
+            if (rows.isEmpty()) {
+                break;
+            }
+
+            for (WebElement row : rows) {
+                String teamName = safeText(() -> teamNameCellInRow(row).getText()).trim();
+                if (teamName.isBlank()) {
+                    continue;
+                }
+
+                // --- Open team details by clicking the real link ("View all") ---
+                WebElement link = teamLinkInRow(row);
+
+                try { scrollToElement(link); } catch (Throwable ignored) {}
+                try {
+                    ((JavascriptExecutor) driver)
+                            .executeScript("arguments[0].scrollIntoView({block:'center'});", link);
+                } catch (Exception ignored) {}
+
+                try {
+                    // force same tab just in case
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].setAttribute('target','_self');", link);
+                } catch (Exception ignored) {}
+
+                try {
+                    link.click();
+                } catch (Exception e) {
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", link);
+                }
+
+                // --- On Team Details, check for TTP aggregate ---
+                TeamDetailsPage details = new TeamDetailsPage(driver).waitUntilLoaded();
+                if (details.hasCompletedTrueTiltAggregate()) {
+                    return details; // ✅ found one
+                }
+
+                // ❌ No TTP here – go back to Teams and continue with next row
+                driver.navigate().back();
+                waitUntilLoaded();
+            }
+
+            // No matching team on this page, try next page if available
+            if (!goToNextPageIfPossible()) {
+                break;
+            }
+        }
+
+        throw new SkipException("⚠ No team found with completed Team True Tilt Aggregate reports across Teams pages.");
+    }
+
+
+
+
+
+    /** In Teams table, the navigation to Team Details is the "View all" link in the Members column. */
+    private WebElement teamLinkInRow(WebElement row) {
+        // safest: any anchor that goes to /dashboard/teams/{id}
+        return row.findElement(By.cssSelector("a[href*='/dashboard/teams/']"));
+    }
+
+
+    public TeamDetailsPage openTeamClimateDetails(String teamPathOrName) {
+        // Permite tanto "Validation Merge Test" como "Org B / Validation Merge Test / Analytics"
+        String name = teamPathOrName;
+        if (name.contains("/")) {
+            String[] parts = name.split("/");
+            // Ej: ["Org B ", " Validation Merge Test ", " Analytics"]
+            // Nos quedamos con el penúltimo: "Validation Merge Test"
+            if (parts.length >= 2) {
+                name = parts[parts.length - 2].trim();
+            } else {
+                name = parts[parts.length - 1].trim();
+            }
+        } else {
+            name = name.trim();
+        }
+
+        // Usa tu método existente
+        openTeamClimate(name);
+
+        // La vista de Climate/Kite está modelada por TeamDetailsPage
+        return new TeamDetailsPage(driver).waitUntilLoaded();
+    }
+
+
 
 }

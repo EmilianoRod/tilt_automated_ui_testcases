@@ -136,6 +136,7 @@ public class PurchaseRecipientSelectionPage extends BasePage {
     // ========= Load state =========
 
     /** Wait until the selection UI is present. */
+    @Override
     public PurchaseRecipientSelectionPage waitUntilLoaded() {
         try { wait.waitForDocumentReady(); } catch (Throwable ignored) {}
         try { wait.waitForLoadersToDisappear(); } catch (Throwable ignored) {}

@@ -16,6 +16,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -472,4 +473,40 @@ public class MailSlurpUtils {
                 "https://api.mailslurp.com"
         );
     }
+
+
+
+
+    public static Predicate<Email> subjectOrBodyContainsAny(String... needles) {
+        // If no needles provided, accept everything (shouldn't normally happen)
+        if (needles == null || needles.length == 0) {
+            return e -> true;
+        }
+
+        // Normalize all needles to lowercase once
+        final java.util.List<String> norm = Arrays.stream(needles)
+                .filter(Objects::nonNull)
+                .map(s -> s.toLowerCase(Locale.ROOT))
+                .toList();
+
+        return e -> {
+            if (e == null) return false;
+
+            String subj = Optional.ofNullable(e.getSubject())
+                    .orElse("")
+                    .toLowerCase(Locale.ROOT);
+
+            String body = safeEmailBody(e).toLowerCase(Locale.ROOT);
+
+            for (String n : norm) {
+                if (subj.contains(n) || body.contains(n)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+    }
+
+
+
 }

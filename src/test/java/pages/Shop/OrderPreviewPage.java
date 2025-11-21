@@ -38,7 +38,7 @@ public class OrderPreviewPage extends BasePage {
 
     /** Optional "Purchase Information" heading sometimes shown above preview. */
     private static final By PURCHASE_INFO_HEADER = By.xpath(
-            "//*[@data-test='purchase-information-title' or (self::h1 or self::h2 or self::h3)[normalize-space()='Purchase Information']]"
+            "//h2[normalize-space()='Purchase Information']"
     );
 
     /** Coupon block */
@@ -118,6 +118,7 @@ public class OrderPreviewPage extends BasePage {
     // ========= Page readiness / identity =========
 
     @Step("Wait until Order Preview is loaded")
+    @Override
     public OrderPreviewPage waitUntilLoaded() {
         wait.waitForDocumentReady();
         wait.waitForLoadersToDisappear();
@@ -506,9 +507,17 @@ public class OrderPreviewPage extends BasePage {
     // ===== Member row helpers =====
 
 
+//    private static By memberRowByIndex(int oneBased) {
+//        return By.xpath("(" + "//tr[.//input[@type='checkbox'] or .//*[@role='checkbox']]" + ")[" + oneBased + "]");
+//    }
+
     private static By memberRowByIndex(int oneBased) {
-        return By.xpath("(" + "//tr[.//input[@type='checkbox'] or .//*[@role='checkbox']]" + ")[" + oneBased + "]");
+        // Only body rows, skip header/footer/hidden templates if possible
+        return By.xpath("(" +
+                "//table//tbody//tr[.//input[@type='checkbox'] or .//*[@role='checkbox']]" +
+                ")[" + oneBased + "]");
     }
+
 
 
     // Count how many member toggles are ON
@@ -524,14 +533,28 @@ public class OrderPreviewPage extends BasePage {
         return c;
     }
 
-    // Click a member toggle by 1-based row index (scrolls and JS-clicks if needed)
+    // Click member checkbox by 1-based index using the emails.N.checkbox id
     public void toggleMemberByIndex(int oneBased) {
-        WebElement row = new WebDriverWait(driver, Duration.ofSeconds(8))
-                .until(ExpectedConditions.presenceOfElementLocated(memberRowByIndex(oneBased)));
-        WebElement t = row.findElement(TOGGLE_INSIDE_ROW);
-        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'})", t);
-        try { t.click(); } catch (Exception e) { ((JavascriptExecutor) driver).executeScript("arguments[0].click()", t); }
+        int zeroBased = oneBased - 1;
+        By checkboxById = By.id("emails." + zeroBased + ".checkbox");
+
+        WebElement checkbox = new WebDriverWait(driver, Duration.ofSeconds(10))
+                .until(ExpectedConditions.elementToBeClickable(checkboxById));
+
+        ((JavascriptExecutor) driver)
+                .executeScript("arguments[0].scrollIntoView({block:'center'})", checkbox);
+
+        try {
+            checkbox.click();
+        } catch (Exception e) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click()", checkbox);
+        }
     }
+
+
+
+
+
 
     // ===== Tax / Discount (safe: return ZERO if not present) =====
     public BigDecimal getTaxOrZero() {

@@ -86,7 +86,9 @@ public final class DriverFactory {
                 "--disable-features=PaintHolding",
                 "--disable-gpu",
                 "--disable-dev-shm-usage",
-                "--force-device-scale-factor=" + Config.getDeviceScale()
+                "--force-device-scale-factor=" + Config.getDeviceScale(),
+                "--disable-pdf-viewer",
+                "--pdfjs-disable"
         );
 
         // Window size applied once; headless also needs an explicit size
@@ -109,24 +111,40 @@ public final class DriverFactory {
             options.setBinary(chromeBinary);
         }
 
-        // Chrome prefs (determinism + faster runs)
+        // ---------- Chrome prefs (merged, single map) ----------
         Map<String, Object> prefs = new HashMap<>();
+
+        // Optional: disable images
         if (Boolean.parseBoolean(Config.getAny("chrome.disableImages", "CHROME_DISABLE_IMAGES"))) {
             Map<String, Object> content = Map.of("images", 2); // 2 = block
             prefs.put("profile.managed_default_content_settings", content);
         }
+
+        // Disable credential services / notifications
         prefs.put("credentials_enable_service", false);
         prefs.put("profile.password_manager_enabled", false);
         prefs.put("profile.default_content_setting_values.notifications", 2);
 
-        String downloadDir = Config.getAny("download.dir", "DOWNLOAD_DIR");
-        if (downloadDir != null && !downloadDir.isBlank()) {
-            prefs.put("download.default_directory", Path.of(downloadDir).toAbsolutePath().toString());
-            prefs.put("download.prompt_for_download", false);
-            // prevent “dangerous download” prompts that can stall headless
-            prefs.put("safebrowsing.enabled", true);
+        // Download directory: env override, else default to target/downloads
+        String dlFromEnv = Config.getAny("download.dir", "DOWNLOAD_DIR");
+        String resolvedDownloadDir;
+        if (dlFromEnv != null && !dlFromEnv.isBlank()) {
+            resolvedDownloadDir = Path.of(dlFromEnv).toAbsolutePath().toString();
+        } else {
+            resolvedDownloadDir = Path.of("target", "downloads").toAbsolutePath().toString();
         }
+
+        // Core download prefs (for your report tests)
+        prefs.put("download.default_directory", resolvedDownloadDir);
+        prefs.put("download.prompt_for_download", false);
+        prefs.put("download.directory_upgrade", true);
+        // prevent “dangerous download” prompts that can stall headless
+        prefs.put("safebrowsing.enabled", true);
+        // Make PDFs download instead of opening with viewer
+        prefs.put("plugins.always_open_pdf_externally", true);
+
         options.setExperimentalOption("prefs", prefs);
+        // ---------- end prefs ----------
 
         // Logging (opt-in)
         if (Config.isPerfLoggingEnabled() || Config.isBrowserLoggingEnabled()) {

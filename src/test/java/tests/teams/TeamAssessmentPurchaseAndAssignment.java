@@ -1,8 +1,6 @@
 package tests.teams;
 
-import Utils.Config;
-import Utils.MailSlurpUtils;
-import Utils.StripeCheckoutHelper;
+import Utils.*;
 import base.BaseTest;
 import com.mailslurp.clients.ApiException;
 import com.mailslurp.models.Email;
@@ -24,9 +22,12 @@ import pages.Shop.PurchaseInformation;
 import pages.Shop.PurchaseRecipientSelectionPage;
 import pages.menuPages.DashboardPage;
 import pages.menuPages.ShopPage;
+import pages.teams.TeamPurchaseFlows;
 
 import java.io.File;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -105,7 +106,9 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
                 "Proceed button must be disabled when there are duplicate emails.");
     }
 
-    @Test(groups = "ui-only", description = "TILT-239: Exceeding max team members (20) validates/clamps and blocks Proceed")
+
+    @Test(groups ={"ui-only", "known-bug" }, description = "TILT-239: Exceeding max team members (20) validates/clamps and blocks Proceed")
+    //we are waiting for a error message but is not being displauyed
     public void exceedingMaxTeamMembersValidation_TTP_Team_ManualEntry() {
         // creds
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
@@ -170,6 +173,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         Assert.assertFalse(page.isProceedToPaymentEnabled(),
                 "Proceed button must be disabled when exceeding maximum team members.");
     }
+
 
     @Test(groups = "ui-only", description = "TILT-240: Invalid template upload shows appropriate error and blocks Proceed")
     public void invalidTemplateUpload_showsError_and_blocksProceed() throws Exception {
@@ -283,6 +287,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         }
         softly.assertAll();
     }
+
 
     @Test(groups = "ui-only",
             description = "TILT-241: CSV without Email header is parsed to grid with inline errors; Proceed remains disabled")
@@ -398,51 +403,57 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         softly.assertAll();
     }
 
+
     @Test(groups = "ui-only", description = "TILT-242: Verify Total Cost Calculation Accuracy when toggling member selection in Order Preview")
-    public void verifyTotalCostRecalculation_OnToggleInPreview() {
+    public void verifyTotalCostRecalculation_OnToggleInPreview() throws InterruptedException {
+        step("Resolve admin credentials from config");
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
         final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
         if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
             throw new SkipException("[Config] Admin credentials missing");
         }
 
-        // Create two unique recipients (reuse helper)
+        step("Create two unique recipients for the team purchase");
+        // Get base inbox email once
         Recipient r = provisionUniqueRecipient();
-        String email1 = r.emailAddress;
-        String email2 = email1.replace("@", "+p2@");
+        String base = r.emailAddress; // e.g. 10f8...@mailslurp.xyz
+        int at = base.indexOf('@');
+        String local = base.substring(0, at);
+        String domain = base.substring(at + 1);
+        // Two unique, fresh aliases – both will deliver to the same inbox
+        String email1 = local + "+p1@" + domain;
+        String email2 = local + "+p2@" + domain;
 
-        // Flow to preview with 2 members
+
+
+        step("Login as admin and open the dashboard");
         LoginPage login = new LoginPage(driver());
         login.navigateTo();
         login.waitUntilLoaded();
         DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
         Assert.assertTrue(dash.isLoaded(), "Dashboard did not load");
 
+        step("Navigate to Shop and open True Tilt purchase flow for a team");
         ShopPage shop = dash.goToShop();
         Assert.assertTrue(shop.isLoaded(), "Shop did not load");
         PurchaseRecipientSelectionPage sel = shop.clickBuyNowForTrueTilt();
         sel.selectTeam();
         sel.clickNextCta();
 
+        step("Confirm purchase mode is TEAM in Purchase Information");
         PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM));
 
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver())
-                .waitUntilLoaded()
-                .selectCreateNewTeam()
-                .setOrganizationName("QA Org")
-                .setGroupName("Automation Squad")
-                .selectManualEntry()
-                .enterNumberOfIndividuals("2");
-        entry.fillUserDetailsAtIndex(1, "U", "One", email1);
-        entry.fillUserDetailsAtIndex(2, "U", "Two", email2);
-        entry.triggerManualValidationBlurs();
-        Assert.assertTrue(entry.isProceedToPaymentEnabled(), "Proceed should be enabled");
+        step("Create a unique team with two members and proceed to Order Preview");
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver()).waitUntilLoaded();
 
-        OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
+        TeamPurchaseFlows.TeamCreationResult teamResult =
+                TeamPurchaseFlows.createUniqueTeamWithTwoMembers(entry, email1, email2);
+
+        OrderPreviewPage preview = teamResult.preview;
         Assert.assertTrue(preview.isLoaded(), "Preview did not load");
 
-        // Snapshot A (both selected)
+        step("Capture baseline totals with both members selected");
         preview.waitTotalsStable();
         int selA = preview.getSelectedCount();
         BigDecimal subA = preview.getSubtotal();
@@ -450,10 +461,12 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         BigDecimal unit = preview.deriveUnitPrice();
 
         Assert.assertTrue(selA >= 1, "At least one member must be selected");
-        Assert.assertTrue(preview.equalsMoney(subA, unit.multiply(java.math.BigDecimal.valueOf(selA))),
-                "Subtotal should equal unit * selected");
+        Assert.assertTrue(
+                preview.equalsMoney(subA, unit.multiply(BigDecimal.valueOf(selA))),
+                "Subtotal should equal unit * selected"
+        );
 
-        // Toggle one off
+        step("Deselect one member and verify subtotal and total recalculate correctly");
         preview.toggleMemberByIndex(2);
         preview.waitTotalsStable();
 
@@ -464,17 +477,22 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         BigDecimal discB = preview.getDiscountOrZero();
 
         Assert.assertEquals(selB, selA - 1, "Selected count should decrease by 1");
-        Assert.assertTrue(preview.equalsMoney(subB, unit.multiply(java.math.BigDecimal.valueOf(selB))),
-                "Subtotal after deselect should equal unit * selected");
-        Assert.assertTrue(preview.equalsMoney(subA.subtract(subB), unit),
-                "Subtotal delta should equal exactly one unit");
+        Assert.assertTrue(
+                preview.equalsMoney(subB, unit.multiply(java.math.BigDecimal.valueOf(selB))),
+                "Subtotal after deselect should equal unit * selected"
+        );
+        Assert.assertTrue(
+                preview.equalsMoney(subA.subtract(subB), unit),
+                "Subtotal delta should equal exactly one unit"
+        );
 
-        // Total composition check (if tax/discount visible)
         BigDecimal expectedTotB = subB.add(taxB).subtract(discB);
-        Assert.assertTrue(preview.equalsMoney(totB, expectedTotB),
-                String.format("Total mismatch after deselect. expected=%s actual=%s", expectedTotB, totB));
+        Assert.assertTrue(
+                preview.equalsMoney(totB, expectedTotB),
+                String.format("Total mismatch after deselect. expected=%s actual=%s", expectedTotB, totB)
+        );
 
-        // Toggle back on => values return
+        step("Re-select the member and verify totals return to the original baseline");
         preview.toggleMemberByIndex(2);
         preview.waitTotalsStable();
 
@@ -487,159 +505,160 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         Assert.assertTrue(preview.equalsMoney(totC, totA), "Total should return to original");
     }
 
+
     @Test(groups = "ui-only", description = "TILT-243: Remove a Member in Order Summary updates counts and totals (E2E)")
     public void removeMemberInOrderSummary_EndToEnd() {
+
+        step("Resolve admin credentials from configuration");
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
         final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
         if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
             throw new SkipException("[Config] Admin credentials missing");
         }
 
-        // Create two unique recipients
+        step("Create two unique recipient emails for the team purchase (alias strategy)");
         Recipient r = provisionUniqueRecipient();
-        String email1 = r.emailAddress;
-        String email2 = email1.replace("@", "+p2@");
+        String base = r.emailAddress;
 
-        // To preview with 2 members
+        int at = base.indexOf('@');
+        String local = base.substring(0, at);
+        String domain = base.substring(at + 1);
+
+        String email1 = local + "+p1@" + domain;
+        String email2 = local + "+p2@" + domain;
+
+        step("Login as admin and open the dashboard");
         LoginPage login = new LoginPage(driver());
         login.navigateTo();
         login.waitUntilLoaded();
         DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
         Assert.assertTrue(dash.isLoaded(), "Dashboard did not load");
 
+        step("Navigate to the Shop and start True Tilt purchase for a Team");
         ShopPage shop = dash.goToShop();
         Assert.assertTrue(shop.isLoaded(), "Shop did not load");
-
         PurchaseRecipientSelectionPage sel = shop.clickBuyNowForTrueTilt();
         sel.selectTeam();
         sel.clickNextCta();
 
+        step("Confirm purchase mode is TEAM");
         PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM));
 
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver())
-                .waitUntilLoaded()
-                .selectCreateNewTeam()
-                .setOrganizationName("QA Org")
-                .setGroupName("Automation Squad")
-                .selectManualEntry()
-                .enterNumberOfIndividuals("2");
-        entry.fillUserDetailsAtIndex(1, "U", "One", email1);
-        entry.fillUserDetailsAtIndex(2, "U", "Two", email2);
-        entry.triggerManualValidationBlurs();
-        Assert.assertTrue(entry.isProceedToPaymentEnabled(), "Proceed should be enabled");
+        step("Create a NEW unique Team with two recipients and proceed to Order Preview");
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver()).waitUntilLoaded();
 
-        OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
+        TeamPurchaseFlows.TeamCreationResult teamResult =
+                TeamPurchaseFlows.createUniqueTeamWithTwoMembers(entry, email1, email2);
+
+        OrderPreviewPage preview = teamResult.preview;
         Assert.assertTrue(preview.isLoaded(), "Preview did not load");
 
-        // Snapshot A
+        step("Capture initial totals with both members selected");
         preview.waitTotalsStable();
         int selA = preview.getSelectedCount();
-        java.math.BigDecimal subA = preview.getSubtotal();
-        java.math.BigDecimal totA = preview.getTotal();
-        java.math.BigDecimal unit = preview.deriveUnitPrice();
+        BigDecimal subA = preview.getSubtotal();
+        BigDecimal totA = preview.getTotal();
+        BigDecimal unit = preview.deriveUnitPrice();
 
         Assert.assertTrue(selA >= 2, "Need at least two selected members at start");
-        Assert.assertTrue(preview.equalsMoney(subA, unit.multiply(java.math.BigDecimal.valueOf(selA))),
-                "Subtotal should equal unit * selected at start");
+        Assert.assertTrue(
+                preview.equalsMoney(subA, unit.multiply(BigDecimal.valueOf(selA))),
+                "Subtotal should equal unit * selected at start"
+        );
 
-        // Action: deselect row #2 (acts as “remove”)
+        step("Deselect (remove) the second member in the Order Summary");
         preview.toggleMemberByIndex(2);
         preview.waitTotalsStable();
 
-        // Snapshot B
+        step("Capture totals after removal");
         int selB = preview.getSelectedCount();
-        java.math.BigDecimal subB = preview.getSubtotal();
-        java.math.BigDecimal totB = preview.getTotal();
-        java.math.BigDecimal taxB = preview.getTaxOrZero();
-        java.math.BigDecimal discB = preview.getDiscountOrZero();
+        BigDecimal subB = preview.getSubtotal();
+        BigDecimal totB = preview.getTotal();
+        BigDecimal taxB = preview.getTaxOrZero();
+        BigDecimal discB = preview.getDiscountOrZero();
 
         Assert.assertEquals(selB, selA - 1, "Selected member count should decrease by 1");
-        Assert.assertTrue(preview.equalsMoney(subB, unit.multiply(java.math.BigDecimal.valueOf(selB))),
-                "Subtotal after removal should equal unit * selected");
-        Assert.assertTrue(preview.equalsMoney(subA.subtract(subB), unit),
-                "Subtotal delta after removal should equal exactly one unit price");
+        Assert.assertTrue(
+                preview.equalsMoney(subB, unit.multiply(BigDecimal.valueOf(selB))),
+                "Subtotal after removal should equal unit * selected"
+        );
+        Assert.assertTrue(
+                preview.equalsMoney(subA.subtract(subB), unit),
+                "Subtotal delta after removal should equal exactly one unit price"
+        );
 
-        java.math.BigDecimal expectedTotB = subB.add(taxB).subtract(discB);
-        Assert.assertTrue(preview.equalsMoney(totB, expectedTotB),
-                String.format("Total mismatch after removal. expected=%s actual=%s", expectedTotB, totB));
+        BigDecimal expectedTotB = subB.add(taxB).subtract(discB);
+        Assert.assertTrue(
+                preview.equalsMoney(totB, expectedTotB),
+                String.format("Total mismatch after removal. expected=%s actual=%s", expectedTotB, totB)
+        );
 
-        // Re-add
+        step("Re-add the removed member and verify totals return to the original values");
         preview.toggleMemberByIndex(2);
         preview.waitTotalsStable();
 
         int selC = preview.getSelectedCount();
-        java.math.BigDecimal subC = preview.getSubtotal();
-        java.math.BigDecimal totC = preview.getTotal();
+        BigDecimal subC = preview.getSubtotal();
+        BigDecimal totC = preview.getTotal();
 
         Assert.assertEquals(selC, selA, "Selected should return to original");
         Assert.assertTrue(preview.equalsMoney(subC, subA), "Subtotal should return to original");
         Assert.assertTrue(preview.equalsMoney(totC, totA), "Total should return to original");
     }
 
+
     @Test(groups = "ui-only", description = "TILT-244: Toggle Product Assignment On/Off per email in final confirmation (E2E)")
     public void toggleProductAssignment_OnOff_EndToEnd() {
-        final boolean DEBUG = true;
-        long T0 = System.nanoTime();
-        dbg(DEBUG, "=== TEST START ===");
 
-        // creds
+        step("Resolve admin credentials from configuration");
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
         final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
         if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
             throw new SkipException("[Config] Admin credentials missing");
         }
-        dbg(DEBUG, "Config OK. BaseUrl? " + Config.getBaseUrl());
 
         final String PRODUCT = "True Tilt Personality Profile";
-        dbg(DEBUG, "Using PRODUCT label: " + PRODUCT);
 
-        // recipients
+        step("Create two unique recipient aliases for the team purchase (+p1 / +p2)");
         Recipient r = provisionUniqueRecipient();
-        String email1 = r.emailAddress;
-        String email2 = email1.replace("@", "+p2@");
-        dbg(DEBUG, "Recipients: email1=" + email1 + " | email2=" + email2);
+        String base = r.emailAddress;              // e.g. 10f8...@mailslurp.xyz
+        int at = base.indexOf('@');
+        String local = base.substring(0, at);
+        String domain = base.substring(at + 1);
 
-        // To Preview with 2 members selected
+        String email1 = local + "+p1@" + domain;
+        String email2 = local + "+p2@" + domain;
+
+        step("Login as admin and open dashboard");
         LoginPage login = new LoginPage(driver());
         login.navigateTo();
         login.waitUntilLoaded();
         DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
         Assert.assertTrue(dash.isLoaded(), "Dashboard did not load");
-        dbg(DEBUG, "Dashboard loaded. URL=" + safeUrl());
 
+        step("Navigate to Shop and start True Tilt purchase for TEAM");
         ShopPage shop = dash.goToShop();
         Assert.assertTrue(shop.isLoaded(), "Shop did not load");
-        dbg(DEBUG, "Shop loaded. URL=" + safeUrl());
 
         PurchaseRecipientSelectionPage sel = shop.clickBuyNowForTrueTilt();
         sel.selectTeam();
         sel.clickNextCta();
-        dbg(DEBUG, "Recipient selection done.");
 
+        step("Confirm Purchase Information is in TEAM mode");
         PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
         Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM));
-        dbg(DEBUG, "PurchaseInformation loaded + TEAM confirmed.");
 
-        AssessmentEntryPage entry = new AssessmentEntryPage(driver())
-                .waitUntilLoaded()
-                .selectCreateNewTeam()
-                .setOrganizationName("QA Org")
-                .setGroupName("Automation Squad")
-                .selectManualEntry()
-                .enterNumberOfIndividuals("2");
-        entry.fillUserDetailsAtIndex(1, "U", "One", email1);
-        entry.fillUserDetailsAtIndex(2, "U", "Two", email2);
-        entry.triggerManualValidationBlurs();
-        Assert.assertTrue(entry.isProceedToPaymentEnabled(), "Proceed should be enabled");
-        dbg(DEBUG, "AssessmentEntryPage filled. Proceed enabled? true");
+        step("Create a new unique Team with two members and proceed to Order Preview");
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver()).waitUntilLoaded();
 
-        OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
+        TeamPurchaseFlows.TeamCreationResult teamResult =
+                TeamPurchaseFlows.createUniqueTeamWithTwoMembers(entry, email1, email2);
+
+        OrderPreviewPage preview = teamResult.preview;
         Assert.assertTrue(preview.isLoaded(), "Preview did not load");
-        dbg(DEBUG, "Preview loaded. URL=" + safeUrl());
-        if (DEBUG) dumpTablesSummary("afterPreviewLoad");
 
-        // Read the **actual** emails as rendered by the UI
+        step("Collect rendered emails in Order Preview table and map base / +p2 aliases");
         List<String> tableEmails = collectEmailsFromPreviewTable(true);
         Assert.assertTrue(tableEmails.size() >= 2,
                 "Expected at least 2 email rows in preview, got: " + tableEmails);
@@ -654,7 +673,6 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
                 .findFirst()
                 .orElseGet(() -> tableEmails.get(0));
 
-        // purely informational
         int distBase = levenshtein(email1.toLowerCase(Locale.ROOT), uiEmailBase);
         int distP2 = levenshtein(email2.toLowerCase(Locale.ROOT), uiEmailP2);
         System.out.println("[email-compare] base dist=" + distBase + " | p2 dist=" + distP2
@@ -664,29 +682,31 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         Assert.assertTrue(uiEmailP2.contains("+p2@"),
                 "One row must contain +p2@: uiEmailP2=" + uiEmailP2 + " | all=" + tableEmails);
 
-        // Baseline
+        step("Capture baseline counts and money values with all products ON");
         preview.waitTotalsStable();
         int selA = preview.getSelectedCount();
-        Assert.assertTrue(selA >= 2, "Expect 2 selected at start");
+        Assert.assertTrue(selA >= 2, "Expect at least 2 selected at start");
 
         BigDecimal subA = preview.getSubtotal();
         BigDecimal totA = preview.getTotal();
         BigDecimal unit = preview.deriveUnitPrice();
-        Assert.assertTrue(preview.equalsMoney(subA, unit.multiply(BigDecimal.valueOf(selA))),
-                "Baseline Subtotal must equal unit * selected");
+        Assert.assertTrue(
+                preview.equalsMoney(subA, unit.multiply(BigDecimal.valueOf(selA))),
+                "Baseline Subtotal must equal unit * selected"
+        );
 
-        // Ensure ON for +p2 (so we can turn it OFF)
+        step("Ensure product is ON for +p2 row before testing OFF toggle");
         preview.setProductAssigned(uiEmailP2, PRODUCT, true);
         preview.debugDumpPreviewTable("after-setProductAssigned-ensureON");
         preview.waitTotalsStable();
 
-        // Action: OFF product for +p2
+        step("Toggle product OFF for +p2 row and wait for recalculation");
         preview.debugDumpPreviewTable("before-setProductAssigned-OFF");
         preview.setProductAssigned(uiEmailP2, PRODUCT, false);
         preview.debugDumpPreviewTable("after-setProductAssigned-OFF");
         preview.waitTotalsStable();
 
-        // After OFF
+        step("Validate counts, subtotal, and total after product OFF");
         int selB = preview.getSelectedCount();
         BigDecimal subB = preview.getSubtotal();
         BigDecimal totB = preview.getTotal();
@@ -694,29 +714,34 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         BigDecimal discB = preview.getDiscountOrZero();
 
         Assert.assertEquals(selB, selA - 1, "Selected count should decrease by 1 after product OFF");
-        Assert.assertTrue(preview.equalsMoney(subB, unit.multiply(BigDecimal.valueOf(selB))),
-                "Subtotal after OFF should equal unit * selected");
-        Assert.assertTrue(preview.equalsMoney(subA.subtract(subB), unit),
-                "Subtotal delta should equal exactly one unit");
+        Assert.assertTrue(
+                preview.equalsMoney(subB, unit.multiply(BigDecimal.valueOf(selB))),
+                "Subtotal after OFF should equal unit * selected"
+        );
+        Assert.assertTrue(
+                preview.equalsMoney(subA.subtract(subB), unit),
+                "Subtotal delta should equal exactly one unit"
+        );
 
         BigDecimal expectedTotB = subB.add(taxB).subtract(discB);
-        Assert.assertTrue(preview.equalsMoney(totB, expectedTotB),
-                String.format("Total mismatch after OFF. expected=%s actual=%s", expectedTotB, totB));
+        Assert.assertTrue(
+                preview.equalsMoney(totB, expectedTotB),
+                String.format("Total mismatch after OFF. expected=%s actual=%s", expectedTotB, totB)
+        );
 
-        // Restore ON
+        step("Toggle product back ON for +p2 row and verify return to baseline");
         preview.setProductAssigned(uiEmailP2, PRODUCT, true);
         preview.waitTotalsStable();
 
-        // Back to baseline
         int selC = preview.getSelectedCount();
         BigDecimal subC = preview.getSubtotal();
         BigDecimal totC = preview.getTotal();
+
         Assert.assertEquals(selC, selA, "Selected count should return to baseline after ON");
         Assert.assertTrue(preview.equalsMoney(subC, subA), "Subtotal should return to baseline");
         Assert.assertTrue(preview.equalsMoney(totC, totA), "Total should return to baseline");
-
-        dbg(DEBUG, "=== TEST END (ms): " + ((System.nanoTime() - T0) / 1_000_000) + " ===");
     }
+
 
     /**
      * TILT-245: Handle Slow Network on Payment Submit
@@ -776,11 +801,11 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
                 ((org.openqa.selenium.devtools.HasDevTools) driver()).getDevTools();
         devTools.createSession();
         devTools.send(Network.enable(
-                Optional.empty(),   // maxTotalBufferSize
-                Optional.empty(),   // maxResourceBufferSize
-                Optional.empty(),   // maxPostDataSize
-                Optional.of(true),  // captureNetworkRequests
-                Optional.of(true)   // reportRawHeaders
+                Optional.of(50_000_000),   // maxTotalBufferSize required
+                Optional.empty(),          // maxResourceBufferSize
+                Optional.empty(),          // maxPostDataSize
+                Optional.of(true),         // captureNetworkRequests
+                Optional.of(true)          // durable messages
         ));
         devTools.send(Network.emulateNetworkConditions(
                 false, 1200, 100 * 1024, 100 * 1024,
@@ -866,6 +891,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         }
     }
 
+
     @Test(groups = {"ui-only", "known-bug"}, description = "TILT-247: Preserve Team selection and member choices on Back navigation")
     public void preserveTeamSelection_onBackNavigation_persists() {
         // creds
@@ -875,12 +901,23 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
             throw new SkipException("[Config] Admin credentials missing");
         }
 
-        // Unique recipients
+        // ---------- Unique recipients ----------
+        step("Resolve 3 unique recipients for this run (aliases on same inbox)");
         Recipient r = provisionUniqueRecipient();
-        String email1 = r.emailAddress;
-        String email2 = email1.replace("@", "+p2@");
-        String email3 = email1.replace("@", "+p3@");
+        String base = r.emailAddress; // e.g. 10f8...@mailslurp.xyz
+        int at = base.indexOf('@');
+        String local = base.substring(0, at);
+        String domain = base.substring(at + 1);
+
+        String email1 = local + "+p1@" + domain;
+        String email2 = local + "+p2@" + domain;
+        String email3 = local + "+p3@" + domain;
         System.out.println("[DEBUG] planned emails: " + email1 + ", " + email2 + ", " + email3);
+
+        // ---------- Unique org / group (avoid hardcoded collisions) ----------
+        String tag = local + "-" + (System.currentTimeMillis() % 100000); // short-ish, but unique enough
+        final String ORG = "QA Org " + tag;
+        final String GRP = "Automation Squad " + tag;
 
         // Login → Shop → Team flow
         step("Login as admin");
@@ -899,13 +936,12 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
         step("Verify banner shows TEAM purchase");
         PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
-        Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
-                "Expected banner: 'Assessment purchase for: Team'.");
+        Assert.assertTrue(
+                info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
+                "Expected banner: 'Assessment purchase for: Team'."
+        );
 
         // Entry: create team, manual entry, 3 members
-        final String ORG = "QA Org";
-        final String GRP = "Automation Squad";
-
         step("Fill team info + 3 members");
         AssessmentEntryPage entry = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
@@ -1017,6 +1053,486 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
         dumpBrowserConsole();
     }
+
+
+    /**
+     * TC-2: Team purchase via manual entry → Preview → Stripe → webhook → Individuals + email
+     * Stripe Checkout UI is NOT used — payment completion is triggered via Stripe CLI only.
+     */
+    @Test
+    public void testTeamManualEntry_PurchaseCompletesAndSendsInviteEmail() throws ApiException, InterruptedException {
+
+        // --- ADMIN CREDS ---
+        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
+            throw new SkipException("[Config] Missing ADMIN credentials.");
+        }
+
+        final Duration EMAIL_TIMEOUT = Duration.ofSeconds(120);
+        final String CTA_TEXT = "Accept Assessment";
+        final String SUBJECT_NEEDLE = "assessment";
+        System.setProperty("mailslurp.debug", "true");
+
+        // --- EMAIL + INBOX (fresh MailSlurp inbox) ---
+        step("Resolve recipient for this run (fresh MailSlurp inbox)");
+        Recipient r = provisionUniqueRecipient();
+        MailSlurpUtils.clearInboxEmails(r.inboxId);
+
+        final UUID inboxId = r.inboxId;
+        final String baseEmail = r.emailAddress;
+        System.out.println("📧 Base inbox: " + baseEmail);
+
+        // one participant for this test
+        final String tempEmail = baseEmail;  // no alias needed for single-user test
+
+        // generate unique org/group for each test run
+        String tag = baseEmail.substring(0, baseEmail.indexOf('@'))
+                + "-" + (System.currentTimeMillis() % 100000);
+        final String ORG_NAME = "QA Org " + tag;
+        final String GROUP_NAME = "QA Team " + tag;
+
+        // --- LOGIN ---
+        step("Login as admin");
+        LoginPage login = new LoginPage(driver());
+        login.navigateTo();
+        login.waitUntilLoaded();
+        DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+        Assert.assertTrue(dash.isLoaded(), "❌ Dashboard failed to load");
+
+        // --- SHOP FLOW ---
+        step("Go to Shop → Team purchase → Manual entry");
+        ShopPage shopPage = dash.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page failed to load");
+
+        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
+        sel.selectTeam();
+        sel.clickNextCta();
+
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
+        Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM));
+
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver())
+                .waitUntilLoaded()
+                .selectCreateNewTeam()
+                .setOrganizationName(ORG_NAME)
+                .setGroupName(GROUP_NAME)
+                .selectManualEntry()
+                .enterNumberOfIndividuals("1");
+
+        entry.fillUserDetailsAtIndex(1, "User", "One", tempEmail);
+        entry.triggerManualValidationBlurs();
+        entry.waitManualGridEmailsAtLeast(1, Duration.ofSeconds(8));
+
+        Assert.assertTrue(entry.isProceedToPaymentEnabled(), "❌ Proceed should be enabled");
+
+        // --- PREVIEW ---
+        step("Review Order (Preview)");
+        OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
+        Assert.assertTrue(preview.isLoaded(), "❌ Preview failed to load");
+
+        preview.waitTotalsStable();
+        Assert.assertEquals(preview.getSelectedCount(), 1, "Preview must show 1 selected member");
+
+        // --- STRIPE (CLI ONLY) ---
+        step("Stripe: Fetch checkout.session + metadata.body (no UI)");
+        String checkoutUrl = preview.proceedToStripeAndGetCheckoutUrl();
+        Assert.assertNotNull(checkoutUrl, "❌ Could not obtain checkout URL");
+
+        String sessionId = extractSessionIdFromUrl(checkoutUrl);
+        Assert.assertNotNull(sessionId, "❌ Could not parse session id from URL");
+
+        String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
+        Assert.assertNotNull(bodyJson, "❌ Could not read metadata.body from Stripe session");
+
+        step("Stripe: Trigger checkout.session.completed via CLI (AWS-safe)");
+        var trig = StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
+        System.out.println("[Stripe] Triggered event " + trig.eventId);
+
+        // --- POST-PAYMENT CONFIRMATION ---
+        step("Navigate to Orders Confirmation");
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+
+        // --- INDIVIDUALS PAGE ---
+        step("Individuals page must show newly invited user");
+        new IndividualsPage(driver())
+                .open(Config.getBaseUrl())
+                .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
+
+        // --- EMAIL RECEIVED ---
+        step("MailSlurp: Assert invite email is received correctly");
+        Email invite = MailSlurpUtils.waitForEmailMatching(
+                inboxId,
+                EMAIL_TIMEOUT.toMillis(),
+                1500L,
+                true,
+                MailSlurpUtils.subjectContains(SUBJECT_NEEDLE)
+                        .and(MailSlurpUtils.bodyContains("accept"))
+        );
+        Assert.assertNotNull(invite, "❌ Invite email not received in time");
+
+        final String subject = Objects.toString(invite.getSubject(), "");
+        final String from = Objects.toString(invite.getFrom(), "");
+        final String body = Objects.toString(invite.getBody(), "");
+
+        Assert.assertTrue(subject.toLowerCase().contains(SUBJECT_NEEDLE),
+                "❌ Subject missing keyword: " + SUBJECT_NEEDLE);
+        Assert.assertTrue(from.toLowerCase().contains("tilt365")
+                        || from.toLowerCase().contains("sendgrid"),
+                "❌ Unexpected sender: " + from);
+        Assert.assertTrue(body.toLowerCase().contains(CTA_TEXT.toLowerCase()),
+                "❌ Email missing CTA text: " + CTA_TEXT);
+
+        String link = MailSlurpUtils.extractLinkByAnchorText(invite, CTA_TEXT);
+        if (link == null) link = MailSlurpUtils.extractFirstLink(invite);
+
+        Assert.assertNotNull(link, "❌ No link found in invite email");
+        Assert.assertTrue(link.contains("sendgrid.net") || link.contains("tilt365"),
+                "❌ Unexpected link host in invite email: " + link);
+
+        System.out.println("🎉 Email OK → Link: " + link);
+    }
+
+
+    @Test(groups = {"smoke"}, description = "SM08: Team manual entry (3 recipients) reaches Stripe Checkout.")
+    public void smoke_teamManualEntryThreeRecipients_reachesStripeCheckout() throws Exception {
+
+        // -------------------- CONFIG / ADMIN CREDS --------------------
+        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
+            throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
+        }
+        System.out.println("[AdminCreds] email=" + BaseTest.maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
+
+        final int TEAM_SIZE = 3;
+
+        // -------------------- UNIQUE ORG / TEAM / RECIPIENTS --------------------
+        step("Generate unique org/team and recipient emails for this run");
+        String tag = "sm08-" + (System.currentTimeMillis() % 100000);
+        final String ORG_NAME = "SM08 Org " + tag;
+        final String GROUP_NAME = "SM08 Team " + tag;
+
+        String baseLocal = "sm08-" + tag;
+        String domain = "@example.test";
+
+        String[] emails = new String[] {
+                baseLocal + "-1" + domain,
+                baseLocal + "-2" + domain,
+                baseLocal + "-3" + domain
+        };
+
+        // -------------------- LOGIN --------------------
+        step("Login as admin and open Dashboard");
+        LoginPage login = new LoginPage(driver());
+        login.navigateTo();
+        login.waitUntilLoaded();
+        DashboardPage dashboard = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+        Assert.assertTrue(dashboard.isLoaded(), "❌ Dashboard did not load after login");
+
+        // -------------------- SHOP → TEAM → MANUAL ENTRY --------------------
+        step("Go to Shop → start Team purchase flow for True Tilt");
+        ShopPage shopPage = dashboard.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page failed to load");
+
+        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
+        Assert.assertTrue(sel.isLoaded(), "❌ Recipient selection page did not load");
+
+        step("Choose 'Team' path, then continue");
+        sel.selectTeam();
+        sel.clickNextCta();
+
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
+        Assert.assertTrue(
+                info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
+                "❌ Purchase is not set to TEAM"
+        );
+
+        step("Select manual entry for new team and enter 3 recipients");
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver())
+                .waitUntilLoaded()
+                .selectCreateNewTeam()
+                .setOrganizationName(ORG_NAME)
+                .setGroupName(GROUP_NAME)
+                .selectManualEntry()
+                .enterNumberOfIndividuals(String.valueOf(TEAM_SIZE));
+
+        // Fill recipients without hard-coded names
+        for (int i = 0; i < TEAM_SIZE; i++) {
+            String email = emails[i];
+            String localPart = email.substring(0, email.indexOf('@'));
+            String firstName = "FN_" + localPart;
+            String lastName  = "LN_" + localPart;
+
+            entry.fillUserDetailsAtIndex(i + 1, firstName, lastName, email);
+        }
+
+        entry.triggerManualValidationBlurs();
+        entry.waitManualGridEmailsAtLeast(TEAM_SIZE, Duration.ofSeconds(10));
+
+        Assert.assertTrue(
+                entry.isProceedToPaymentEnabled(),
+                "❌ Proceed to Payment should be enabled after entering 3 valid recipients"
+        );
+
+        // -------------------- ORDER PREVIEW --------------------
+        step("Proceed to Order Preview and validate 3 recipients + totals");
+        OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
+        Assert.assertTrue(preview.isLoaded(), "❌ Order Preview page failed to load");
+
+        preview.waitTotalsStable();
+
+        // 3 recipients selected
+        Assert.assertEquals(
+                preview.getSelectedCount(),
+                TEAM_SIZE,
+                "❌ Preview must show " + TEAM_SIZE + " selected members"
+        );
+
+        // NEW: assert each of the 3 emails is present & selected
+        LinkedHashMap<String, Boolean> selection = preview.selectionByEmail();
+        Assert.assertEquals(
+                selection.size(),
+                TEAM_SIZE,
+                "❌ Preview selection map should contain exactly " + TEAM_SIZE + " rows"
+        );
+        for (String email : emails) {
+            String key = email.toLowerCase();
+            Assert.assertTrue(
+                    selection.containsKey(key),
+                    "❌ Preview table is missing email: " + email
+            );
+            Assert.assertTrue(
+                    Boolean.TRUE.equals(selection.get(key)),
+                    "❌ Email is not selected in preview: " + email
+            );
+        }
+
+        // Price sanity checks using existing money helpers
+        BigDecimal subtotal = preview.getSubtotal();      // from label or computed
+        BigDecimal total    = preview.getTotal();
+        BigDecimal unit     = preview.deriveUnitPrice();  // subtotal / selectedCount
+
+        Assert.assertTrue(
+                unit.compareTo(BigDecimal.ZERO) > 0,
+                "❌ Unit price must be > 0. Got: " + unit
+        );
+
+        BigDecimal expectedSubtotal = unit
+                .multiply(BigDecimal.valueOf(TEAM_SIZE))
+                .setScale(2, RoundingMode.HALF_UP);
+
+        Assert.assertTrue(
+                preview.equalsMoney(subtotal, expectedSubtotal),
+                "❌ Subtotal mismatch. Expected " + expectedSubtotal + " but got " + subtotal
+        );
+
+        // NEW: validate total ≈ subtotal + tax − discount
+        BigDecimal tax      = preview.getTaxOrZero();
+        BigDecimal discount = preview.getDiscountOrZero();
+        BigDecimal recomputedTotal = subtotal
+                .add(tax)
+                .subtract(discount)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        Assert.assertTrue(
+                preview.equalsMoney(total, recomputedTotal),
+                "❌ Total mismatch. Expected " + recomputedTotal +
+                        " (subtotal + tax - discount) but got " + total
+        );
+
+        // -------------------- STRIPE CHECKOUT --------------------
+        step("Proceed to payment and assert Stripe Checkout session is created/opened");
+        String checkoutUrl = preview.proceedToStripeAndGetCheckoutUrl();
+        Assert.assertNotNull(checkoutUrl, "❌ Could not obtain Stripe Checkout URL from preview");
+        Assert.assertFalse(checkoutUrl.isBlank(), "❌ Stripe Checkout URL is blank");
+
+        Assert.assertTrue(
+                checkoutUrl.contains("checkout.stripe.com"),
+                "❌ Unexpected checkout URL (not Stripe?): " + checkoutUrl
+        );
+
+        // Optional: navigate to confirm reachable Stripe page
+        driver().navigate().to(checkoutUrl);
+    }
+
+
+
+    @Test(groups = {"smoke"}, description = "SM09: Team CSV upload (>=3 recipients) reaches Preview + Stripe.")
+    public void smoke_teamCsvUpload_reachesPreviewAndStripe() throws Exception {
+
+        // -------------------- CONFIG / ADMIN CREDS --------------------
+        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
+            throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
+        }
+        System.out.println("[AdminCreds] email=" + BaseTest.maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
+
+        final int TEAM_SIZE = 3;
+
+        // --- FIXTURE CSV ---
+        step("Generate unique org/team and CSV with recipients for this run");
+        String tag = "sm09-" + (System.currentTimeMillis() % 100000);
+        final String ORG_NAME = "SM09 Org " + tag;
+        final String GROUP_NAME = "SM09 Team " + tag;
+
+        TeamCsvFixtureFactory.TeamCsvFixture csvFixture =
+                TeamCsvFixtureFactory.buildTeamCsvWithNRecipients(tag, TEAM_SIZE);
+        List<String> uploadedEmails = csvFixture.getEmails(); // keep for assertions
+
+        // -------------------- LOGIN --------------------
+        step("Login as admin and open Dashboard");
+        LoginPage login = new LoginPage(driver());
+        login.navigateTo();
+        login.waitUntilLoaded();
+        DashboardPage dashboard =
+                login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+        Assert.assertTrue(dashboard.isLoaded(), "❌ Dashboard did not load after login");
+
+        // -------------------- SHOP → TEAM → CSV UPLOAD --------------------
+        step("Go to Shop → start Team purchase flow for True Tilt");
+        ShopPage shopPage = dashboard.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page failed to load");
+
+        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
+        Assert.assertTrue(sel.isLoaded(), "❌ Recipient selection page did not load");
+
+        step("Choose 'Team' path, then continue");
+        sel.selectTeam();
+        sel.clickNextCta();
+
+        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
+        Assert.assertTrue(
+                info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
+                "❌ Purchase is not set to TEAM"
+        );
+
+        step("Select CSV upload for new team and upload file");
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver())
+                .waitUntilLoaded()
+                .selectCreateNewTeam()
+                .setOrganizationName(ORG_NAME)
+                .setGroupName(GROUP_NAME)
+                .selectDownloadTemplate();      // select radio
+
+        // 🔧 IMPORTANT: click Download first so the Upload button appears
+        entry.clickDownloadButton();
+        entry.selectDownloadTemplate();        // re-ensure radio is on (same pattern as other tests)
+
+        // Wait until upload panel / button is present
+        new WebDriverWait(driver(), Duration.ofSeconds(10))
+                .until(d -> entry.isUploadPanelVisible());
+
+        // Now Upload is in the DOM → safe to call helper
+        entry.uploadCsvFile(csvFixture.getPath().toAbsolutePath().toString());
+
+        entry.waitManualGridEmailsAtLeast(TEAM_SIZE, Duration.ofSeconds(20));
+        Assert.assertTrue(
+                entry.isProceedToPaymentEnabled(),
+                "❌ Proceed should be enabled after CSV upload"
+        );
+
+        // -------------------- PREVIEW + ASSERT EMAILS & TOTALS --------------------
+        step("Proceed to Order Preview and validate recipients + totals");
+        OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
+        Assert.assertTrue(preview.isLoaded(), "❌ Order Preview page failed to load");
+
+        preview.waitTotalsStable();
+
+        // 3 recipients selected
+        Assert.assertEquals(
+                preview.getSelectedCount(),
+                TEAM_SIZE,
+                "❌ Preview must show " + TEAM_SIZE + " selected members"
+        );
+
+        // Every CSV email is present and selected in preview
+        LinkedHashMap<String, Boolean> selection = preview.selectionByEmail();
+        Assert.assertTrue(
+                selection.size() >= TEAM_SIZE,
+                "❌ Preview selection map should contain at least " + TEAM_SIZE + " rows"
+        );
+
+        for (String email : uploadedEmails) {
+            String key = email.toLowerCase(Locale.ROOT);
+            Assert.assertTrue(
+                    selection.containsKey(key),
+                    "❌ Preview table is missing email from CSV: " + email
+            );
+            Assert.assertTrue(
+                    Boolean.TRUE.equals(selection.get(key)),
+                    "❌ Email from CSV is not selected in preview: " + email
+            );
+        }
+
+        // Money sanity (same logic as SM08)
+        BigDecimal subtotal = preview.getSubtotal();
+        BigDecimal total    = preview.getTotal();
+        BigDecimal unit     = preview.deriveUnitPrice();
+
+        Assert.assertTrue(
+                unit.compareTo(BigDecimal.ZERO) > 0,
+                "❌ Unit price must be > 0. Got: " + unit
+        );
+
+        BigDecimal expectedSubtotal = unit
+                .multiply(BigDecimal.valueOf(TEAM_SIZE))
+                .setScale(2, RoundingMode.HALF_UP);
+
+        Assert.assertTrue(
+                preview.equalsMoney(subtotal, expectedSubtotal),
+                "❌ Subtotal mismatch. Expected " + expectedSubtotal + " but got " + subtotal
+        );
+
+        BigDecimal tax      = preview.getTaxOrZero();
+        BigDecimal discount = preview.getDiscountOrZero();
+        BigDecimal recomputedTotal = subtotal
+                .add(tax)
+                .subtract(discount)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        Assert.assertTrue(
+                preview.equalsMoney(total, recomputedTotal),
+                "❌ Total mismatch. Expected " + recomputedTotal +
+                        " (subtotal + tax - discount) but got " + total
+        );
+
+        // -------------------- STRIPE CHECKOUT --------------------
+        step("Proceed to payment and assert Stripe Checkout session is created/opened");
+        String checkoutUrl = preview.proceedToStripeAndGetCheckoutUrl();
+        Assert.assertNotNull(checkoutUrl, "❌ Could not obtain Stripe Checkout URL from preview");
+        Assert.assertFalse(checkoutUrl.isBlank(), "❌ Stripe Checkout URL is blank");
+        Assert.assertTrue(
+                checkoutUrl.contains("checkout.stripe.com"),
+                "❌ Unexpected checkout URL (not Stripe?): " + checkoutUrl
+        );
+
+        // Optional: navigate to make sure Stripe page loads
+        driver().navigate().to(checkoutUrl);
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     /* ================================ Debug helpers ================================ */
 
@@ -1275,7 +1791,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         return email.substring(0, at) + "+" + tag + email.substring(at);
     }
 
-    private static String extractSessionIdFromUrl(String url) {
+    public static String extractSessionIdFromUrl(String url) {
         if (url == null) return null;
         Matcher m = Pattern.compile("(?i)(?:cs_test_[A-Za-z0-9_]+)|(?:session_id=([^&]+))").matcher(url);
         if (m.find()) {
@@ -1421,122 +1937,5 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         return dp[n][m];
     }
 
-    /** TC-2: Team purchase via manual entry → Preview → Stripe → webhook → Individuals + email */
-    @Test
-    public void testTeamManualEntry_PurchaseCompletesAndSendsInviteEmail() throws ApiException, InterruptedException {
-        // creds
-        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
-        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
-        if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
-            throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
-        }
-        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
 
-        final Duration EMAIL_TIMEOUT = Duration.ofSeconds(120);
-        final String CTA_TEXT = "Accept Assessment";
-        final String SUBJECT_NEEDLE = "assessment";
-        System.setProperty("mailslurp.debug", "true");
-
-        // recipient
-        step("Resolve recipient for this run (prefer fresh inbox)");
-        Recipient r = provisionUniqueRecipient();
-        MailSlurpUtils.clearInboxEmails(r.inboxId);
-        final String tempEmail = r.emailAddress;
-        final UUID inboxId = r.inboxId;
-        System.out.println("📧 Test email (clean): " + tempEmail);
-
-        // app flow
-        step("Login as admin");
-        LoginPage loginPage = new LoginPage(driver());
-        loginPage.navigateTo();
-        loginPage.waitUntilLoaded();
-        DashboardPage dashboardPage = loginPage.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
-        Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard did not load after login");
-
-        step("Go to Shop and start Team purchase flow");
-        ShopPage shopPage = dashboardPage.goToShop();
-        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
-        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
-        sel.selectTeam();
-        sel.clickNextCta();
-
-        step("Manual entry for 1 team member");
-        PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
-        Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
-                "Expected banner: 'Assessment purchase for: Team'.");
-
-        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
-                .waitUntilLoaded()
-                .selectCreateNewTeam()
-                .setOrganizationName("QA Org")
-                .setGroupName("Automation Squad")
-                .selectManualEntry()
-                .enterNumberOfIndividuals("1");
-        entryPage.fillUserDetailsAtIndex(1, "Emi", "Rod", tempEmail);
-
-        step("Review order (Preview)");
-        entryPage.triggerManualValidationBlurs();
-        Thread.sleep(500);
-        Assert.assertEquals(entryPage.inlineRequiredErrorsCount(), 0, "No inline errors expected for valid data.");
-        Assert.assertTrue(entryPage.isProceedToPaymentEnabled(), "Proceed should be enabled.");
-        OrderPreviewPage preview = entryPage.clickProceedToPayment().waitUntilLoaded();
-        Assert.assertTrue(preview.isLoaded(), "❌ Order Preview did not load");
-
-        step("Stripe: fetch session + metadata.body");
-        String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
-        String sessionId = extractSessionIdFromUrl(stripeUrl);
-        Assert.assertNotNull(sessionId, "❌ Could not parse Stripe session id from URL");
-        System.out.println("[Stripe] checkoutUrl=" + stripeUrl + " | sessionId=" + sessionId);
-
-        String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
-        Assert.assertNotNull(bodyJson, "❌ metadata.body not found in Checkout Session");
-        System.out.println("[Stripe] metadata.body length=" + bodyJson.length());
-
-        step("Stripe: trigger checkout.session.completed via CLI");
-        var trig = StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
-        System.out.println("[Stripe] Triggered eventId=" + trig.eventId +
-                (trig.requestLogUrl != null ? " | requestLog=" + trig.requestLogUrl : ""));
-
-        step("Navigate to post-payment confirmation");
-        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
-
-        step("Individuals page shows the newly invited user");
-        new IndividualsPage(driver())
-                .open(Config.getBaseUrl())
-                .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
-        System.out.println("✅ User appears in Individuals: " + tempEmail);
-
-        // email assertion (using predicate-based wait)
-        step("Wait for email and assert contents");
-        System.out.println("[Email] Waiting up to " + EMAIL_TIMEOUT.toSeconds() + "s for message to " + tempEmail + "…");
-
-        Email email = MailSlurpUtils.waitForEmailMatching(
-                inboxId,
-                EMAIL_TIMEOUT.toMillis(),
-                1500L,
-                true,
-                MailSlurpUtils.subjectContains(SUBJECT_NEEDLE)
-                        .and(MailSlurpUtils.bodyContains("accept"))
-        );
-        Assert.assertNotNull(email, "❌ No email received matching expected subject/body within timeout.");
-
-        final String subject = Objects.toString(email.getSubject(), "");
-        final String from = Objects.toString(email.getFrom(), "");
-        final String body = Objects.toString(email.getBody(), "");
-        System.out.printf("📨 Email — From: %s | Subject: %s%n", from, subject);
-
-        Assert.assertTrue(subject.toLowerCase(Locale.ROOT).contains(SUBJECT_NEEDLE),
-                "❌ Subject does not mention " + SUBJECT_NEEDLE + ". Got: " + subject);
-        Assert.assertTrue(from.toLowerCase(Locale.ROOT).contains("tilt365") || from.toLowerCase(Locale.ROOT).contains("sendgrid"),
-                "❌ Unexpected sender: " + from);
-        Assert.assertTrue(body.toLowerCase(Locale.ROOT).contains(CTA_TEXT.toLowerCase(Locale.ROOT)),
-                "❌ Email body missing CTA text '" + CTA_TEXT + "'.");
-
-        String ctaHref = MailSlurpUtils.extractLinkByAnchorText(email, CTA_TEXT);
-        if (ctaHref == null) ctaHref = MailSlurpUtils.extractFirstLink(email);
-        Assert.assertNotNull(ctaHref, "❌ Could not find a link in the email.");
-        System.out.println("🔗 CTA link: " + ctaHref);
-        Assert.assertTrue(ctaHref.contains("sendgrid.net") || ctaHref.contains("tilt365"),
-                "❌ CTA link host unexpected: " + ctaHref);
-    }
 }

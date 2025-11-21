@@ -323,6 +323,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(loginFormVisible, "Login form not visible after redirect");
     }
 
+
     /**
      * TC-4: Generate access-token on successful login.
      * Verify that an access-token is issued upon successful login with valid credentials.
@@ -346,6 +347,8 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertNotNull(jwt, "Access token (jwt) was not generated after login");
         Assert.assertEquals(jwt.split("\\.").length, 3, "JWT format is invalid (should be header.payload.signature)");
     }
+
+
 
     /**
      * TC-5: Access-token is not generated on failed login.
@@ -372,6 +375,8 @@ public class Phase1SmokeTests extends BaseTest {
 
         Thread.sleep(500); // small buffer for UI updates
     }
+
+
 
     /**
      * TC-6: Login success redirects user.
@@ -403,6 +408,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(dashboardPage.isUserNameDisplayed(), "User name is not displayed on the dashboard");
         Assert.assertTrue(dashboardPage.isNewAssessmentButtonVisible(), "New Assessment button is not visible on the dashboard");
     }
+
 
     /**
      * TC-7: Redirect user appropriately post-login.
@@ -466,4 +472,13 @@ public class Phase1SmokeTests extends BaseTest {
         String currentUrl = driver().getCurrentUrl();
         Assert.assertTrue(currentUrl.contains("/dashboard"), "User was not redirected to the dashboard.");
     }
+
+
+
+
+
+
+
+
+    
 }

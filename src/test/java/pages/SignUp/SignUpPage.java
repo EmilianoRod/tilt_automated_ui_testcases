@@ -44,6 +44,11 @@ public class SignUpPage extends BasePage {
         super(driver);
     }
 
+    @Override
+    public BasePage waitUntilLoaded() {
+        return null;
+    }
+
     // --------------------------------------------------------
     // NAVIGATION
     // --------------------------------------------------------

@@ -6,6 +6,8 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 import pages.BasePage;
 import pages.LoginPage;
+import pages.Shop.AssessmentEntryPage;
+import pages.Shop.OrderPreviewPage;
 import pages.Shop.PurchaseInformation;
 import pages.Shop.PurchaseRecipientSelectionPage;
 import pages.SignUp.SignUpPage;
@@ -42,6 +44,8 @@ public class PurchaseFlowTests extends BaseTest {
 
         // Now freshUser has NO TTP subscription.
     }
+
+
 
     @Test(groups = "ui-only",
             description = "Myself path → lands on Purchase Information with no order preview")
@@ -88,4 +92,77 @@ public class PurchaseFlowTests extends BaseTest {
         Assert.assertEquals(pi.getPurchaseForText(), "Myself");
         Assert.assertFalse(pi.isOrderPreviewVisible(), "Order preview should NOT be visible for 'Myself'.");
     }
+
+
+
+
+
+
+    @Test(groups = {"smoke"}, description = "SM07: Manual entry (1 recipient) reaches Stripe Checkout successfully.")
+    public void smoke_manualEntrySingleRecipient_reachesStripeCheckout() throws Exception {
+
+        // Ensure we have a practitioner without TTP
+        createFreshUserIfNeeded();
+
+        step("Login with fresh MailSlurp user without TTP subscription");
+        LoginPage login = new LoginPage(driver());
+        login.navigateTo();
+        login.waitUntilLoaded();
+        DashboardPage dashboard = login.safeLoginAsAdmin(
+                freshUser.email,
+                freshUser.password,
+                Duration.ofSeconds(30)
+        );
+        Assert.assertTrue(dashboard.isLoaded(), "❌ Dashboard did not load after login");
+
+        step("Go to Shop and start purchase via Client / Individual");
+        ShopPage shopPage = dashboard.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
+
+        PurchaseRecipientSelectionPage sel = shopPage
+                .clickBuyNowForTrueTilt()
+                .waitUntilLoaded();
+
+        step("Select 'Client or Individual' and click Next");
+        sel.waitUntilNextDisabled(Duration.ofSeconds(5));
+        sel.selectClientOrIndividual();
+        sel.waitUntilNextEnabled(Duration.ofSeconds(5));
+        sel.clickNext();
+
+        step("Manual entry → 1 recipient");
+        waitForLoadersToDisappear(driver(), Duration.ofSeconds(10));
+
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
+                .waitUntilLoaded()
+                .selectManualEntry()
+                .enterNumberOfIndividuals("1");
+
+        // Use a deterministic but unique-ish email derived from the fresh user
+        String recipientEmail = freshUser.email.replace("@", "+sm07@" );
+        entryPage.fillUserDetailsAtIndex(1, "Smoke", "SM07", recipientEmail);
+
+        step("Proceed to Order Preview");
+        OrderPreviewPage previewPage = entryPage
+                .clickProceedToPayment()
+                .waitUntilLoaded();
+
+        Assert.assertTrue(previewPage.isLoaded(), "❌ Order preview did not load");
+
+        step("Proceed to Stripe and verify Checkout URL");
+        String checkoutUrl = previewPage.proceedToStripeAndGetCheckoutUrl();
+        Assert.assertNotNull(checkoutUrl, "❌ Stripe Checkout URL was null");
+        Assert.assertTrue(
+                checkoutUrl.contains("checkout.stripe.com"),
+                "❌ Expected Stripe checkout URL, but got: " + checkoutUrl
+        );
+
+        // (Optional) Navigate back so we don't leave the browser stuck on Stripe
+        driver().navigate().back();
+    }
+
+
+
+
+
+
 }

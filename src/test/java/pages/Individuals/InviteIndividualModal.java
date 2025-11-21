@@ -15,6 +15,11 @@ public class InviteIndividualModal extends BasePage {
 
     public InviteIndividualModal(WebDriver driver) { super(driver); }
 
+    @Override
+    public BasePage waitUntilLoaded() {
+        return null;
+    }
+
     // ---------- Locators (text-based, resilient) ----------
     private By modalRoot() {
         return By.xpath("//*[contains(@role,'dialog') or contains(@class,'modal')]" +

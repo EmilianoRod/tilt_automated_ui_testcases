@@ -228,11 +228,7 @@ public class AssessmentEntryPage extends BasePage {
 
 
     /** Proceed button variations (Next / Proceed / Proceed to payment). */
-    private static final By BTN_PROCEED = By.xpath(
-            "//*[self::button or self::a][" +
-                    " normalize-space()='Proceed to payment' or normalize-space()='Proceed' or normalize-space()='Next' or " +
-                    " .//span[normalize-space()='Next' or contains(normalize-space(),'Proceed')]]"
-    );
+    private static final By BTN_PROCEED = By.xpath("//button[normalize-space()='Proceed to payment']");
 
     /** Add person button (icon or text). */
     private static final By BTN_ADD_PERSON = By.xpath(
@@ -334,15 +330,8 @@ public class AssessmentEntryPage extends BasePage {
 
     /** TEAMS LOCATORS */
     // ========== Create New Team inputs ==========
-    private static final By ORG_NAME_INPUT = By.xpath(
-            "//input[@name='organizationName' or @id='organizationName' or " +
-                    "contains(translate(@placeholder,'ORGANIZATION','organization'),'organization')]"
-    );
-
-    private static final By GROUP_NAME_INPUT = By.xpath(
-            "//input[@name='groupName' or @id='groupName' or " +
-                    "contains(translate(@placeholder,'GROUP','group'),'group')]"
-    );
+    private static final By ORG_NAME_INPUT = By.xpath("//input[@id='organization']");
+    private static final By GROUP_NAME_INPUT = By.xpath("//input[@id='team']");
 
     // Optional: Radio for 'Add members to existing team'
     private By radioAddMembersExisting() { return radioLabelByText("Add members to existing team"); }
@@ -373,6 +362,7 @@ public class AssessmentEntryPage extends BasePage {
     // ========= Load state =========
 
     @Step("Wait until Assessment Entry is loaded")
+    @Override
     public AssessmentEntryPage waitUntilLoaded() {
         wait.waitForDocumentReady();
         waitForOverlayGone(Duration.ofSeconds(6));
@@ -1098,142 +1088,110 @@ public class AssessmentEntryPage extends BasePage {
 
 
 
-// In AssessmentEntryPage.java
-
-//    public AssessmentEntryPage uploadCsvFile(String absolutePathToCsv) {
-//        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(12));
-//        JavascriptExecutor js = (JavascriptExecutor) driver;
-//
-//        // 1) Re-assert the "Download template" radio is checked and settled
-//        By dlRadioInput = radioInputByText("Download template");
-//        By dlRadioWrap  = radioWrapperByText("Download template");
-//        ensureRadioChecked(dlRadioInput, dlRadioWrap);
-//
-//        // 2) Wait for the upload panel that belongs to THIS option (text near it is stable)
-//        By uploadPanel = By.xpath(
-//                "//*[contains(normalize-space(.),'Upload the .csv') or .//button[normalize-space()='Upload file']]"
-//        );
-//        WebElement panel = wait.until(ExpectedConditions.visibilityOfElementLocated(uploadPanel));
-//
-//        // 3) Find the input[type=file] **inside this panel**, not (//input)[last()]
-//        //    AntD usually renders: <span class='ant-upload'> <input type='file' ...> </span>
-//        By fileInputBy = By.xpath(
-//                ".//input[@type='file' and not(@disabled)]"
-//        );
-//        WebElement input = wait.until(d -> {
-//            // search *inside* the panel so we don’t grab a stale/hidden sibling elsewhere
-//            try {
-//                return panel.findElement(fileInputBy);
-//            } catch (NoSuchElementException e) {
-//                return null;
-//            }
-//        });
-//
-//        // 4) Make the input programmatically usable without clicking the "Upload file" button
-//        js.executeScript(
-//                "arguments[0].style.display='block';" +
-//                        "arguments[0].style.visibility='visible';" +
-//                        "arguments[0].style.position='fixed';" +
-//                        "arguments[0].style.zIndex='9999';" +
-//                        "arguments[0].style.opacity='1';" +
-//                        "arguments[0].style.width='1px';" +
-//                        "arguments[0].style.height='1px';", input);
-//
-//        // 5) Scroll panel in view (helps on Safari/WebKit hit-testing)
-//        js.executeScript("arguments[0].scrollIntoView({block:'center'});", panel);
-//
-//        // 6) Send the path (do NOT click any button; native picker cannot be automated)
-//        input.sendKeys(absolutePathToCsv);
-//
-//        // 7) Wait for *any* upload result from this panel:
-//        //    - file chip/name shows, OR
-//        //    - inline validation appears for empty rows, OR
-//        //    - an error/toast appears, OR
-//        //    - proceed button is disabled
-//        wait.until(d -> {
-//            // still selected?
-//            Boolean stillChecked = (Boolean) js.executeScript("return arguments[0].checked===true;",
-//                    d.findElement(dlRadioInput));
-//            if (Boolean.FALSE.equals(stillChecked)) return false;
-//
-//            // file name rendered near the uploader?
-//            boolean fileListed = !panel.findElements(By.xpath(
-//                    ".//*[contains(@class,'ant-upload-list-item')] | .//*[contains(@class,'ant-upload-list')]"
-//            )).isEmpty();
-//
-//            // inline “Required” somewhere in the grid (empty csv case)
-//            boolean inlineRequired = !d.findElements(
-//                    By.xpath("//*[contains(@class,'ant-form-item-explain') and contains(.,'Required')]")
-//            ).isEmpty();
-//
-//            // toast or generic error text the page exposes
-//            boolean hasErrorText = Optional.ofNullable(waitForUploadErrorText()).map(s -> !s.isBlank()).orElse(false);
-//
-//            // proceed disabled
-//            boolean proceedDisabled = !isProceedToPaymentEnabled();
-//
-//            return fileListed || inlineRequired || hasErrorText || proceedDisabled;
-//        });
-//
-//        return this;
-//    }
 
 
+    @Step("Upload team CSV file: {absolutePathToCsv}")
     public AssessmentEntryPage uploadCsvFile(String absolutePathToCsv) {
-        // Locators scoped to the upload area for the template path
         By uploadBtn  = By.xpath("//button[normalize-space()='Upload file']");
         By uploadWrap = By.xpath("//div[contains(@class,'ant-upload')][.//button[normalize-space()='Upload file']]");
         By fileInput  = By.xpath("("
                 + "//div[contains(@class,'ant-upload')][.//button[normalize-space()='Upload file']]"
                 + "//input[@type='file' and not(@disabled)]) [last()]");
 
-        // 1) Fast path: if the upload UI is already there, use it. Otherwise, re-select the radio.
-        if (driver.findElements(fileInput).isEmpty()) {
-            // Make sure the section is on screen so the DOM mounts
-            WebElement anchor = new WebDriverWait(driver, Duration.ofSeconds(5))
-                    .until(ExpectedConditions.presenceOfElementLocated(uploadBtn));
-            ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", anchor);
+        WebDriverWait w = new WebDriverWait(driver, Duration.ofSeconds(12));
+        JavascriptExecutor js = (JavascriptExecutor) driver;
 
-            if (driver.findElements(fileInput).isEmpty()) {
-                // Force AntD to render the template-upload panel again
-                selectDownloadTemplate();                 // <-- use your existing method
-                new WebDriverWait(driver, Duration.ofSeconds(8))
-                        .until(ExpectedConditions.presenceOfElementLocated(uploadWrap));
-                new WebDriverWait(driver, Duration.ofSeconds(8))
-                        .until(ExpectedConditions.presenceOfElementLocated(fileInput));
-            }
+        // Ensure the upload area is rendered
+        WebElement anchor = w.until(ExpectedConditions.presenceOfElementLocated(uploadBtn));
+        js.executeScript("arguments[0].scrollIntoView({block:'center'});", anchor);
+
+        if (driver.findElements(fileInput).isEmpty()) {
+            selectDownloadTemplate(); // your existing helper
+            w.until(ExpectedConditions.presenceOfElementLocated(uploadWrap));
+            w.until(ExpectedConditions.presenceOfElementLocated(fileInput));
         }
 
         WebElement input = driver.findElement(fileInput);
 
-        // 2) Make it keyable even if hidden
-        ((JavascriptExecutor) driver).executeScript(
+        js.executeScript(
                 "arguments[0].style.display='block';"
                         + "arguments[0].style.visibility='visible';"
                         + "arguments[0].style.opacity='1';"
                         + "arguments[0].style.width='1px';"
-                        + "arguments[0].style.height='1px';", input);
+                        + "arguments[0].style.height='1px';",
+                input
+        );
 
-        // 3) Send the file path (bypasses the native picker)
         input.sendKeys(absolutePathToCsv);
 
-        // 4) Wait for any reaction that indicates the upload was processed/rejected
+        // Wait for some sign that upload was processed
         new WebDriverWait(driver, Duration.ofSeconds(12)).until(d -> {
-            boolean hasListItem = !driver.findElements(
+            boolean hasListItem = !d.findElements(
                     By.xpath("//div[contains(@class,'ant-upload-list')]//span[contains(@class,'ant-upload-list-item-name')]")
             ).isEmpty();
-            boolean inlineRequired = !driver.findElements(
-                    By.xpath("//*[contains(@class,'ant-form-item-explain')]"
-                            + "//*[contains(translate(normalize-space(.),"
-                            + "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'required')]")
-            ).isEmpty();
-            boolean proceedDisabled = !isProceedToPaymentEnabled();
             int rows = renderedEmailRows();
-            return hasListItem || inlineRequired || proceedDisabled || rows == 0;
+            return hasListItem || rows > 0;
         });
 
         return this;
     }
+
+
+//    public AssessmentEntryPage uploadCsvFile(String absolutePathToCsv) {
+//        // Locators scoped to the upload area for the template path
+//        By uploadBtn  = By.xpath("//button[normalize-space()='Upload file']");
+//        By uploadWrap = By.xpath("//div[contains(@class,'ant-upload')][.//button[normalize-space()='Upload file']]");
+//        By fileInput  = By.xpath("("
+//                + "//div[contains(@class,'ant-upload')][.//button[normalize-space()='Upload file']]"
+//                + "//input[@type='file' and not(@disabled)]) [last()]");
+//
+//        // 1) Fast path: if the upload UI is already there, use it. Otherwise, re-select the radio.
+//        if (driver.findElements(fileInput).isEmpty()) {
+//            // Make sure the section is on screen so the DOM mounts
+//            WebElement anchor = new WebDriverWait(driver, Duration.ofSeconds(5))
+//                    .until(ExpectedConditions.presenceOfElementLocated(uploadBtn));
+//            ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", anchor);
+//
+//            if (driver.findElements(fileInput).isEmpty()) {
+//                // Force AntD to render the template-upload panel again
+//                selectDownloadTemplate();                 // <-- use your existing method
+//                new WebDriverWait(driver, Duration.ofSeconds(8))
+//                        .until(ExpectedConditions.presenceOfElementLocated(uploadWrap));
+//                new WebDriverWait(driver, Duration.ofSeconds(8))
+//                        .until(ExpectedConditions.presenceOfElementLocated(fileInput));
+//            }
+//        }
+//
+//        WebElement input = driver.findElement(fileInput);
+//
+//        // 2) Make it keyable even if hidden
+//        ((JavascriptExecutor) driver).executeScript(
+//                "arguments[0].style.display='block';"
+//                        + "arguments[0].style.visibility='visible';"
+//                        + "arguments[0].style.opacity='1';"
+//                        + "arguments[0].style.width='1px';"
+//                        + "arguments[0].style.height='1px';", input);
+//
+//        // 3) Send the file path (bypasses the native picker)
+//        input.sendKeys(absolutePathToCsv);
+//
+//        // 4) Wait for any reaction that indicates the upload was processed/rejected
+//        new WebDriverWait(driver, Duration.ofSeconds(12)).until(d -> {
+//            boolean hasListItem = !driver.findElements(
+//                    By.xpath("//div[contains(@class,'ant-upload-list')]//span[contains(@class,'ant-upload-list-item-name')]")
+//            ).isEmpty();
+//            boolean inlineRequired = !driver.findElements(
+//                    By.xpath("//*[contains(@class,'ant-form-item-explain')]"
+//                            + "//*[contains(translate(normalize-space(.),"
+//                            + "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'required')]")
+//            ).isEmpty();
+//            boolean proceedDisabled = !isProceedToPaymentEnabled();
+//            int rows = renderedEmailRows();
+//            return hasListItem || inlineRequired || proceedDisabled || rows == 0;
+//        });
+//
+//        return this;
+//    }
 
 
 
@@ -1698,6 +1656,9 @@ public class AssessmentEntryPage extends BasePage {
             }
         });
     }
+
+
+
 
 
 

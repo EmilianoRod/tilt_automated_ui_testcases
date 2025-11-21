@@ -11,6 +11,7 @@ import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
+import org.testng.SkipException;
 import pages.BasePage;
 import pages.reports.ReportSummaryPage;
 import retrofit2.Response;
@@ -48,6 +49,30 @@ public class IndividualsPage extends BasePage {
     private final By nextPageBtn = By.cssSelector(".ant-table-pagination .ant-pagination-next button");
     private final By pageItems   = By.cssSelector(".ant-table-pagination .ant-pagination-item");
     private final By totalText   = By.cssSelector(".ant-table-pagination .ant-pagination-total-text");
+
+
+
+
+    // Any completed AGT Full Report link in the Individuals table
+    private static final By COMPLETED_AGT_FULL_REPORT_ICON = By.xpath(
+            "//div[contains(@class,'ant-table')]//a[starts-with(normalize-space(),'AGT -')]"
+    );
+
+
+    // First COMPLETED AGT Full Report link in the Individuals table
+// Example: <a href="/dashboard/assess/agt/83246/summary" ...>AGT - 11/19/2025</a>
+    private static final By FIRST_COMPLETED_AGT_FULL_REPORT_LINK = By.xpath(
+            "(//a[contains(@href,'/dashboard/assess/agt')]" +
+                    "   [contains(normalize-space(),'AGT -')]" +   // completed ones show “AGT - 11/19/2025”
+                    ")[1]"
+    );
+
+
+
+
+
+
+
 
 
     // --- Sort controls (AntD-friendly, text-robust) ---
@@ -314,6 +339,7 @@ public class IndividualsPage extends BasePage {
     // ======= Page readiness =======
 
     @Step("Wait until Individuals page & table are visible")
+    @Override
     public IndividualsPage waitUntilLoaded() {
         wait.waitForDocumentReady();
         wait.waitForLoadersToDisappear();
@@ -473,9 +499,51 @@ public class IndividualsPage extends BasePage {
      *   - "Link"              when a visible link exists but no href attribute (JS click)
      *   - "NotFound"          when row or cell cannot be resolved
      */
+
+    /**
+     * Returns the report status only checking the currently loaded page view.
+     * Returns "NotFound" if the row is not visible on the current page.
+     */
+    public String getReportStatusByEmailOnCurrentPage(String email) {
+        try {
+            // *** MODIFIED to use the Current Page only helper ***
+            java.util.Optional<WebElement> rowOpt = findRowByEmailOnCurrentPage(email);
+            if (rowOpt.isEmpty()) return "NotFound";
+            WebElement row = rowOpt.get();
+
+            // ... (rest of the logic for status check remains the same)
+            int reportCol = getColumnIndexByHeader("Report");
+            WebElement cell = row.findElement(By.xpath("./td[" + reportCol + "]"));
+
+            // Case 1: literal "Pending"
+            String txt = cell.getText() == null ? "" : cell.getText().trim();
+            if ("pending".equalsIgnoreCase(txt)) return "Pending";
+
+            // Case 2: any visible link-ish element
+            java.util.List<WebElement> linkish = cell.findElements(By.cssSelector("a, [role='link'], button[role='link']"));
+            if (!linkish.isEmpty()) {
+                // ... (rest of the link-status logic)
+                WebElement a = linkish.get(0);
+                if (a.isDisplayed()) {
+                    String href = null;
+                    // ... (logic to get href)
+                    try { href = a.getDomAttribute("href"); } catch (Throwable ignored) {}
+                    if (href == null || href.isBlank()) { try { href = a.getAttribute("href"); } catch (Throwable ignored) {} }
+                    if (href == null || href.isBlank()) { try { href = a.getDomAttribute("data-href"); } catch (Throwable ignored) {} }
+
+                    if (href != null && !href.isBlank()) return "Link:" + href.trim();
+                    return "Link"; // visible, JS-click style link
+                }
+            }
+            return "NotFound";
+        } catch (NoSuchElementException e) {
+            return "NotFound";
+        }
+    }
+
     public String getReportStatusByEmail(String email) {
         try {
-            java.util.Optional<WebElement> rowOpt = findRowByEmail(email); // you already have this
+            Optional<WebElement> rowOpt = findRowByEmail(email); // you already have this
             if (rowOpt.isEmpty()) return "NotFound";
             WebElement row = rowOpt.get();
 
@@ -487,7 +555,7 @@ public class IndividualsPage extends BasePage {
             if ("pending".equalsIgnoreCase(txt)) return "Pending";
 
             // Case 2: any visible link-ish element
-            java.util.List<WebElement> linkish = cell.findElements(By.cssSelector("a, [role='link'], button[role='link']"));
+            List<WebElement> linkish = cell.findElements(By.cssSelector("a, [role='link'], button[role='link']"));
             if (!linkish.isEmpty()) {
                 WebElement a = linkish.get(0);
                 if (a.isDisplayed()) {
@@ -504,6 +572,17 @@ public class IndividualsPage extends BasePage {
             return "NotFound";
         } catch (NoSuchElementException e) {
             return "NotFound";
+        }
+    }
+
+
+    public boolean waitRowToDisappearOnCurrentPage(String email, Duration timeout) {
+        try {
+            new WebDriverWait(driver, timeout)
+                    .until(d -> !isUserListedByEmailOnCurrentPage(email));
+            return true;
+        } catch (TimeoutException e) {
+            return false;
         }
     }
 
@@ -2139,6 +2218,257 @@ public class IndividualsPage extends BasePage {
             return false;
         }
     }
+
+
+
+    @Step("Find first Pending individual email on the current page")
+    public String findPendingEmailOnCurrentPage() {
+        if (!hasAnyRows()) return null;
+
+        List<String> emails = getEmailsOnCurrentPage(); // already in POM
+        for (String email : emails) {
+            String status = getReportStatusByEmail(email); // already in POM
+            if (status != null && status.toLowerCase(Locale.ROOT).contains("pending")) {
+                return email;
+            }
+        }
+        return null;
+    }
+
+
+
+
+    // =========================================================
+    //  COMPLETED REPORT DISCOVERY / OPENING (for SM10)
+    // =========================================================
+
+    /**
+     * @return true if there is at least one row in Individuals whose Report
+     *         cell is NOT pending and has a clickable report link.
+     */
+    @Step("Check if there is at least one completed True Tilt report")
+    public boolean hasAnyCompletedTrueTiltReport() {
+        // Start from page 1 to keep behaviour predictable
+        goToFirstPageIfPossible();
+
+        do {
+            java.util.List<WebElement> rows = driver.findElements(tableRows);
+            for (WebElement row : rows) {
+                // “Completed” = has link AND not pending
+                if (!rowReportIsPending(row) && rowHasReportLink(row)) {
+                    return true;
+                }
+            }
+        } while (goToNextPageIfPossibleSafe());
+
+        return false;
+    }
+
+    /**
+     * Opens the first completed True Tilt report (non-pending, with link)
+     * found in Individuals (scans pages using existing pagination helpers).
+     *
+     * @return ReportSummaryPage already waited until loaded.
+     * @throws AssertionError if no such row exists.
+     */
+    @Step("Open first completed True Tilt report from Individuals")
+    public ReportSummaryPage openFirstCompletedTrueTiltReport() {
+        goToFirstPageIfPossible();
+
+        do {
+            java.util.List<WebElement> rows = driver.findElements(tableRows);
+            for (WebElement row : rows) {
+                if (rowReportIsPending(row) || !rowHasReportLink(row)) continue;
+
+                // Click the report link in that row (same logic as rowHasReportLink)
+                WebElement cell = reportCellInRow(row);
+                java.util.List<WebElement> links =
+                        cell.findElements(By.cssSelector("a, [role='link'], button[role='link']"));
+                if (links.isEmpty()) continue;
+
+                WebElement link = links.get(0);
+                ((JavascriptExecutor) driver)
+                        .executeScript("arguments[0].scrollIntoView({block:'center'});", link);
+                try {
+                    ((JavascriptExecutor) driver)
+                            .executeScript("arguments[0].setAttribute('target','_self');", link);
+                } catch (Exception ignored) {}
+
+                try {
+                    link.click();
+                } catch (Exception e) {
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", link);
+                }
+
+                return new ReportSummaryPage(driver).waitUntilLoaded();
+            }
+        } while (goToNextPageIfPossibleSafe());
+
+        throw new AssertionError("❌ No completed True Tilt report found in Individuals to open.");
+    }
+
+
+
+    public boolean hasAnyCompletedAgtFullReport() {
+        // At least one AGT link in the Individuals grid
+        return isPresent(COMPLETED_AGT_FULL_REPORT_ICON);
+    }
+
+
+
+    /** True if this Individuals row has a completed TTP report (not Pending). */
+    private boolean rowHasCompletedTtp(WebElement row) {
+        try {
+            WebElement cell = reportCellInRow(row);
+            String txt = cell.getText();
+            if (txt == null) return false;
+            txt = txt.toUpperCase(Locale.ROOT);
+            return txt.contains("TTP") && !txt.contains("PENDING");
+        } catch (NoSuchElementException e) {
+            return false;
+        }
+    }
+
+    /** Clickable element in the "Report Link" cell that opens the TTP summary. */
+    private WebElement ttpReportLinkInRow(WebElement row) {
+        WebElement cell = reportCellInRow(row);
+        // badge is usually a <button> or <a>
+        List<WebElement> candidates = cell.findElements(
+                By.cssSelector("button, a, [role='button']")
+        );
+        if (candidates.isEmpty()) {
+            throw new NoSuchElementException("No clickable TTP report link in row.");
+        }
+        return candidates.get(0);
+    }
+
+
+
+    /**
+     * Convenience alias for test readability – "Unique Amplifier" lives under the
+     * TTP Full Report summary page. We just need *any* completed TTP report; the
+     * ReportSummaryPage will handle clicking the "Unique Amplifier" tab.
+     */
+    public ReportSummaryPage openFirstCompletedUniqueAmplifierReport() {
+        // Reuse the same logic you already use for SM13 (TTP Full Report)
+        return openFirstCompletedTrueTiltProfileReport();
+    }
+
+    /**
+     * Returns true if there is at least one individual whose TTP report we can open.
+     * We don't need to verify the UA tab here; if the TTP report opens, the UA tab
+     * will be accessed later by ReportSummaryPage.clickDownloadUniqueAmplifierPdf().
+     */
+    public boolean hasAnyCompletedUniqueAmplifierReport() {
+        try {
+            ReportSummaryPage summary = openFirstCompletedUniqueAmplifierReport();
+            // We just proved one exists; go back so the test can control navigation.
+            driver.navigate().back();
+            waitUntilLoaded();
+            return true;
+        } catch (org.testng.SkipException e) {
+            return false;
+        }
+    }
+
+
+    /** Opens the first completed TTP report (used for both SM13 and SM15). */
+    public ReportSummaryPage openFirstCompletedTrueTiltProfileReport() {
+        goToFirstPageIfPossible();
+
+        do {
+            List<WebElement> rows = driver.findElements(tableRows);
+            for (WebElement row : rows) {
+                if (!rowHasCompletedTtp(row)) continue;
+
+                WebElement cell = reportCellInRow(row);
+                WebElement linkToClick = null;
+
+                for (WebElement link : cell.findElements(By.cssSelector("a[href]"))) {
+                    String txt = link.getText();
+                    String href = link.getAttribute("href");
+                    if ((txt != null && txt.toUpperCase(Locale.ROOT).contains("TTP")) ||
+                            (href != null && href.contains("/assess/ttp/"))) {
+                        linkToClick = link;
+                        break;
+                    }
+                }
+
+                if (linkToClick == null) continue;
+
+                try {
+                    ((JavascriptExecutor) driver)
+                            .executeScript("arguments[0].setAttribute('target','_self');", linkToClick);
+                } catch (Exception ignored) {}
+
+                ((JavascriptExecutor) driver)
+                        .executeScript("arguments[0].scrollIntoView({block:'center'});", linkToClick);
+
+                try {
+                    linkToClick.click();
+                } catch (Exception e) {
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", linkToClick);
+                }
+
+                switchToNewestTab(); // same helper you already use
+
+                return new ReportSummaryPage(driver).waitUntilLoaded();
+            }
+        } while (goToNextPageIfPossible());
+
+        throw new SkipException("⚠️ No completed TTP reports found in Individuals table.");
+    }
+
+
+    /** Best-effort: switch to the newest browser tab/window if multiple are open. */
+    private void switchToNewestTab() {
+        try {
+            Set<String> handles = driver.getWindowHandles();
+            if (handles.size() <= 1) return;
+
+            String current = driver.getWindowHandle();
+            String newest = null;
+            for (String h : handles) {
+                newest = h; // last in iteration
+            }
+            if (newest != null && !Objects.equals(current, newest)) {
+                driver.switchTo().window(newest);
+            }
+        } catch (Throwable ignored) {
+            // If anything goes wrong, stay on current tab.
+        }
+    }
+
+
+
+    public ReportSummaryPage openFirstCompletedAgtFullReport() {
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+
+        WebElement link = wait.until(
+                ExpectedConditions.elementToBeClickable(FIRST_COMPLETED_AGT_FULL_REPORT_LINK)
+        );
+
+        String originalHandle = driver.getWindowHandle();
+        int windowsBefore = driver.getWindowHandles().size();
+
+        link.click();
+
+        // Wait for new tab/window to appear
+        WebDriverWait tabWait = new WebDriverWait(driver, Duration.ofSeconds(10));
+        tabWait.until(d -> d.getWindowHandles().size() > windowsBefore);
+
+        // Switch to the new tab
+        for (String handle : driver.getWindowHandles()) {
+            if (!handle.equals(originalHandle)) {
+                driver.switchTo().window(handle);
+                break;
+            }
+        }
+
+        // Use the AGT-specific loader we defined in ReportSummaryPage
+        return new ReportSummaryPage(driver).waitUntilAgtLoaded();
+    }
+
 
 
 
