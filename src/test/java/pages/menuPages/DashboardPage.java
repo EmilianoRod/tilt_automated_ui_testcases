@@ -7,6 +7,7 @@ import org.openqa.selenium.WebElement;
 import pages.BasePage;
 import pages.Individuals.IndividualsPage;
 import pages.LoginPage;
+import pages.teams.TeamClimatePage;
 import pages.teams.TeamDetailsPage;
 import pages.teams.TeamsPage;
 
@@ -131,10 +132,16 @@ public class DashboardPage extends BasePage{
      * Convenience helper for tests:
      *  - Clicks the left-nav "Teams" entry.
      *  - Waits for TeamsPage to load.
-     *  - Asks TeamsPage to open the team matching the given path/name.
+     *  - Asks TeamsPage to open the Team Climate / Analytics view
+     *    for the team matching the given path/name.
+     *
+     * Accepts:
+     *   "Org B / Validation Merge Test / Analytics"
+     *   "Org B / Validation Merge Test"
+     *   "Validation Merge Test"
      */
-    public TeamDetailsPage openTeamByName(String teamPath) {
-        // Ir a Teams desde el Dashboard
+
+    public TeamClimatePage openTeamByName(String teamPath) {
         WebElement teamsLink = waitForElementClickable(teamsButton);
         teamsLink.click();
 

@@ -697,27 +697,58 @@ public class TeamsPage extends BasePage {
     }
 
 
-    public TeamDetailsPage openTeamClimateDetails(String teamPathOrName) {
-        // Permite tanto "Validation Merge Test" como "Org B / Validation Merge Test / Analytics"
-        String name = teamPathOrName;
-        if (name.contains("/")) {
-            String[] parts = name.split("/");
-            // Ej: ["Org B ", " Validation Merge Test ", " Analytics"]
-            // Nos quedamos con el penúltimo: "Validation Merge Test"
-            if (parts.length >= 2) {
-                name = parts[parts.length - 2].trim();
-            } else {
-                name = parts[parts.length - 1].trim();
-            }
+    public TeamClimatePage openTeamClimateDetails(String teamPathOrName) {
+        // Example input: "Org B / Validation Merge Test / Analytics"
+        // or "Org B / Validation Merge Test"
+        // or just "Validation Merge Test"
+        String raw = Objects.requireNonNull(teamPathOrName, "teamPathOrName must not be null").trim();
+
+        String orgSearchTerm;
+        String teamFragment;
+
+        String[] parts = raw.split("/");
+        if (parts.length == 1) {
+            // Only one chunk given: use it BOTH as org search term and row fragment
+            orgSearchTerm = parts[0].trim();
+            teamFragment  = parts[0].trim();
         } else {
-            name = name.trim();
+            // At least "Org B / Validation Merge Test"
+            orgSearchTerm = parts[0].trim();                 // "Org B"
+            teamFragment  = parts[parts.length - 2].trim();  // "Validation Merge Test"
         }
 
-        // Usa tu método existente
-        openTeamClimate(name);
+        // 1) Filter table by ORGANIZATION (this is what the search bar understands)
+        search(orgSearchTerm);
 
-        // La vista de Climate/Kite está modelada por TeamDetailsPage
-        return new TeamDetailsPage(driver).waitUntilLoaded();
+        // 2) On the filtered page, find the row whose first column text contains the team fragment
+        Optional<WebElement> rowOpt = findRowByTeamNameOnCurrentPage(teamFragment);
+        if (rowOpt.isEmpty()) {
+            throw new SkipException("Large team row not found for path: '" + raw +
+                    "' (orgSearchTerm='" + orgSearchTerm + "', teamFragment='" + teamFragment + "')");
+        }
+        WebElement row = rowOpt.get();
+
+        // 3) From that row, click the Team Climate button/link in the Report column
+        WebElement cell = reportCellInRow(row);
+        List<WebElement> linkish = cell.findElements(By.cssSelector("a, [role='link'], button"));
+        if (linkish.isEmpty()) {
+            throw new NoSuchElementException("No Team Climate link/button in row for team path: " + raw);
+        }
+
+        WebElement btn = linkish.get(0);
+        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", btn);
+        try {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].setAttribute('target','_self');", btn);
+        } catch (Exception ignored) {}
+
+        try {
+            btn.click();
+        } catch (Exception e) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btn);
+        }
+
+        // 4) Now we are on /dashboard/teams/{id}/report → handled by TeamClimatePage
+        return new TeamClimatePage(driver).waitUntilLoaded();
     }
 
 
