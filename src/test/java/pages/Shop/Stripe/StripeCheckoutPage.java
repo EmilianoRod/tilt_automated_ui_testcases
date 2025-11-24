@@ -14,6 +14,11 @@ public class StripeCheckoutPage extends BasePage {
 
     public StripeCheckoutPage(WebDriver driver) { super(driver); }
 
+    @Override
+    public BasePage waitUntilLoaded() {
+        return null;
+    }
+
     // Local wait just for Stripe flows
     private WebDriverWait stripeWait() { return new WebDriverWait(driver, Duration.ofSeconds(30)); }
 

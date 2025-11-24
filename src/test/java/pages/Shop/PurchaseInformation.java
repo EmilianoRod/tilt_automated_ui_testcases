@@ -64,6 +64,7 @@ public class PurchaseInformation extends BasePage {
     // ========= Identity & load state =========
 
     /** Strong load: header visible + overlay gone. */
+    @Override
     public PurchaseInformation waitUntilLoaded() {
         wait.waitForElementVisible(HEADER);
         waitForOverlayGone(Duration.ofSeconds(5));

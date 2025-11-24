@@ -38,6 +38,7 @@ public class OrderConfirmationPage extends BasePage {
     );
 
     // ── API ────────────────────────────────────────────────────────────────────
+    @Override
     public OrderConfirmationPage waitUntilLoaded() {
         try { wait.waitForElementInvisible(blockingOverlay); } catch (Exception ignore) {}
         // Header or any success message should be visible

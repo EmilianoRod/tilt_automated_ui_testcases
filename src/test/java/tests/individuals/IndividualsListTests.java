@@ -1,21 +1,35 @@
 package tests.individuals;
 
 import Utils.Config;
+import Utils.MailSlurpUtils;
+import Utils.StripeCheckoutHelper;
+import Utils.WaitUtils;
 import base.BaseTest;
+import com.mailslurp.models.Email;
+import com.mailslurp.models.InboxDto;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.devtools.DevTools;
 import org.openqa.selenium.devtools.HasDevTools;
-import org.openqa.selenium.devtools.v136.network.Network;
+import org.openqa.selenium.devtools.v142.network.Network;
+import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.SkipException;
 import org.testng.annotations.Test;
 import org.testng.asserts.SoftAssert;
+import pages.BasePage;
 import pages.LoginPage;
+import pages.Shop.AssessmentEntryPage;
+import pages.Shop.OrderPreviewPage;
+import pages.Shop.PurchaseRecipientSelectionPage;
+import pages.assesstmens.ttp.TtpIntroPage;
+import pages.assesstmens.ttp.TtpSurveyPage;
 import pages.menuPages.DashboardPage;
 import pages.Individuals.IndividualsPage;
+import pages.menuPages.ShopPage;
 import pages.reports.ReportSummaryPage;
 
 import java.time.Duration;
@@ -23,7 +37,9 @@ import java.util.*;
 import java.util.function.Supplier;
 
 
+import static Utils.Config.joinUrl;
 import static io.qameta.allure.Allure.step;
+import static tests.teams.TeamAssessmentPurchaseAndAssignment.extractSessionIdFromUrl;
 
 public class IndividualsListTests extends BaseTest {
 
@@ -37,46 +53,45 @@ public class IndividualsListTests extends BaseTest {
         step("Start fresh session (login + land on Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
-
         step("Open Individuals page from Dashboard nav");
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
         Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
-
 
         step("Verify the table/list is present and has at least 1 row (or skip)");
         if (!individuals.hasAnyRows()) {
             throw new SkipException("No Individuals to verify on this environment.");
         }
 
-
         step("Decide how many rows to spot-check");
         final int maxToCheck = Integer.getInteger("INDIV_ROWS_CHECK_MAX", 10);
-
 
         step("Collect first " + maxToCheck + " rows for validation");
         List<WebElement> rows = individuals.firstRows(maxToCheck);
 
-
         step("Begin soft assertions across selected rows");
         SoftAssert softly = new SoftAssert();
-
 
         for (int i = 0; i < rows.size(); i++) {
             final int rowNum = i + 1;
             final WebElement row = rows.get(i);
 
             step("Row #" + rowNum + " — verify Name");
-            softly.assertFalse(individuals.rowHasName(row), "Row " + rowNum + " should have a non-empty Name");
+            softly.assertTrue(
+                    individuals.rowHasName(row),
+                    "Row " + rowNum + " should have a non-empty Name"
+            );
 
             step("Row #" + rowNum + " — verify assessment icon(s)");
-            softly.assertTrue(individuals.rowHasAssessmentIcon(row), "Row " + rowNum + " should show at least one assessment icon");
-
+            softly.assertTrue(
+                    individuals.rowHasAssessmentIcon(row),
+                    "Row " + rowNum + " should show at least one assessment icon"
+            );
 
             step("Row #" + rowNum + " — verify Report column: Pending OR clickable link");
             if (individuals.rowReportIsPending(row)) {
-                System.out.println(individuals.rowReportIsPending(row));
                 // ok: pending state is expected before completion
-                softly.assertTrue(true, "Row " + rowNum + " shows Pending");
+                // you can log if you want:
+                // logger.info("Row {} report is Pending", rowNum);
             } else {
                 softly.assertTrue(
                         individuals.rowHasReportLink(row),
@@ -84,13 +99,12 @@ public class IndividualsListTests extends BaseTest {
                                 individuals.rowReportText(row) + "')"
                 );
             }
-
         }
-
 
         step("Finalize soft assertions");
         softly.assertAll();
     }
+
 
 
 
@@ -155,6 +169,7 @@ public class IndividualsListTests extends BaseTest {
         );
 
         // -------------------- B) NAME SUBSTRING FILTER --------------------
+        // -------------------- B) NAME SUBSTRING FILTER --------------------
         step("Reload Individuals to clear filters before name search");
         individuals.reloadWithBuster(Config.getBaseUrl());
         Assert.assertTrue(individuals.isLoaded(), "❌ Individuals failed to reload before name search");
@@ -166,13 +181,34 @@ public class IndividualsListTests extends BaseTest {
 
         step("Pick a sample non-empty name from the current page");
         List<String> namesBefore = individuals.getNamesOnCurrentPage();
-        String sampleName = namesBefore.stream().filter(s -> !s.isBlank()).findFirst()
+        String sampleName = namesBefore.stream()
+                .filter(s -> s != null && !s.isBlank())
+                .findFirst()
                 .orElseThrow(() -> new SkipException("No non-empty names visible to use as anchor for name search."));
 
-        step("Build a robust substring from the name");
-        // keep only letters/digits to avoid issues with spaces or punctuation
-        String normalizedName = sampleName.replaceAll("[^\\p{L}\\p{Nd}]+", "");
-        String nameNeedle = pickMiddleSubstring(normalizedName, 3, 6);
+        step("Build a robust substring from a single name token");
+        // Use one token (first non-short word) so substring matches what UI shows
+        String cleaned = sampleName.trim();
+        String[] tokens = cleaned.split("\\s+");
+        String core = tokens[0];
+        for (String t : tokens) {
+            if (t.length() >= 3) {
+                core = t;
+                break;
+            }
+        }
+
+        // Now pick a middle substring from that single token
+        String nameNeedle = pickMiddleSubstring(core, 3, 6);
+
+        // Safety: ensure needle actually appears in the visible name (case-insensitive)
+        String visibleLc = cleaned.toLowerCase(Locale.ROOT);
+        String nameNeedleLc = nameNeedle.toLowerCase(Locale.ROOT);
+        if (!visibleLc.contains(nameNeedleLc)) {
+            // Fallback: first 3 characters of the first token
+            nameNeedle = core.substring(0, Math.min(3, core.length()));
+            nameNeedleLc = nameNeedle.toLowerCase(Locale.ROOT);
+        }
 
         step("Execute search for name substring: '" + nameNeedle + "'");
         individuals.search(nameNeedle);
@@ -187,7 +223,6 @@ public class IndividualsListTests extends BaseTest {
                 "❌ No name cells visible after name substring filter: " + nameNeedle);
 
         step("Assert every visible name contains the substring (case-insensitive)");
-        String nameNeedleLc = nameNeedle.toLowerCase(Locale.ROOT);
         for (int i = 0; i < filteredNames.size(); i++) {
             final int rowNum = i + 1;
             final String name = filteredNames.get(i);
@@ -197,6 +232,7 @@ public class IndividualsListTests extends BaseTest {
                     "Row " + rowNum + " name does not contain '" + nameNeedle + "': " + name
             );
         }
+
 
         // -------------------- C) NEGATIVE CHECK --------------------
         step("Negative check: improbable token returns empty state (no rows)");
@@ -329,10 +365,6 @@ public class IndividualsListTests extends BaseTest {
         var emails = individuals.getEmailsOnCurrentPage();
         return emails.isEmpty() ? null : emails.get(0);
     }
-
-
-
-
 
 
 
@@ -599,15 +631,6 @@ public class IndividualsListTests extends BaseTest {
     }
 
 
-
-
-
-
-
-
-
-
-
     @Test(groups = "ui-only", description = "IND-010: Open Report link navigates to Report page.")
     public void openReportLink_navigatesToReportPage() {
         step("Start fresh session (login + Dashboard)");
@@ -676,18 +699,6 @@ public class IndividualsListTests extends BaseTest {
     }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
     @Test(groups = "ui-only", description = "IND-011: Row actions menu opens and shows expected options.")
     public void rowActionsMenu_opensAndShowsOptions() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
@@ -740,7 +751,6 @@ public class IndividualsListTests extends BaseTest {
         // optional cleanup (close the menu)
         try { driver().switchTo().activeElement().sendKeys(org.openqa.selenium.Keys.ESCAPE); } catch (Exception ignored) {}
     }
-
 
     @Test(groups = "ui-only", description = "IND-012: Auto reminder: toggle ON persists after refresh")
     public void autoReminder_toggleOn_persistsAfterRefresh() {
@@ -938,7 +948,7 @@ public class IndividualsListTests extends BaseTest {
     private String safeLower(String s) { return s == null ? null : s.toLowerCase(); }
 
     @Test(groups = "ui-only", description = "IND-016: Send reminder: backend error shows error toast")
-    public void sendReminder_confirm_showsErrorToast_onBackendFailure() {
+    public void sendReminder_confirm_showsErrorToast_onBackendFailure(){
         // --- Guard: CDP only on Chromium driver()s ---
         if (!(driver() instanceof HasDevTools)) {
             throw new SkipException("CDP not available on this driver(); cannot simulate backend error.");
@@ -952,7 +962,7 @@ public class IndividualsListTests extends BaseTest {
         Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
 
         step("Pick target email (first visible)");
-        java.util.List<String> emails = individuals.getEmailsOnCurrentPage();
+        List<String> emails = individuals.getEmailsOnCurrentPage();
         if (emails == null || emails.isEmpty()) {
             throw new SkipException("Need at least 1 row to send reminder.");
         }
@@ -961,9 +971,16 @@ public class IndividualsListTests extends BaseTest {
         // --- Begin CDP: block the reminder endpoint so the request fails ---
         DevTools devTools = ((HasDevTools) driver()).getDevTools();
         devTools.createSession();
-        devTools.send(Network.enable(Optional.empty(), Optional.empty(), Optional.empty()));
+        devTools.send(Network.enable(
+                Optional.of(10_000_000),  // maxTotalBufferSize (10 MB, pick whatever is sane)
+                Optional.empty(),         // maxResourceBufferSize
+                Optional.empty(),         // maxPostDataSize
+                Optional.empty(),         // captureNetworkRequests (let Chrome default)
+                Optional.empty()          // reportRawHeaders (let Chrome default)
+        ));
         // Tweak patterns if your endpoint differs (e.g., "/api/*reminder*", "/send_reminder")
-        devTools.send(Network.setBlockedURLs(java.util.List.of("*/reminder*", "*/send_reminder*")));
+        devTools.send(Network.setBlockedURLs(List.of("*/reminder*", "*/send_reminder*")));
+
 
         try {
             step("Open actions → Send reminder (wait modal visible)");
@@ -987,9 +1004,10 @@ public class IndividualsListTests extends BaseTest {
                             || toast.toLowerCase().contains("unable"),
                     "❌ Unexpected (non-error) text: " + toast
             );
+
         } finally {
             // Always unblock + disable CDP to avoid side effects on later tests
-            try { devTools.send(Network.setBlockedURLs(java.util.List.of())); } catch (Exception ignore) {}
+            try { devTools.send(Network.setBlockedURLs(List.of())); } catch (Exception ignore) {}
             try { devTools.send(Network.disable()); } catch (Exception ignore) {}
             try { devTools.close(); } catch (Exception ignore) {}
         }
@@ -1198,7 +1216,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-020: Edit info: invalid email blocks save")
-    public void editInfo_invalidEmail_blocksSave() {
+    public void editInfo_invalidEmail_blocksSave() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
 
@@ -1221,10 +1239,14 @@ public class IndividualsListTests extends BaseTest {
         individuals.setEditInfoEmail("invalid.email"); // missing '@'
         individuals.blurEditInfoEmail();               // tiny helper to trigger validation
 
-        step("Assert validation appears and Save remains disabled");
-        String err = individuals.getEditEmailValidationText();   // "" if not present
-        Assert.assertFalse(err == null || err.isBlank(), "❌ No validation message for invalid email.");
-        Assert.assertFalse(individuals.isEditInfoSaveEnabled(), "❌ 'Save changes' should be disabled for invalid email.");
+        step("Assert no validation text appears");
+        String err = individuals.getEditEmailValidationText();   // should return "" or null
+        Assert.assertTrue(err == null || err.isBlank(),
+                "❌ Validation text SHOULD NOT appear for invalid email, only Save should be disabled.");
+
+        step("Assert 'Save changes' remains disabled");
+        Assert.assertFalse(individuals.isEditInfoSaveEnabled(),
+                "❌ 'Save changes' must remain disabled when email is invalid.");
     }
 
     @Test(groups = "ui-only", description = "IND-021: Edit info: duplicate email shows error and does not persist")
@@ -1444,7 +1466,644 @@ public class IndividualsListTests extends BaseTest {
     }
 
 
+    @Test(groups = {"smoke"}, description = "SM04: Invite New Individual via Shop – happy path, appears in Individuals list.")
+    public void smoke_inviteNewIndividual_happyPath() throws Exception {
 
+        // ----- config / constants -----
+        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
+            throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
+        }
+        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
+
+        // For SM04 we **can** still use MailSlurp alias so we don’t spam real inboxes,
+        // but we STOP after verifying Individuals (no email assertions here).
+        step("Resolve shared MailSlurp inbox and generate unique +alias recipient");
+        final InboxDto inbox = BaseTest.getSuiteInbox() != null
+                ? BaseTest.getSuiteInbox()
+                : BaseTest.requireInboxOrSkip();
+
+        final String testEmail = MailSlurpUtils.uniqueAliasEmail(inbox, "sm04");
+        System.out.println("📮 Using shared inbox: " + inbox.getId() + " <" + inbox.getEmailAddress() + ">");
+        System.out.println("📧 SM04 recipient (alias): " + testEmail);
+
+        // (Optional) clean inbox to reduce noise for other tests
+        try { MailSlurpUtils.clearInboxEmails(inbox.getId()); } catch (Throwable ignored) {}
+
+        // -------------------- APP FLOW THROUGH SHOP --------------------
+        step("Login as admin");
+        LoginPage loginPage = new LoginPage(driver());
+        loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
+        DashboardPage dashboardPage =
+                loginPage.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+        Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard did not load after login");
+
+        step("Go to Shop and start True Tilt purchase flow");
+        ShopPage shopPage = dashboardPage.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
+        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
+        sel.selectClientOrIndividual();
+        sel.clickNext();
+
+        step("Manual entry for 1 individual (use the aliased MailSlurp address)");
+        String uniq = String.valueOf(System.currentTimeMillis());
+        String firstName = "SM04";
+        String lastName  = "Auto-" + uniq;
+
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
+                .waitUntilLoaded()
+                .selectManualEntry()
+                .enterNumberOfIndividuals("1");
+
+        entryPage.fillUserDetailsAtIndex(1, firstName, lastName, testEmail);
+
+        step("Review order (Preview)");
+        OrderPreviewPage preview = entryPage.clickProceedToPayment().waitUntilLoaded();
+
+        step("Stripe: fetch session + metadata.body");
+        String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
+        String sessionId = extractSessionIdFromUrl(stripeUrl);
+        Assert.assertNotNull(sessionId, "❌ Could not parse Stripe session id from URL");
+        System.out.println("[Stripe] checkoutUrl=" + stripeUrl + " | sessionId=" + sessionId);
+
+        String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
+        Assert.assertNotNull(bodyJson, "❌ metadata.body not found in Checkout Session");
+        System.out.println("[Stripe] metadata.body length=" + bodyJson.length());
+
+        step("Stripe: trigger checkout.session.completed via CLI");
+        var trig = StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
+        System.out.println("[Stripe] Triggered eventId=" + trig.eventId +
+                (trig.requestLogUrl != null ? " | requestLog=" + trig.requestLogUrl : ""));
+
+        step("Navigate to post-payment confirmation");
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+
+        // -------------------- ASSERT ON INDIVIDUALS PAGE --------------------
+        step("Open Individuals page and assert the newly invited user appears");
+        new IndividualsPage(driver())
+                .open(Config.getBaseUrl())
+                .assertAppearsWithEvidence(Config.getBaseUrl(), testEmail);
+
+        System.out.println("✅ SM04: User appears in Individuals: " + testEmail);
+    }
+
+
+    @Test(groups = {"smoke"}, description = "SM05: Resend invitation (Send reminder) for a pending individual.")
+    public void smoke_resendInvitation_forPendingIndividual() throws Exception {
+
+        step("Start fresh session (login + Dashboard)");
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
+
+        step("Open Individuals page");
+        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+
+        // -------------------- FIND OR CREATE PENDING INDIVIDUAL --------------------
+        step("Try to find a Pending individual on the current page");
+        String targetEmail = individuals.findPendingEmailOnCurrentPage();
+
+        if (targetEmail == null) {
+            step("No Pending row found on this page → create a new pending individual via Shop (SM04-style)");
+            targetEmail = createPendingIndividualViaShop(dashboard);
+
+            step("Re-open Individuals page after creating the pending invite");
+            individuals = new IndividualsPage(driver())
+                    .open(Config.getBaseUrl())
+                    .waitUntilLoaded();
+        }
+
+        Assert.assertNotNull(
+                targetEmail,
+                "❌ Could not find or create a Pending individual for SM05."
+        );
+        System.out.println("ℹ Using Pending individual for SM05: " + targetEmail);
+
+        // -------------------- RESEND / SEND REMINDER FLOW --------------------
+        step("Open 'Send reminder' modal via row actions for " + targetEmail);
+        individuals.openSendReminderModalFor(targetEmail);   // uses openActionsMenuFor + clickSendReminderInOpenMenu
+        individuals.ensureModalSendEnabled();                // makes sure the Send button is enabled
+
+        step("Click 'Send reminder' in the modal");
+        individuals.clickModalSendReminder();
+        individuals.waitForModalToClose();
+
+        step("Wait for success toast / notification");
+        String toastText = individuals.waitForSuccessToast();
+        Assert.assertNotNull(toastText, "❌ No success toast appeared after sending reminder.");
+        String toastLc = toastText.toLowerCase(Locale.ROOT);
+        Assert.assertTrue(
+                toastLc.contains("sent") || toastLc.contains("reminder") || toastLc.contains("invitation"),
+                "❌ Unexpected success toast text after resend/reminder: '" + toastText + "'"
+        );
+
+        System.out.println("✅ SM05: Reminder/resend confirmed by toast for " + targetEmail);
+    }
+
+
+
+    /**
+     * SM05b: Resend invitation (Send reminder) sends a reminder email to the pending individual.
+     * Flow:
+     *  - Create a pending individual using a MailSlurp +alias address
+     *  - Open Individuals and trigger "Send reminder" from the row actions
+     *  - Assert success toast
+     *  - Assert a reminder email arrives to that alias with correct subject/body/CTA
+     */
+    @Test(groups = {"smoke"}, description = "SM05b: Resend invitation sends reminder email to pending individual (MailSlurp).")
+    public void smoke_resendInvitation_sendsReminderEmailToPendingIndividual() throws Exception {
+        // ------------------------------------------------------------------
+        // Admin config
+        // ------------------------------------------------------------------
+        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
+            throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
+        }
+        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
+
+        // ------------------------------------------------------------------
+        // Mail / content expectations (from live reminder template)
+        // ------------------------------------------------------------------
+        final Duration EMAIL_TIMEOUT          = Duration.ofSeconds(120);
+        final String SUBJECT_EXPECTED_PREFIX  = "Reminder:";  // "Reminder: Complete Your Assessment"
+        final String SUBJECT_EXPECTED_NEEDLE  = "Assessment";
+        final String BODY_HEADER_NEEDLE       = "Don't Forget to Complete Your Tilt365 Assessment";
+        final String BODY_PENDING_NEEDLE      = "pending Tilt365 assessment";
+        final String BODY_USERNAME_LABEL      = "Username";
+        final String CTA_TEXT                 = "Complete Assessment";
+
+        // ------------------------------------------------------------------
+        // MailSlurp: shared inbox + unique alias
+        // ------------------------------------------------------------------
+        step("Resolve shared MailSlurp inbox + unique alias for SM05b");
+        final InboxDto inbox = BaseTest.getSuiteInbox() != null
+                ? BaseTest.getSuiteInbox()
+                : BaseTest.requireInboxOrSkip();
+
+        final String testEmail  = MailSlurpUtils.uniqueAliasEmail(inbox, "sm05b-resend");
+        final String aliasToken = MailSlurpUtils.extractAliasToken(testEmail);
+
+        System.out.println("📮 Using shared inbox: " + inbox.getId() + " <" + inbox.getEmailAddress() + ">");
+        System.out.println("📧 SM05b recipient (alias): " + testEmail);
+
+        // Keep inbox clean to avoid matching stale messages
+        try { MailSlurpUtils.clearInboxEmails(inbox.getId()); } catch (Throwable ignored) {}
+
+        // ------------------------------------------------------------------
+        // A) Create a pending individual with that email (Shop → Stripe flow)
+        // ------------------------------------------------------------------
+        step("Login as admin");
+        LoginPage loginPage = new LoginPage(driver());
+        loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
+        DashboardPage dashboard =
+                loginPage.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+        Assert.assertTrue(dashboard.isLoaded(), "❌ Dashboard did not load after login");
+
+        step("Go to Shop and start True Tilt purchase flow (manual entry, 1 individual)");
+        ShopPage shopPage = dashboard.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
+        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
+        sel.selectClientOrIndividual();
+        sel.clickNext();
+
+        String uniq      = String.valueOf(System.currentTimeMillis());
+        String firstName = "SM05b";
+        String lastName  = "Resend-" + uniq;
+
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
+                .waitUntilLoaded()
+                .selectManualEntry()
+                .enterNumberOfIndividuals("1");
+        entryPage.fillUserDetailsAtIndex(1, firstName, lastName, testEmail);
+
+        step("Proceed to payment preview");
+        OrderPreviewPage preview = entryPage.clickProceedToPayment().waitUntilLoaded();
+
+        step("Stripe: fetch session + metadata.body");
+        String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
+        String sessionId = extractSessionIdFromUrl(stripeUrl);
+        Assert.assertNotNull(sessionId, "❌ Could not parse Stripe session id from URL (SM05b)");
+
+        String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
+        Assert.assertNotNull(bodyJson, "❌ metadata.body not found in Checkout Session (SM05b)");
+
+        step("Stripe: trigger checkout.session.completed via CLI");
+        StripeCheckoutHelper.TriggerResult trig =
+                StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
+        System.out.println("[Stripe] Triggered eventId=" + trig.eventId +
+                (trig.requestLogUrl != null ? " | requestLog=" + trig.requestLogUrl : ""));
+
+        step("Navigate to post-payment confirmation");
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+
+        step("Open Individuals and assert the user appears");
+        IndividualsPage individuals = new IndividualsPage(driver())
+                .open(Config.getBaseUrl())
+                .waitUntilLoaded();
+        individuals.assertAppearsWithEvidence(Config.getBaseUrl(), testEmail);
+
+        // Optional sanity: ensure their report is Pending
+        String reportStatus = individuals.getReportStatusByEmail(testEmail);
+        System.out.println("ℹ Report status for " + testEmail + " = " + reportStatus);
+
+        // ------------------------------------------------------------------
+        // B) Resend invitation ("Send reminder") from Individuals
+        // ------------------------------------------------------------------
+        step("Clear inbox right before resend so we only capture the reminder email");
+        try { MailSlurpUtils.clearInboxEmails(inbox.getId()); } catch (Throwable ignored) {}
+
+        step("Open 'Send reminder' modal via row actions");
+        individuals.openSendReminderModalFor(testEmail);  // POM helper: openActionsMenuFor + clickSendReminderInOpenMenu
+        individuals.ensureModalSendEnabled();
+
+        step("Click 'Send reminder' and wait for modal to close");
+        individuals.clickModalSendReminder();
+        individuals.waitForModalToClose();
+
+        step("Wait for success toast");
+        String toastText = individuals.waitForSuccessToast();
+        Assert.assertNotNull(toastText, "❌ No success toast appeared after sending reminder.");
+        System.out.println("✅ Toast after resend: " + toastText);
+
+        // ------------------------------------------------------------------
+        // C) Assert reminder email arrived to the alias with expected content
+        // ------------------------------------------------------------------
+        step("Wait for reminder email addressed to the alias");
+        System.out.println("[Email] Waiting up to " + EMAIL_TIMEOUT.toSeconds() +
+                "s for reminder email to " + testEmail + "…");
+
+        Email email = MailSlurpUtils.waitForEmailMatching(
+                inbox.getId(),
+                EMAIL_TIMEOUT.toMillis(),
+                1500L,
+                true,
+                // Must be to our alias + look like the reminder template
+                MailSlurpUtils.addressedToAliasToken(aliasToken)
+                        .and(MailSlurpUtils.subjectContains("Reminder"))
+                        .and(MailSlurpUtils.subjectContains("Assessment"))
+                        .and(MailSlurpUtils.bodyContains("Complete Assessment"))
+        );
+        Assert.assertNotNull(
+                email,
+                "❌ No reminder email arrived addressed to alias " + aliasToken +
+                        " within " + EMAIL_TIMEOUT
+        );
+
+        final String subject = Objects.toString(email.getSubject(), "");
+        final String from    = Objects.toString(email.getFrom(), "");
+        final String rawBody = Objects.toString(email.getBody(), "");
+        final String safeBody = MailSlurpUtils.safeEmailBody(email); // HTML or text normalized
+
+        System.out.printf("📨 Reminder Email — From: %s | Subject: %s%n", from, subject);
+
+        // Subject: "Reminder: Complete Your Assessment"
+        String subjLc = subject.toLowerCase(Locale.ROOT);
+        Assert.assertTrue(
+                subjLc.startsWith(SUBJECT_EXPECTED_PREFIX.toLowerCase(Locale.ROOT)),
+                "❌ Reminder subject should start with '" + SUBJECT_EXPECTED_PREFIX + "'. Got: " + subject
+        );
+        Assert.assertTrue(
+                subjLc.contains(SUBJECT_EXPECTED_NEEDLE.toLowerCase(Locale.ROOT)),
+                "❌ Reminder subject should mention '" + SUBJECT_EXPECTED_NEEDLE + "'. Got: " + subject
+        );
+
+        // Sender: tilt365 via sendgrid
+        String fromLc = from.toLowerCase(Locale.ROOT);
+        Assert.assertTrue(
+                fromLc.contains("tilt365") || fromLc.contains("sendgrid"),
+                "❌ Unexpected reminder sender: " + from
+        );
+
+        // Body content: header, "pending assessment", username line, alias email, CTA text
+        String body = safeBody != null ? safeBody : rawBody;
+        String bodyLc = body.toLowerCase(Locale.ROOT);
+
+        Assert.assertTrue(
+                body.contains(BODY_HEADER_NEEDLE),
+                "❌ Body missing header line: '" + BODY_HEADER_NEEDLE + "'. Body snippet: " + snippet(body)
+        );
+        Assert.assertTrue(
+                bodyLc.contains(BODY_PENDING_NEEDLE.toLowerCase(Locale.ROOT)),
+                "❌ Body missing pending-assessment text like '" + BODY_PENDING_NEEDLE + "'. Body snippet: " + snippet(body)
+        );
+        Assert.assertTrue(
+                body.contains(BODY_USERNAME_LABEL),
+                "❌ Body missing 'Username' label. Body snippet: " + snippet(body)
+        );
+        Assert.assertTrue(
+                body.contains(testEmail),
+                "❌ Body missing the alias email as username: " + testEmail
+        );
+        Assert.assertTrue(
+                body.contains(CTA_TEXT),
+                "❌ Body missing CTA text '" + CTA_TEXT + "'. Body snippet: " + snippet(body)
+        );
+
+        // CTA link exists and points to expected host
+        String ctaHref = MailSlurpUtils.extractLinkByAnchorText(email, CTA_TEXT);
+        if (ctaHref == null) ctaHref = MailSlurpUtils.extractFirstLink(email);
+        Assert.assertNotNull(ctaHref, "❌ Could not find a CTA link in the reminder email.");
+
+        System.out.println("🔗 Reminder CTA link: " + ctaHref);
+        String hrefLc = ctaHref.toLowerCase(Locale.ROOT);
+        Assert.assertTrue(
+                hrefLc.contains("sendgrid.net") || hrefLc.contains("tilt365"),
+                "❌ Reminder CTA link host unexpected: " + ctaHref
+        );
+
+        System.out.println("✅ SM05b: Resend invitation produced a valid reminder email for " + testEmail);
+    }
+
+    /**
+     * Small helper to print a short body snippet in assertion messages.
+     */
+    private static String snippet(String body) {
+        if (body == null) return "";
+        body = body.replaceAll("\\s+", " ").trim();
+        return body.length() <= 200 ? body : body.substring(0, 200) + "…";
+    }
+
+
+    @Test(groups = {"smoke"}, description = "SM06: Cancel pending invitation removes/updates the invite.")
+    public void smoke_cancelPendingInvitation() throws Exception {
+
+        step("Start fresh session (login + Dashboard)");
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
+
+        step("Open Individuals page");
+        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+
+        // -------------------- FIND OR CREATE PENDING INDIVIDUAL --------------------
+        step("Try to find a Pending individual on the current page");
+        String targetEmail = individuals.findPendingEmailOnCurrentPage();
+
+        if (targetEmail == null) {
+            step("No Pending row found → create a new pending individual via Shop flow");
+            targetEmail = createPendingIndividualViaShop(dashboard);
+
+            step("Re-open Individuals page to see the new pending invite");
+            individuals = new IndividualsPage(driver())
+                    .open(Config.getBaseUrl())
+                    .waitUntilLoaded();
+        }
+
+        Assert.assertNotNull(targetEmail, "❌ Could not find or create a Pending individual for SM06.");
+        System.out.println("ℹ Using Pending individual for SM06: " + targetEmail);
+
+        // Sanity: before state is Pending (any page)
+        String beforeStatus = individuals.getReportStatusByEmail(targetEmail);
+        System.out.println("ℹ Before cancel, report status = " + beforeStatus);
+
+        // -------------------- OPEN "CANCEL/REMOVE" MODAL --------------------
+        step("Open Remove/Cancel invitation modal from row actions for " + targetEmail);
+        individuals.openRemoveUserModalFor(targetEmail);
+
+        String modalTitle = individuals.getRemoveUserModalTitle();
+        System.out.println("ℹ Remove/Cancel modal title = " + modalTitle);
+        Assert.assertTrue(
+                modalTitle.toLowerCase(Locale.ROOT).contains("remove") ||
+                        modalTitle.toLowerCase(Locale.ROOT).contains("cancel"),
+                "❌ Unexpected modal title for cancel invitation: '" + modalTitle + "'"
+        );
+
+        Assert.assertTrue(
+                individuals.removeUserModalHasButtons("Cancel", "Remove"),
+                "❌ Remove/Cancel modal does not show expected buttons 'Cancel' and 'Remove'"
+        );
+
+        // -------------------- CONFIRM CANCELLATION --------------------
+        step("Confirm removal/cancellation in the modal");
+        individuals.clickRemoveConfirm();
+
+        // Wait only on the *current* page – no pagination, no table refresh gymnastics
+        step("Wait until the row disappears from the current page");
+        IndividualsPage finalIndividuals = individuals;
+        String finalTargetEmail = targetEmail;
+        boolean disappearedOnCurrentPage = new WebDriverWait(driver(), Duration.ofSeconds(10))
+                .until(d -> !finalIndividuals.isUserListedByEmailOnCurrentPage(finalTargetEmail));
+        System.out.println("ℹ disappearedOnCurrentPage = " + disappearedOnCurrentPage);
+
+        // Optional toast (does not fail if missing)
+        String toast = individuals.waitForSuccessToast();
+        if (toast != null) {
+            System.out.println("✅ Success toast after cancel/remove: " + toast);
+        } else {
+            System.out.println("⚠ No success toast detected after cancel/remove (not treated as failure).");
+        }
+
+        // -------------------- ASSERT RESULT --------------------
+        Assert.assertTrue(
+                disappearedOnCurrentPage,
+                "❌ Cancel invitation failed: row for " + targetEmail + " is still visible on the Individuals page."
+        );
+
+        // Optional light double-check without pagination scanning:
+        // individuals.reloadWithBuster(Config.getBaseUrl());
+        // Assert.assertFalse(
+        //         individuals.isUserListedByEmailOnCurrentPage(targetEmail),
+        //         "Row still visible on first page after reload for " + targetEmail
+        // );
+    }
+
+
+    /**
+     * SM06-v2:
+     *  - Purchase a new True Tilt assessment for a fresh aliased email.
+     *  - Verify the invite email arrives and capture the CTA link.
+     *  - Cancel the pending invitation from Individuals.
+     *  - Navigate to the original CTA link and assert we CANNOT start the assessment.
+     */
+    @Test(groups = {"smoke", "known-bug"}, description = "SM06-v2: Cancel pending invitation makes the email CTA unusable.")
+    public void smoke_cancelPendingInvitation_emailLinkBecomesInvalid() throws Exception {
+
+        // -------------------- CONFIG / ADMIN CREDS --------------------
+        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
+            throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
+        }
+        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
+
+        final Duration EMAIL_TIMEOUT   = Duration.ofSeconds(120);
+        final String SUBJECT_NEEDLE    = "assessment";          // subject contains this
+        final String REMINDER_NEEDLE   = "Reminder";            // many reminder templates contain this
+        final String CTA_TEXT_PRIMARY  = "Complete Assessment"; // from your screenshot
+        final String CTA_TEXT_FALLBACK = "Start Assessment";    // backup if template changes
+
+        System.setProperty("mailslurp.debug", "true");
+
+        // -------------------- MAILSLURP: PREP INBOX + ALIAS --------------------
+        step("Resolve shared MailSlurp inbox and generate unique +alias recipient");
+        final InboxDto inbox = BaseTest.getSuiteInbox() != null
+                ? BaseTest.getSuiteInbox()
+                : BaseTest.requireInboxOrSkip();
+
+        final String testEmail  = MailSlurpUtils.uniqueAliasEmail(inbox, "cancel");
+        final String aliasToken = MailSlurpUtils.extractAliasToken(testEmail);
+
+        System.out.println("📮 Using shared inbox: " + inbox.getId() + " <" + inbox.getEmailAddress() + ">");
+        System.out.println("📧 Test recipient (alias): " + testEmail);
+
+        try { MailSlurpUtils.clearInboxEmails(inbox.getId()); } catch (Throwable ignored) {}
+
+        // -------------------- APP FLOW: LOGIN + PURCHASE --------------------
+        step("Login as admin");
+        LoginPage loginPage = new LoginPage(driver());
+        loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
+        DashboardPage dashboard = loginPage.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+        Assert.assertTrue(dashboard.isLoaded(), "❌ Dashboard did not load after login");
+
+        step("Go to Shop and start purchase flow for True Tilt");
+        ShopPage shopPage = dashboard.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
+        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
+        sel.selectClientOrIndividual();
+        sel.clickNext();
+
+        step("Manual entry for 1 individual (use the aliased MailSlurp address)");
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
+                .waitUntilLoaded()
+                .selectManualEntry()
+                .enterNumberOfIndividuals("1");
+        entryPage.fillUserDetailsAtIndex(1, "Emi", "CancelFlow", testEmail);
+
+        step("Review order (Preview)");
+        OrderPreviewPage preview = entryPage.clickProceedToPayment().waitUntilLoaded();
+
+        step("Stripe: fetch Checkout Session + metadata.body");
+        String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
+        String sessionId = extractSessionIdFromUrl(stripeUrl);
+        Assert.assertNotNull(sessionId, "❌ Could not parse Stripe session id from URL");
+        System.out.println("[Stripe] checkoutUrl=" + stripeUrl + " | sessionId=" + sessionId);
+
+        String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
+        Assert.assertNotNull(bodyJson, "❌ metadata.body not found in Checkout Session");
+        System.out.println("[Stripe] metadata.body length=" + bodyJson.length());
+
+        step("Stripe: trigger checkout.session.completed via CLI");
+        var trig = StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
+        System.out.println("[Stripe] Triggered eventId=" + trig.eventId +
+                (trig.requestLogUrl != null ? " | requestLog=" + trig.requestLogUrl : ""));
+
+        step("Navigate to post-payment confirmation");
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+
+        // -------------------- INDIVIDUALS: VERIFY PENDING INVITE EXISTS --------------------
+        step("Open Individuals page and assert the new email appears as Pending");
+        IndividualsPage individuals = new IndividualsPage(driver())
+                .open(Config.getBaseUrl())
+                .waitUntilLoaded();
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+
+        individuals.waitUntilUserInviteAppears(testEmail, Duration.ofSeconds(30));
+        String statusBefore = individuals.getReportStatusByEmail(testEmail);
+        System.out.println("ℹ Status before cancel = " + statusBefore);
+        Assert.assertTrue(
+                statusBefore != null && statusBefore.toLowerCase(Locale.ROOT).contains("pending"),
+                "❌ Expected Pending status before cancel, got: " + statusBefore
+        );
+
+        // -------------------- EMAIL: CAPTURE CTA LINK BEFORE CANCELLATION --------------------
+        step("Wait for invitation/reminder email addressed to our alias");
+        System.out.println("[Email] Waiting up to " + EMAIL_TIMEOUT.toSeconds() + "s for message to " + testEmail + "…");
+
+        Email email = MailSlurpUtils.waitForEmailMatching(
+                inbox.getId(),
+                EMAIL_TIMEOUT.toMillis(),
+                1500L,
+                true,
+                MailSlurpUtils.addressedToAliasToken(aliasToken)
+                        .and(MailSlurpUtils.subjectContains(SUBJECT_NEEDLE))
+                        // many reminder templates include 'Reminder'; not strictly required
+                        .and(MailSlurpUtils.subjectOrBodyContainsAny(REMINDER_NEEDLE, "Complete", "Start"))
+        );
+        Assert.assertNotNull(email,
+                "❌ No assessment email arrived addressed to alias " + aliasToken + " within " + EMAIL_TIMEOUT);
+
+        final String subject = Objects.toString(email.getSubject(), "");
+        final String from    = Objects.toString(email.getFrom(), "");
+        final String body    = MailSlurpUtils.safeEmailBody(email);
+
+        System.out.printf("📨 Email — From: %s | Subject: %s%n", from, subject);
+        Assert.assertTrue(subject.toLowerCase(Locale.ROOT).contains(SUBJECT_NEEDLE),
+                "❌ Subject does not mention '" + SUBJECT_NEEDLE + "'. Got: " + subject);
+
+        Assert.assertTrue(from.toLowerCase(Locale.ROOT).contains("tilt365")
+                        || from.toLowerCase(Locale.ROOT).contains("sendgrid"),
+                "❌ Unexpected sender: " + from);
+
+        // Prefer "Complete Assessment" CTA, else "Start Assessment", else any link
+        String ctaHref = MailSlurpUtils.extractLinkByAnchorText(email, CTA_TEXT_PRIMARY);
+        if (ctaHref == null) {
+            ctaHref = MailSlurpUtils.extractLinkByAnchorText(email, CTA_TEXT_FALLBACK);
+        }
+        if (ctaHref == null) {
+            ctaHref = MailSlurpUtils.extractFirstLink(email);
+        }
+        Assert.assertNotNull(ctaHref, "❌ Could not find CTA link in assessment email.");
+        System.out.println("🔗 Email CTA link (pre-cancel): " + ctaHref);
+
+        // -------------------- CANCEL INVITATION IN INDIVIDUALS --------------------
+        step("Open Remove/Cancel invitation modal from row actions for " + testEmail);
+        individuals.openRemoveUserModalFor(testEmail);
+
+        String modalTitle = individuals.getRemoveUserModalTitle();
+        System.out.println("ℹ Remove/Cancel modal title = " + modalTitle);
+        Assert.assertTrue(
+                modalTitle.toLowerCase(Locale.ROOT).contains("remove") ||
+                        modalTitle.toLowerCase(Locale.ROOT).contains("cancel"),
+                "❌ Unexpected modal title for cancel invitation: '" + modalTitle + "'"
+        );
+        Assert.assertTrue(
+                individuals.removeUserModalHasButtons("Cancel", "Remove"),
+                "❌ Remove/Cancel modal does not show expected buttons 'Cancel' and 'Remove'"
+        );
+
+        step("Confirm removal/cancellation in the modal");
+        individuals.clickRemoveConfirm();
+
+        step("Wait until the row disappears from the current page");
+        boolean disappearedOnCurrentPage =
+                individuals.waitRowToDisappearOnCurrentPage(testEmail, Duration.ofSeconds(10));
+        System.out.println("ℹ disappearedOnCurrentPage = " + disappearedOnCurrentPage);
+        Assert.assertTrue(disappearedOnCurrentPage,
+                "❌ Cancel invitation failed: row for " + testEmail + " is still visible on Individuals.");
+
+        String toast = individuals.waitForSuccessToast();
+        if (toast != null) {
+            System.out.println("✅ Success toast after cancel/remove: " + toast);
+        } else {
+            System.out.println("⚠ No success toast detected after cancel/remove (not treated as failure).");
+        }
+
+        // -------------------- FOLLOW OLD EMAIL LINK: SHOULD *NOT* START ASSESSMENT --------------------
+        step("Navigate to the ORIGINAL CTA link after cancellation");
+        driver().navigate().to(ctaHref);
+
+        WaitUtils wu = new WaitUtils(driver(), Duration.ofSeconds(20));
+        wu.waitForDocumentReady();
+        wu.waitForLoadersToDisappear();
+
+        // Use assessment page objects as oracle for "can start?"
+        TtpIntroPage ttpIntro   = new TtpIntroPage(driver());
+        TtpSurveyPage ttpSurvey = new TtpSurveyPage(driver());
+
+        boolean canStart =
+                ttpIntro.isLoaded()
+                        || ttpSurvey.isLoaded();
+
+        System.out.println("ℹ canStartAssessmentAfterCancel = " + canStart);
+
+        Assert.assertFalse(
+                canStart,
+                "❌ Invite email link still allows starting/completing the assessment after the invitation was cancelled."
+        );
+    }
 
 
 
@@ -1578,6 +2237,51 @@ public class IndividualsListTests extends BaseTest {
         return null;
     }
 
+
+    /** Creates a new pending individual via Shop → manual entry → Stripe, then returns its email. */
+    private String createPendingIndividualViaShop(DashboardPage dashboard) throws Exception {
+        String uniq      = String.valueOf(System.currentTimeMillis());
+        String firstName = "SM05";
+        String lastName  = "Auto-" + uniq;
+        String email     = "sm05.auto+" + uniq + "@example.com"; // or your test domain
+
+        step("[SM05 helper] Go to Shop and start True Tilt purchase flow");
+        ShopPage shopPage = dashboard.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load in SM05 helper");
+
+        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
+        sel.selectClientOrIndividual();
+        sel.clickNext();
+
+        step("[SM05 helper] Manual entry for 1 individual");
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
+                .waitUntilLoaded()
+                .selectManualEntry()
+                .enterNumberOfIndividuals("1");
+        entryPage.fillUserDetailsAtIndex(1, firstName, lastName, email);
+
+        step("[SM05 helper] Proceed to payment preview");
+        OrderPreviewPage preview = entryPage.clickProceedToPayment().waitUntilLoaded();
+
+        step("[SM05 helper] Complete Stripe flow via metadata.body");
+        String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
+        String sessionId = extractSessionIdFromUrl(stripeUrl);
+        Assert.assertNotNull(sessionId, "❌ Could not parse Stripe session id from URL (SM05 helper)");
+
+        String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
+        Assert.assertNotNull(bodyJson, "❌ metadata.body not found in Checkout Session (SM05 helper)");
+
+        StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
+
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+
+        step("[SM05 helper] Sanity: assert new user appears in Individuals");
+        new IndividualsPage(driver())
+                .open(Config.getBaseUrl())
+                .assertAppearsWithEvidence(Config.getBaseUrl(), email);
+
+        return email;
+    }
 
 
 

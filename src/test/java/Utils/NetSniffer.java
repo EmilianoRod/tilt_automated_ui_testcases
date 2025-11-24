@@ -4,9 +4,11 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.openqa.selenium.devtools.DevTools;
 import org.openqa.selenium.devtools.HasDevTools;
-import org.openqa.selenium.devtools.v138.network.Network;
-import org.openqa.selenium.devtools.v138.network.model.Headers;
-import org.openqa.selenium.devtools.v138.network.model.RequestId;
+import org.openqa.selenium.devtools.v142.network.Network;
+import org.openqa.selenium.devtools.v142.network.model.Headers;
+import org.openqa.selenium.devtools.v142.network.model.RequestId;
+
+
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -39,12 +41,16 @@ public class NetSniffer {
                                                    Duration timeout) {
         DevTools devTools = ((HasDevTools) driver).getDevTools();
         devTools.createSession();
-        devTools.send(Network.enable(
-                Optional.empty(),  // maxTotalBufferSize
-                Optional.empty(),  // maxResourceBufferSize
-                Optional.empty(),  // maxPostDataSize
-                Optional.empty()   // maxResponseSize
-        ));
+        devTools.send(
+                Network.enable(
+                        Optional.empty(),   // maxTotalBufferSize
+                        Optional.empty(),   // maxResourceBufferSize
+                        Optional.empty(),   // maxPostDataSize
+                        Optional.of(true),  // captureNetworkRequests
+                        Optional.of(true)   // reportRawHeaders
+                )
+
+        );
 
         CompletableFuture<JsonResponse> future = new CompletableFuture<>();
 

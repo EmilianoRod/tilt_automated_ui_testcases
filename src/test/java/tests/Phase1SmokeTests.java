@@ -1,10 +1,14 @@
 package tests;
-import Utils.*;
 
+import Utils.Config;
+import Utils.EncodingUtils;
+import Utils.MailSlurpUtils;
+import Utils.StripeCheckoutHelper;
 import base.BaseTest;
 import com.mailslurp.clients.ApiException;
 import com.mailslurp.models.Email;
 import com.mailslurp.models.InboxDto;
+import org.json.JSONObject;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.NoSuchElementException;
@@ -12,16 +16,13 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.SkipException;
 import org.testng.annotations.Test;
-
-import org.json.JSONObject;
+import pages.Individuals.IndividualsPage;
 import pages.LoginPage;
 import pages.Shop.AssessmentEntryPage;
 import pages.Shop.OrderPreviewPage;
 import pages.Shop.PurchaseRecipientSelectionPage;
 import pages.menuPages.DashboardPage;
-import pages.Individuals.IndividualsPage;
 import pages.menuPages.ShopPage;
-
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -31,77 +32,7 @@ import java.util.regex.Pattern;
 
 import static Utils.Config.joinUrl;
 
-
 public class Phase1SmokeTests extends BaseTest {
-
-
-
-
-
-
-
-    // ==================== recipient provisioning ====================
-
-    /** Holder for the email we type in the UI and the inbox we wait on. */
-    private static class Recipient {
-        final UUID inboxId;
-        final String emailAddress;
-        Recipient(UUID id, String email) { this.inboxId = id; this.emailAddress = email; }
-    }
-
-    /**
-     * Use a unique email for each run.
-     * LOCAL default: enable creation (fresh MailSlurp inbox).
-     * CI: obey ALLOW_CREATE_INBOX_FALLBACK (typically false), never rely on plus-tagging for @mailslurp.biz.
-     */
-    private Recipient provisionUniqueRecipient() {
-        // Auto-enable creation when not in CI, unless the user explicitly set the flag.
-        if (System.getenv("CI") == null && System.getProperty("ALLOW_CREATE_INBOX_FALLBACK") == null) {
-            System.setProperty("ALLOW_CREATE_INBOX_FALLBACK", "true");
-        }
-
-        final boolean allowCreate = Boolean.parseBoolean(
-                System.getProperty("ALLOW_CREATE_INBOX_FALLBACK",
-                        Objects.toString(System.getenv("ALLOW_CREATE_INBOX_FALLBACK"), "true")));
-
-        try {
-            if (allowCreate) {
-                // Always create a fresh inbox (preferred) — guarantees a "new purchase" recipient
-                InboxDto fresh = MailSlurpUtils.createNewInbox();
-                System.out.println("📮 Fresh inbox for this run: " + fresh.getEmailAddress());
-                return new Recipient(fresh.getId(), fresh.getEmailAddress());
-            }
-
-            // No creation allowed. If a fixed inbox is present, do NOT use plus-tagging on mailslurp.biz.
-            if (fixedInbox != null) {
-                final String base = fixedInbox.getEmailAddress();
-                if (base.endsWith("@mailslurp.biz")) {
-                    throw new SkipException(
-                            "Unique recipient required for purchase flow, but inbox creation is disabled and " +
-                                    "the fixed domain (" + base + ") does not support plus-tag routing. " +
-                                    "Enable ALLOW_CREATE_INBOX_FALLBACK=true to run this test.");
-                }
-                // If your fixed domain *does* support tags, uncomment the lines below and remove the Skip above.
-/*
-                final String tagged = plusTag(base, "tc1-" + System.currentTimeMillis());
-                System.out.println("✉ Using tagged address on fixed inbox: " + tagged);
-                return new Recipient(fixedInbox.getId(), tagged);
-*/
-            }
-
-            // Last resort: delegate to resolver (will Skip if neither fixed nor creation allowed).
-            InboxDto resolved = MailSlurpUtils.resolveFixedOrCreateInbox();
-            System.out.println("📮 Resolved inbox for this run: " + resolved.getEmailAddress());
-            return new Recipient(resolved.getId(), resolved.getEmailAddress());
-
-        } catch (SkipException se) {
-            throw se;
-        } catch (Exception e) {
-            throw new SkipException("Cannot provision a unique recipient email: " + e.getMessage());
-        }
-    }
-
-
 
     // ==================== small utils ====================
 
@@ -120,17 +51,10 @@ public class Phase1SmokeTests extends BaseTest {
         return user.charAt(0) + "****" + user.charAt(user.length() - 1) + dom;
     }
 
-    /** Insert “+tag” before '@' (RFC 5233). */
-    private static String plusTag(String email, String tag) {
-        int at = email.indexOf('@');
-        if (at <= 0) return email;
-        return email.substring(0, at) + "+" + tag + email.substring(at);
-    }
-
     /** Parse cs_test_... from a Stripe Checkout URL, or session_id=... */
     private static String extractSessionIdFromUrl(String url) {
         if (url == null) return null;
-        Matcher m = Pattern.compile("(?i)(?:cs_test_[A-Za-z0-9_]+)|(?:session_id=([^&]+))").matcher(url);
+        Matcher m = Pattern.compile("(?i)(?:cs_test_[A-Za-z0-9_\\-]+)|(?:session_id=([^&]+))").matcher(url);
         if (m.find()) {
             String full = m.group();
             if (full.startsWith("cs_test_")) return full;
@@ -148,11 +72,12 @@ public class Phase1SmokeTests extends BaseTest {
     // ===================== TESTS =====================
 
     /**
-     * TC-1: Verify that newly added users receive an email notification with login instructions
-     * NOTE: Purchase must use a brand-new recipient email each run (fresh MailSlurp inbox locally).
+     * TC-1: Verify that newly added users receive an email notification with login instructions.
+     * Uses a shared MailSlurp inbox with a unique +alias address to avoid quota limits.
      */
-    @Test(groups = "ui-only")
-    public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws ApiException, InterruptedException {
+//    @Test(groups = "ui-only")
+    @Test
+    public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws Exception {
         // ----- config / constants -----
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
         final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
@@ -164,15 +89,22 @@ public class Phase1SmokeTests extends BaseTest {
         final Duration EMAIL_TIMEOUT = Duration.ofSeconds(120);
         final String CTA_TEXT       = "Accept Assessment";
         final String SUBJECT_NEEDLE = "assessment";
+
         System.setProperty("mailslurp.debug", "true");
 
-        // ----- recipient (unique per run) -----
-        step("Resolve recipient for this run (prefer fresh inbox)");
-        Recipient r = provisionUniqueRecipient();
-        MailSlurpUtils.clearInboxEmails(r.inboxId); // deterministic unreadOnly waits
-        final String tempEmail = r.emailAddress;
-        final UUID inboxId     = r.inboxId;
-        System.out.println("📧 Test email (clean): " + tempEmail);
+        // ----- recipient (shared inbox + unique alias) -----
+        step("Resolve shared MailSlurp inbox and generate unique +alias recipient");
+        // Prefer the suite-prepared inbox:
+        final InboxDto inbox = BaseTest.getSuiteInbox() != null
+                ? BaseTest.getSuiteInbox()
+                : BaseTest.requireInboxOrSkip();
+
+        final String testEmail = MailSlurpUtils.uniqueAliasEmail(inbox, "invite");
+        final String aliasToken = MailSlurpUtils.extractAliasToken(testEmail); // like "+invite-1730..."
+        System.out.println("📮 Using shared inbox: " + inbox.getId() + " <" + inbox.getEmailAddress() + ">");
+        System.out.println("📧 Test recipient (alias): " + testEmail);
+        // Clean the inbox to reduce noise
+        try { MailSlurpUtils.clearInboxEmails(inbox.getId()); } catch (Throwable ignored) {}
 
         // ----- app flow -----
         step("Login as admin");
@@ -190,13 +122,12 @@ public class Phase1SmokeTests extends BaseTest {
         sel.selectClientOrIndividual();
         sel.clickNext();
 
-        step("Manual entry for 1 individual");
+        step("Manual entry for 1 individual (use the aliased MailSlurp address)");
         AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
                 .selectManualEntry()
                 .enterNumberOfIndividuals("1");
-        // IMPORTANT: use the unique email for the purchase
-        entryPage.fillUserDetailsAtIndex(1, "Emi", "Rod", tempEmail);
+        entryPage.fillUserDetailsAtIndex(1, "Emi", "Rod", testEmail);
 
         step("Review order (Preview)");
         OrderPreviewPage preview = entryPage.clickProceedToPayment().waitUntilLoaded();
@@ -222,30 +153,31 @@ public class Phase1SmokeTests extends BaseTest {
         step("Individuals page shows the newly invited user");
         new IndividualsPage(driver())
                 .open(Config.getBaseUrl())
-                .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
-        System.out.println("✅ User appears in Individuals: " + tempEmail);
+                .assertAppearsWithEvidence(Config.getBaseUrl(), testEmail);
+        System.out.println("✅ User appears in Individuals: " + testEmail);
 
-        // ----- email assertion -----
-        step("Wait for email and assert contents");
-        System.out.println("[Email] Waiting up to " + EMAIL_TIMEOUT.toSeconds() + "s for message to " + tempEmail + "…");
+        // ----- email assertion (predicate-based; alias-targeted) -----
+        step("Wait for invitation email addressed to our alias");
+        System.out.println("[Email] Waiting up to " + EMAIL_TIMEOUT.toSeconds() + "s for message to " + testEmail + "…");
 
-        final Email email;
-        try {
-            email = MailSlurpUtils.waitForLatestEmail(inboxId, EMAIL_TIMEOUT.toMillis(), true);
-        } catch (ApiException e) {
-            // Some timeouts show as code 0; treat like a test-timeout for clearer signal.
-            if (e.getCode() == 0 || e.getCode() == 404 || e.getCode() == 408) {
-                Assert.fail("❌ No email received for " + tempEmail + " within " + EMAIL_TIMEOUT
-                        + " (MailSlurp code " + e.getCode() + ")");
-            }
-            throw e;
-        }
+        Email email = MailSlurpUtils.waitForEmailMatching(
+                inbox.getId(),
+                EMAIL_TIMEOUT.toMillis(),
+                1500L,
+                true,
+                // Must be addressed to our +alias and contain expected keywords
+                MailSlurpUtils.addressedToAliasToken(aliasToken)
+                        .and(MailSlurpUtils.subjectContains(SUBJECT_NEEDLE))
+                        .and(MailSlurpUtils.bodyContains("accept"))
+        );
+        Assert.assertNotNull(email, "❌ No invitation email arrived addressed to alias " + aliasToken + " within " + EMAIL_TIMEOUT);
 
         final String subject = Objects.toString(email.getSubject(), "");
         final String from    = Objects.toString(email.getFrom(), "");
-        final String body    = Objects.toString(email.getBody(), "");
-        System.out.printf("📨 Email — From: %s | Subject: %s%n", from, subject);
+        final String rawBody = Objects.toString(email.getBody(), "");
+        final String body    = MailSlurpUtils.safeEmailBody(email);
 
+        System.out.printf("📨 Email — From: %s | Subject: %s%n", from, subject);
         Assert.assertTrue(subject.toLowerCase(Locale.ROOT).contains(SUBJECT_NEEDLE),
                 "❌ Subject does not mention " + SUBJECT_NEEDLE + ". Got: " + subject);
 
@@ -255,31 +187,27 @@ public class Phase1SmokeTests extends BaseTest {
 
         Assert.assertTrue(body.toLowerCase(Locale.ROOT).contains(CTA_TEXT.toLowerCase(Locale.ROOT)),
                 "❌ Email body missing CTA text '" + CTA_TEXT + "'.");
+
         String ctaHref = MailSlurpUtils.extractLinkByAnchorText(email, CTA_TEXT);
         if (ctaHref == null) ctaHref = MailSlurpUtils.extractFirstLink(email);
         Assert.assertNotNull(ctaHref, "❌ Could not find a link in the email.");
+
         System.out.println("🔗 CTA link: " + ctaHref);
         Assert.assertTrue(ctaHref.contains("sendgrid.net") || ctaHref.contains("tilt365"),
                 "❌ CTA link host unexpected: " + ctaHref);
     }
-
-    // --- helpers used by other tests in this class ---
 
     /** Null-safe string helper for logs/asserts. */
     private static String safe(String s) {
         return s == null ? "" : s;
     }
 
-
-
-
-
     /**
-     * TC-2: Store access-token after login
+     * TC-2: Store access-token after login.
      * Verify that the frontend stores the access-token securely after a successful login (e.g., in memory or secure storage).
      */
     @Test(groups = "ui-only")
-    public void testStoreAccessTokenAfterLogin() throws InterruptedException {
+    public void testStoreAccessTokenAfterLogin() {
         // --- Config / expected ---
         final String USER_EMAIL = System.getProperty("USER_EMAIL", "erodriguez+a@effectussoftware.com");
         final String USER_ROLE  = System.getProperty("USER_ROLE",  "practitioner");
@@ -320,10 +248,6 @@ public class Phase1SmokeTests extends BaseTest {
         long exp = payload.optLong("exp", 0L);
         Assert.assertTrue(exp > now, "JWT already expired (exp <= now)");
 
-        // if your backend sets these, assert them (safe optString/optLong)
-        // Assert.assertEquals(payload.optString("iss"), "https://tilt365.com", "Issuer mismatch");
-        // Assert.assertEquals(payload.optString("aud"), "tilt-dashboard", "Audience mismatch");
-
         // --- 4) Validate redux-persist root ---
         String persistRoot = (String) ((JavascriptExecutor) driver())
                 .executeScript("return window.localStorage.getItem('persist:root');");
@@ -349,13 +273,12 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertEquals(userJson.optInt("id"),       USER_ID,    "Persisted user id mismatch");
     }
 
-
     /**
-     * TC-3: Redirect unauthorized users to login page
+     * TC-3: Redirect unauthorized users to login page.
      * Ensure the frontend redirects the user to the login page when an invalid or expired token is detected.
      */
     @Test(groups = "ui-only")
-    public void testRedirectUnauthorizedUsersToLoginPage() throws InterruptedException {
+    public void testRedirectUnauthorizedUsersToLoginPage() {
         final String USER_EMAIL = System.getProperty("USER_EMAIL", "erodriguez+a@effectussoftware.com");
         final String USER_PASS  = System.getProperty("USER_PASS",  "Password#1");
         final String LOGIN_PATH = "/auth/sign-in";
@@ -383,14 +306,12 @@ public class Phase1SmokeTests extends BaseTest {
         // 3) Hit a protected route to trigger guards (route-change & API call)
         driver().navigate().to(joinUrl(Config.getBaseUrl(), PROTECTED));
 
-
         // 4) Wait for redirect
         WebDriverWait wait = new WebDriverWait(driver(), Duration.ofSeconds(10));
         boolean redirected = wait.until(d ->
                 d.getCurrentUrl().contains(LOGIN_PATH)
         );
         Assert.assertTrue(redirected, "User was not redirected to login page after token invalidation");
-
 
         // 5) Sanity: verify key login UI is visible
         boolean loginFormVisible = new WebDriverWait(driver(), Duration.ofSeconds(10)).until(d -> {
@@ -404,11 +325,11 @@ public class Phase1SmokeTests extends BaseTest {
 
 
     /**
-     * TC-4: Generate access-token on successful login
+     * TC-4: Generate access-token on successful login.
      * Verify that an access-token is issued upon successful login with valid credentials.
      */
     @Test(groups = "ui-only")
-    public void testGenerateAccessTokenOnSuccessfu0lLogin() throws InterruptedException {
+    public void testGenerateAccessTokenOnSuccessfu0lLogin() {
         // Step 1: Login
         LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
@@ -416,8 +337,7 @@ public class Phase1SmokeTests extends BaseTest {
         DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
 
         Assert.assertTrue(dashboardPage.isLoaded(), "Dashboard page did not load after login");
-        new WebDriverWait(driver(), Duration.ofSeconds(10))
-                .until(d -> dashboardPage.isLoaded());
+        new WebDriverWait(driver(), Duration.ofSeconds(10)).until(d -> dashboardPage.isLoaded());
 
         // Step 2: Access JWT from localStorage
         JavascriptExecutor js = (JavascriptExecutor) driver();
@@ -425,12 +345,13 @@ public class Phase1SmokeTests extends BaseTest {
 
         // Step 3: Basic validations
         Assert.assertNotNull(jwt, "Access token (jwt) was not generated after login");
-        Assert.assertTrue(jwt.split("\\.").length == 3, "JWT format is invalid (should be header.payload.signature)");
+        Assert.assertEquals(jwt.split("\\.").length, 3, "JWT format is invalid (should be header.payload.signature)");
     }
 
 
+
     /**
-     * TC-5: Access-token is not generated on failed login
+     * TC-5: Access-token is not generated on failed login.
      * Verify that login attempts with invalid credentials do not produce a token.
      */
     @Test(groups = "ui-only")
@@ -452,16 +373,17 @@ public class Phase1SmokeTests extends BaseTest {
         String jwt = (String) js.executeScript("return window.localStorage.getItem('jwt');");
         Assert.assertTrue(jwt == null || jwt.isEmpty(), "JWT was generated even though login failed");
 
-        Thread.sleep(5000); // Wait for any potential UI updates
+        Thread.sleep(500); // small buffer for UI updates
     }
 
 
+
     /**
-     * TC-6: Login success redirects user
+     * TC-6: Login success redirects user.
      * Upon successful OTP entry, redirect user to their dashboard or home screen.
      */
     @Test(groups = "ui-only")
-    public void testLoginSuccessRedirectsUser() throws InterruptedException {
+    public void testLoginSuccessRedirectsUser() {
         // Step 1: Navigate to login page
         LoginPage loginPage = new LoginPage(driver());
         loginPage.navigateTo();
@@ -471,8 +393,7 @@ public class Phase1SmokeTests extends BaseTest {
         DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
 
         // Wait for the dashboard to load
-        new WebDriverWait(driver(), Duration.ofSeconds(10))
-                .until(d -> dashboardPage.isLoaded());
+        new WebDriverWait(driver(), Duration.ofSeconds(10)).until(d -> dashboardPage.isLoaded());
 
         // Step 3: Verify the user was redirected to the dashboard
         new WebDriverWait(driver(), Duration.ofSeconds(10))
@@ -490,8 +411,7 @@ public class Phase1SmokeTests extends BaseTest {
 
 
     /**
-     * TC-7: Redirect user appropriately post-login
-     * Redirect user appropriately post-login.
+     * TC-7: Redirect user appropriately post-login.
      */
     @Test(groups = "ui-only")
     public void testRedirectUserAppropriatelyPostLogin() throws InterruptedException {
@@ -502,7 +422,7 @@ public class Phase1SmokeTests extends BaseTest {
 
         // Perform Login with valid credentials
         DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
-        Thread.sleep(5000);
+        Thread.sleep(500);
 
         // Wait for the dashboard to load
         boolean isOnDashboard = dashboardPage.isLoaded();
@@ -517,9 +437,8 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(userName.contains("Emiliano"), "User name not displayed correctly on dashboard.");
     }
 
-
     /**
-     * TC-9: Show email input field on login screen
+     * TC-9: Show email input field on login screen.
      * Ensure user sees a field to enter their email.
      */
     @Test(groups = "ui-only")
@@ -534,9 +453,8 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(isEmailVisible, "Email input field is not visible on the login screen.");
     }
 
-
     /**
-     * TC-10: Redirect to dashboard on successful login
+     * TC-10: Redirect to dashboard on successful login.
      * After password is successfully verified, redirect the user to the dashboard page.
      */
     @Test(groups = "ui-only")
@@ -555,4 +473,12 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(currentUrl.contains("/dashboard"), "User was not redirected to the dashboard.");
     }
 
+
+
+
+
+
+
+
+    
 }

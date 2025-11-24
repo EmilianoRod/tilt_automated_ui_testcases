@@ -10,6 +10,7 @@ import org.openqa.selenium.support.ui.ExpectedCondition;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
+import pages.menuPages.ResourcesPage;
 
 import java.io.File;
 import java.io.IOException;
@@ -39,13 +40,16 @@ public abstract class BasePage {
     );
 
     // ---------- ctor ----------
+// ---------- ctor ----------
     public BasePage(WebDriver driver) {
         if (driver == null) {
             throw new IllegalArgumentException("❌ WebDriver is NULL for " + getClass().getSimpleName());
         }
         this.driver = driver;
-        this.wait   = new WaitUtils(driver, Config.getTimeout());
+        // ✅ just pass the Duration directly
+        this.wait = new WaitUtils(driver, Config.getTimeout());
     }
+
 
     // ======================================================================
     // Purchase-for banner (used by many pages)
@@ -352,4 +356,27 @@ public abstract class BasePage {
         Matcher m = Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE).matcher(text);
         return m.find() ? m.group() : "";
     }
+
+
+
+    /**
+     * Each concrete page must implement its own "wait until loaded" behavior.
+     * Returning `this` enables fluent chaining in page classes.
+     */
+    public abstract BasePage waitUntilLoaded();
+
+    /**
+     * Generic "isLoaded" check using the page-specific waitUntilLoaded().
+     * If the wait passes, we consider the page loaded; if it throws, we return false.
+     */
+    public boolean isLoaded() {
+        try {
+            waitUntilLoaded();
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+
 }

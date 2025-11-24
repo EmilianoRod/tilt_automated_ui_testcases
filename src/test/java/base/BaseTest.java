@@ -2,13 +2,13 @@ package base;
 
 import Utils.Config;
 import Utils.MailSlurpUtils;
-import com.mailslurp.clients.ApiException;
 import com.mailslurp.models.InboxDto;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.*;
-import org.openqa.selenium.logging.LogEntry;
-import org.openqa.selenium.logging.LogType;
+import org.openqa.selenium.HasCapabilities;
+import org.openqa.selenium.remote.CapabilityType;
+import org.openqa.selenium.Capabilities;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.ITestResult;
 import org.testng.SkipException;
@@ -16,273 +16,385 @@ import org.testng.annotations.*;
 import pages.LoginPage;
 import pages.menuPages.DashboardPage;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.openqa.selenium.Dimension;
+import org.openqa.selenium.WrapsDriver;
 
 public class BaseTest {
 
-    protected static final Logger logger = LogManager.getLogger(BaseTest.class);
-
-    // Suite-scoped fixed inbox (resolved once, safe for all threads to read)
+    public static final Logger logger = LogManager.getLogger(BaseTest.class);
+    /** Suite-scoped inbox prepared in @BeforeSuite (if email-required). */
     protected static volatile InboxDto fixedInbox;
 
-    // Track per-test duration (thread-safe for parallel)
     private static final ThreadLocal<Long> START = new ThreadLocal<>();
 
-    // -------- Suite setup: MailSlurp context --------
+    // =========================================================
+    // SUITE INITIALIZATION
+    // =========================================================
     @BeforeSuite(alwaysRun = true)
     public void mailSlurpSuiteInit() {
-        System.setProperty("mailslurp.debug", System.getProperty("mailslurp.debug", "true"));
+        // Honor MAILSLURP_DEBUG/mailslurp.debug if present; default true for helpful logs
+        String msDebug = Config.getAny("mailslurp.debug", "MAILSLURP_DEBUG");
+        System.setProperty("mailslurp.debug", msDebug == null ? "true" : msDebug);
 
-        if (!isEmailRequiredForSuite()) {
-            logger.info("[MailSlurp][Suite] Email not required (mailslurp.required=false). Skipping inbox resolution.");
+        if (!isEmailRequiredForSuite() && !isMailSlurpForceOn()) {
+            logger.info("[MailSlurp][Suite] Email not required. Skipping inbox resolution.");
             fixedInbox = null;
             return;
         }
 
-        final String fixedIdRaw = Config.getAny("mailslurp.inboxId", "MAILSLURP_INBOX_ID");
-        final String fixedId = fixedIdRaw == null ? null : fixedIdRaw.trim();
-        final boolean allowCreate = Config.getMailSlurpAllowCreate();
-
-        logger.info("[MailSlurp][Suite] allowCreate={} | fixedIdPresent={}{}",
-                allowCreate,
-                (fixedId != null && !fixedId.isBlank()),
-                (fixedId != null ? " | idPrefix=" + fixedId.substring(0, Math.min(8, fixedId.length())) : "")
-        );
-
         try {
+            final String fixedIdRaw   = Config.getMailSlurpFixedInboxId();
+            final String fixedId      = fixedIdRaw == null ? null : fixedIdRaw.trim();
+            final boolean allowCreate = Config.getMailSlurpAllowCreate();
+
+            logger.info("[MailSlurp][Suite] allowCreate={} | fixedIdPresent={}{}",
+                    allowCreate,
+                    (fixedId != null && !fixedId.isBlank()),
+                    (fixedId != null ? " | idPrefix=" + fixedId.substring(0, Math.min(8, fixedId.length())) : "")
+            );
+
             if (fixedId != null && !fixedId.isBlank()) {
                 fixedInbox = MailSlurpUtils.getInboxById(UUID.fromString(fixedId));
-                if (fixedInbox == null) {
-                    logger.warn("[MailSlurp][Suite] getInboxById returned null for id: {} — proceeding without inbox.", fixedId);
-                    fixedInbox = null;
-                    return;
+                if (fixedInbox != null) {
+                    logger.info("[MailSlurp][Suite] Using fixed inbox {} <{}>",
+                            fixedInbox.getId(), fixedInbox.getEmailAddress());
+                    MailSlurpUtils.clearInboxEmails(fixedInbox.getId());
                 }
-
-                logger.info("[MailSlurp][Suite] Using fixed inbox {} <{}>", fixedInbox.getId(), fixedInbox.getEmailAddress());
-                System.setProperty("mailslurp.inboxId", fixedInbox.getId().toString());
-                System.setProperty("MAILSLURP_INBOX_ID", fixedInbox.getId().toString());
-
-                try { MailSlurpUtils.clearInboxEmails(fixedInbox.getId()); }
-                catch (Exception e) { logger.warn("[MailSlurp][Suite] Could not clear inbox emails: {}", e.getMessage()); }
-            } else if (allowCreate) {
+            } else if (allowCreate || isMailSlurpForceOn()) {
                 fixedInbox = MailSlurpUtils.resolveFixedOrCreateInbox();
-                if (fixedInbox == null) {
-                    logger.warn("[MailSlurp][Suite] resolveFixedOrCreateInbox returned null (creation blocked/quota?) — proceeding without inbox.");
-                    return;
+                if (fixedInbox != null) {
+                    logger.info("[MailSlurp][Suite] Created or resolved inbox {} <{}>",
+                            fixedInbox.getId(), fixedInbox.getEmailAddress());
                 }
-
-                logger.info("[MailSlurp][Suite] Resolved/created inbox {} <{}>", fixedInbox.getId(), fixedInbox.getEmailAddress());
-                System.setProperty("mailslurp.inboxId", fixedInbox.getId().toString());
-                System.setProperty("MAILSLURP_INBOX_ID", fixedInbox.getId().toString());
             } else {
-                logger.warn("[MailSlurp][Suite] No fixed inbox configured and creation disabled. Proceeding without inbox.");
+                logger.warn("[MailSlurp][Suite] No fixed inbox and creation disabled.");
                 fixedInbox = null;
             }
-        } catch (IllegalArgumentException e) {
-            logger.warn("[MailSlurp][Suite] MAILSLURP_INBOX_ID is not a valid UUID: {} — proceeding without inbox.", fixedId);
-            fixedInbox = null;
-        } catch (ApiException e) {
-            if (e.getCode() == 404)       logger.warn("[MailSlurp][Suite] Fixed inbox not found: {} — proceeding without inbox.", fixedId);
-            else if (e.getCode() == 426)  logger.warn("[MailSlurp][Suite] CreateInbox quota exhausted (426). Provide MAILSLURP_INBOX_ID or upgrade quota. Proceeding without inbox.");
-            else                          logger.warn("[MailSlurp][Suite] MailSlurp API error ({}): {} — proceeding without inbox.", e.getCode(), e.getMessage());
-            fixedInbox = null;
+
         } catch (Exception e) {
-            logger.warn("[MailSlurp][Suite] Unexpected error resolving inbox: {}: {} — proceeding without inbox.",
-                    e.getClass().getSimpleName(), e.getMessage());
+            logger.warn("[MailSlurp][Suite] MailSlurp unavailable: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             fixedInbox = null;
         }
     }
 
-    // -------- Per-test setup --------
+    // =========================================================
+    // TEST SETUP
+    // =========================================================
     @BeforeMethod(alwaysRun = true)
     public void setUp(Method method) {
         final String adminEmail = Config.getAdminEmail();
         final String adminPass  = Config.getAdminPassword();
         if (adminEmail == null || adminEmail.isBlank() || adminPass == null || adminPass.isBlank()) {
-            throw new SkipException("[Config] Admin credentials are not set (admin.email/ADMIN_EMAIL/ADMIN_USER and admin.password/ADMIN_PASSWORD/ADMIN_PASS).");
+            throw new SkipException("[Config] Admin credentials missing (ADMIN_EMAIL / ADMIN_PASSWORD).");
         }
 
-        if (isEmailRequiredForTest(method) && isEmailRequiredForSuite() && fixedInbox == null) {
-            throw new SkipException("[BaseTest][Guard] fixedInbox is null before test " + method.getName()
-                    + " (email required; set mailslurp.inboxId or enable mailslurp.allowCreate)");
+        final boolean emailRequired = isEmailRequiredForTest(method);
+        if (emailRequired && fixedInbox == null && !isMailSlurpForceOn()) {
+            throw new SkipException("[MailSlurp][Guard] fixedInbox is null and no force flag set for test: " + method.getName());
         }
 
-        // 1) Thread-safe driver
+        if (!emailRequired && !isMailSlurpForceOn()) {
+            logger.info("[MailSlurp][TestCtx] Email not required for this test (group=ui-only).");
+        } else {
+            logger.info("[MailSlurp][TestCtx] Inbox active: {} <{}>",
+                    fixedInbox != null ? fixedInbox.getId() : "(none)",
+                    fixedInbox != null ? fixedInbox.getEmailAddress() : "(unset)");
+        }
+
+        // ---------- Env health log (pre-driver) ----------
+        String baseUrl = Config.getBaseUrl();
+        boolean headless = Config.isHeadless();
+        String chromeBin = Config.getChromeBinaryPath();
+        String wdmBrowserVersion = Config.getAny("wdm.browserVersion", "WDM_BROWSER_VERSION");
+        Duration timeout = Config.getTimeout();
+
+        logger.info(
+                "[Env] BASE_URL={} | HEADLESS={} | CHROME_BIN={} | WDM_BROWSER_VERSION={} | TIMEOUT={}s",
+                baseUrl,
+                headless,
+                (chromeBin == null || chromeBin.isBlank() ? "(auto)" : chromeBin),
+                (wdmBrowserVersion == null || wdmBrowserVersion.isBlank() ? "(auto)" : wdmBrowserVersion),
+                timeout.toSeconds()
+        );
+
+        // --- WebDriver: one per thread via ThreadLocal ---
         DriverManager.init();
+        WebDriver d = driver();
 
-        // 2) Deterministic timeouts (implicit=0; explicit waits only)
-        driver().manage().timeouts().implicitlyWait(Duration.ZERO);
-        driver().manage().timeouts().pageLoadTimeout(Duration.ofSeconds(Math.max(60, Config.getTimeout() * 2L)));
-        driver().manage().timeouts().scriptTimeout(Duration.ofSeconds(Math.max(30, Config.getTimeout())));
+        d.manage().timeouts().implicitlyWait(Duration.ZERO);
 
-        // 3) Fresh session
-        clearCookiesAndStorage(driver());
+        // Log detected browser/version after driver init
+        try {
+            Capabilities caps = null;
 
-        // 4) Normalized viewport
-        normalizeViewport(driver());
+            if (d instanceof HasCapabilities) {
+                caps = ((HasCapabilities) d).getCapabilities();
+            } else if (d instanceof WrapsDriver) {
+                WebDriver wd = ((WrapsDriver) d).getWrappedDriver();
+                if (wd instanceof HasCapabilities) {
+                    caps = ((HasCapabilities) wd).getCapabilities();
+                }
+            }
+
+            if (caps != null) {
+                String browserName    = String.valueOf(caps.getBrowserName());
+                String browserVersion = String.valueOf(caps.getBrowserVersion());
+                Object plStrategy     = caps.getCapability(CapabilityType.PAGE_LOAD_STRATEGY);
+                Object platformName   = caps.getCapability("platformName");
+                Object insecureCerts  = caps.getCapability("acceptInsecureCerts");
+
+                logger.info("[Driver] {} {} | pageLoadStrategy={} | platformName={} | acceptInsecureCerts={}",
+                        browserName,
+                        browserVersion,
+                        plStrategy == null ? "default" : plStrategy,
+                        platformName,
+                        insecureCerts);
+            } else {
+                logger.debug("[Driver] Capabilities not available (no HasCapabilities on driver or wrapped driver).");
+            }
+        } catch (Throwable t) {
+            logger.debug("[Driver] Could not read capabilities: {}", t.getMessage());
+        }
+
+        // Timeouts (explicit waits should be preferred in tests)
+        Duration base     = timeout;
+        Duration pageLoad = max(Duration.ofSeconds(30), base.plusSeconds(20));
+        Duration script   = max(Duration.ofSeconds(30), base);
+
+        d.manage().timeouts().pageLoadTimeout(pageLoad);
+        d.manage().timeouts().scriptTimeout(script);
+
+        // Clean state + normalize viewport
+        clearCookiesAndStorage(d);
+        normalizeViewport(d);
 
         START.set(System.currentTimeMillis());
-        logger.info("========== STARTING TEST: {} ==========", method.getName());
-        if (isEmailRequiredForTest(method) && isEmailRequiredForSuite() && fixedInbox != null) {
-            logger.info("[MailSlurp][TestCtx] Inbox {} <{}>", fixedInbox.getId(), fixedInbox.getEmailAddress());
-        } else {
-            logger.info("[MailSlurp][TestCtx] Email not required for this test.");
-        }
+        logger.info("========== STARTING TEST: {} (admin={}) ==========",
+                method.getName(), maskEmail(adminEmail));
     }
 
-    // -------- Per-test teardown --------
+    // =========================================================
+    // TEARDOWN
+    // =========================================================
     @AfterMethod(alwaysRun = true)
     public void tearDown(ITestResult result) {
-        long elapsed = 0L;
-        Long s = START.get();
-        if (s != null) elapsed = System.currentTimeMillis() - s;
+        Long st = START.get();
+        double secs = st == null ? 0.0 : (System.currentTimeMillis() - st) / 1000.0;
+        logger.info("========== FINISHED TEST: {} ({}s) ==========",
+                result.getMethod().getMethodName(), secs);
 
         try {
-            if (result.getStatus() == ITestResult.SKIP && result.getThrowable() != null) {
-                logger.warn("⤴️  SKIP REASON: {}", result.getThrowable().getMessage());
-            }
-
-            if (!result.isSuccess() && DriverManager.isInitialized()) {
-                // Unique artifact directory per test execution
-                String klass = result.getTestClass() != null ? result.getTestClass().getName() : "unknownClass";
-                String method = result.getMethod() != null ? result.getMethod().getMethodName() : result.getName();
-                String stamp = System.currentTimeMillis() + "-t" + Thread.currentThread().getId();
-                Path outDir = Paths.get("target", "artifacts", sanitize(klass + "." + method + "-" + stamp));
-                Files.createDirectories(outDir);
-
-                // 1) Screenshot
-                try {
-                    byte[] png = ((TakesScreenshot) driver()).getScreenshotAs(OutputType.BYTES);
-                    safeWrite(outDir.resolve("screenshot.png"), png);
-                    logger.info("📸 Saved screenshot for {}", result.getName());
-                } catch (Exception e) {
-                    logger.warn("⚠️ Could not capture screenshot: {}", e.getMessage());
-                }
-
-                // 2) Current URL & HTML
-                try {
-                    safeWriteString(outDir.resolve("url.txt"), safeCurrentUrl(driver()));
-                    String html = (String) ((JavascriptExecutor) driver()).executeScript("return document.documentElement.outerHTML;");
-                    safeWriteString(outDir.resolve("page.html"), html);
-                    logger.info("🧾 Saved page HTML and URL for {}", result.getName());
-                } catch (Exception e) {
-                    logger.warn("⚠️ Could not save page HTML/URL: {}", e.getMessage());
-                }
-
-                // 3) Browser console logs
-                try {
-                    String browserLog = driver().manage().logs().get(LogType.BROWSER).getAll()
-                            .stream()
-                            .map(e -> String.format("[%s] %s", e.getLevel(), e.getMessage()))
-                            .collect(Collectors.joining(System.lineSeparator()));
-                    safeWriteString(outDir.resolve("browser.log"), browserLog);
-                    logger.info("🧾 Saved browser logs for {}", result.getName());
-                } catch (Exception e) {
-                    logger.warn("⚠️ Could not capture browser logs: {}", e.getMessage());
-                }
-
-                // 4) Performance logs (if available)
-                try {
-                    if (driver().manage().logs().getAvailableLogTypes().contains(LogType.PERFORMANCE)) {
-                        String perfLog = driver().manage().logs().get(LogType.PERFORMANCE).getAll()
-                                .stream()
-                                .map(LogEntry::getMessage)
-                                .collect(Collectors.joining(System.lineSeparator()));
-                        safeWriteString(outDir.resolve("performance.jsonl"), perfLog);
-                        logger.info("📡 Saved performance logs for {}", result.getName());
-                    } else {
-                        logger.warn("⚠️ Log type 'performance' not available");
-                    }
-                } catch (Exception e) {
-                    logger.warn("⚠️ Could not capture performance logs: {}", e.getMessage());
-                }
-            }
-        } catch (Exception e) {
-            logger.error("❌ Error while collecting teardown diagnostics: {}", e.getMessage(), e);
-        } finally {
-            switch (result.getStatus()) {
-                case ITestResult.FAILURE -> logger.error("❌ TEST FAILED: {} ({} ms)", result.getName(), elapsed);
-                case ITestResult.SKIP    -> logger.warn("⚠️ TEST SKIPPED: {} ({} ms)", result.getName(), elapsed);
-                default                  -> logger.info("✅ TEST PASSED: {} ({} ms)", result.getName(), elapsed);
-            }
             if (DriverManager.isInitialized()) {
-                try { DriverManager.quit(); }
-                finally { logger.info("Browser closed successfully."); }
+                WebDriver d = DriverManager.get();
+                try {
+                    if (result.getStatus() == ITestResult.FAILURE) {
+                        takeScreenshot(d, result.getMethod().getMethodName());
+                    }
+                } finally {
+                    DriverManager.quit();
+                }
             }
-            START.remove();
+        } catch (Throwable t) {
+            logger.warn("[Teardown] Suppressed exception during cleanup: {}", t.getMessage());
         }
     }
 
-    // ========================================================================
-    // Public helper: start a brand-new authenticated session for tests
-    // ========================================================================
-    /** Hard reset of browser session and authenticate as admin, returns a loaded DashboardPage. */
+    // =========================================================
+    // PUBLIC SESSION HELPERS
+    // =========================================================
     public static DashboardPage startFreshSession(WebDriver driver) {
-        if (driver == null) throw new SkipException("[BaseTest] WebDriver is null.");
+        return startFreshSession(driver, 3); // 3 attempts for transient issues
+    }
+
+    public static DashboardPage startFreshSession(WebDriver driver, int maxAttempts) {
+        if (driver == null) {
+            throw new SkipException("[BaseTest] WebDriver is null.");
+        }
 
         final String baseUrl   = Config.getAny("base.url", "BASE_URL", "APP_BASE_URL", "BASEURL");
         final String adminUser = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
         final String adminPass = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
 
-        if (baseUrl == null || baseUrl.isBlank())
-            throw new SkipException("[Config] BASE_URL missing (base.url/BASE_URL/APP_BASE_URL).");
-        if (adminUser == null || adminUser.isBlank() || adminPass == null || adminPass.isBlank())
-            throw new SkipException("[Config] Admin credentials are not set.");
-
-        clearCookiesAndStorage(driver);
-        robustGet(driver, baseUrl, 2, Duration.ofSeconds(20));
-        clearStorageOnly(driver);
-        clearCookiesOnly(driver);
-
-        normalizeViewport(driver);
-
-        robustGet(driver, baseUrl + "/auth/sign-in", 2, Duration.ofSeconds(20));
-        LoginPage login = new LoginPage(driver);
-        DashboardPage dashboard = login.safeLoginAsAdmin(
-                adminUser,
-                adminPass,
-                Duration.ofSeconds(Math.max(10, Config.getTimeout()))
-        );
-
-        if (dashboard == null || !dashboard.isLoaded()) {
-            throw new SkipException("❌ Dashboard did not load after login with admin user: " + adminUser);
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new SkipException("[Config] BASE_URL missing.");
         }
-        return dashboard;
+        if (adminUser == null || adminUser.isBlank() || adminPass == null || adminPass.isBlank()) {
+            throw new SkipException("[Config] Admin credentials missing.");
+        }
+
+        final Duration navTimeout   = Config.getTimeout().compareTo(Duration.ofSeconds(20)) > 0
+                ? Config.getTimeout()
+                : Duration.ofSeconds(20);
+        final Duration loginTimeout = Config.getTimeout().compareTo(Duration.ofSeconds(10)) > 0
+                ? Config.getTimeout()
+                : Duration.ofSeconds(10);
+
+        Throwable lastError = null;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                logger.info("[BaseTest] Starting fresh session attempt {}/{} at {}",
+                        attempt, maxAttempts, baseUrl);
+
+                // 1) Hard reset browser session
+                clearCookiesAndStorage(driver);
+                normalizeViewport(driver);
+
+                // 2) Go straight to sign-in
+                String signInUrl = baseUrl.endsWith("/")
+                        ? baseUrl + "auth/sign-in"
+                        : baseUrl + "/auth/sign-in";
+
+                logger.info("[BaseTest] Navigating to sign-in: {}", signInUrl);
+                robustGet(driver, signInUrl, /*retries*/ 2, navTimeout);
+
+                // 3) Perform login
+                LoginPage login = new LoginPage(driver);
+                DashboardPage dashboard = login.safeLoginAsAdmin(adminUser, adminPass, loginTimeout);
+
+                if (dashboard != null && dashboard.isLoaded()) {
+                    logger.info("[BaseTest] Login successful as {} on attempt {}", adminUser, attempt);
+                    return dashboard;
+                }
+
+                String msg = String.format(
+                        "[BaseTest] Dashboard not loaded after login (attempt %d/%d, user=%s)",
+                        attempt, maxAttempts, adminUser
+                );
+                logger.warn(msg);
+                lastError = new RuntimeException(msg);
+
+            } catch (TimeoutException e) {
+                lastError = e;
+                logger.warn("[BaseTest] Timeout Exception during startFreshSession attempt {}/{}: {}",
+                        attempt, maxAttempts, e.toString());
+            } catch (WebDriverException e) {
+                lastError = e;
+                logger.warn("[BaseTest] WebDriverException Exception during startFreshSession attempt {}/{}: {}",
+                        attempt, maxAttempts, e.toString());
+            }
+
+            // Small backoff between attempts (optional)
+            try {
+                Thread.sleep(1500L);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+
+        // If we exhausted all attempts, treat as real failure (not skip)
+        String failMsg = "❌ Unable to start fresh session and reach Dashboard after "
+                + maxAttempts + " attempts for user " + adminUser;
+        logger.error(failMsg, lastError);
+        throw new AssertionError(failMsg, lastError);
     }
 
-    // ========================================================================
-    // Internal utilities
-    // ========================================================================
 
-    /** Quick accessor to the current thread's driver. */
+    public static DashboardPage startFreshSession() {
+        return startFreshSession(driver());
+    }
+
+    public static InboxDto getSuiteInbox() {
+        return fixedInbox;
+    }
+
+    public static InboxDto requireInboxOrSkip() {
+        if (fixedInbox == null) {
+            throw new SkipException("[MailSlurp] Suite inbox not available. " +
+                    "Ensure MAILSLURP_API_KEY is set and either MAILSLURP_INBOX_ID provided " +
+                    "or mailslurp.allowCreate=true (or set MAILSLURP_FORCE=true).");
+        }
+        return fixedInbox;
+    }
+
+    // =========================================================
+    // INTERNAL UTILITIES
+    // =========================================================
     protected static WebDriver driver() {
         return DriverManager.get();
     }
 
-    /** Robust navigation with retry + DOM ready check + window.stop() fallback. */
-    private static void robustGet(WebDriver driver, String url, int maxAttempts, Duration domReadyTimeout) {
+    /**
+     * Navigate to the given URL with retries and a DOM-ready wait.
+     * Retries only on transient WebDriver issues; bails out early if the session/window is invalid.
+     */
+    private static void robustGet(WebDriver driver, String url, int maxAttempts, Duration timeout) {
+        if (driver == null) {
+            throw new IllegalArgumentException("WebDriver is null in robustGet()");
+        }
+
+        int attempts = Math.max(1, maxAttempts);
         RuntimeException last = null;
-        for (int i = 1; i <= Math.max(1, maxAttempts); i++) {
+
+        for (int attempt = 1; attempt <= attempts; attempt++) {
             try {
+                logger.info("[robustGet] Attempt {}/{} → {}", attempt, attempts, url);
+
                 driver.navigate().to(url);
-                waitForDomInteractiveOrComplete(driver, domReadyTimeout);
+
+                // Wait until DOM is at least 'interactive' or 'complete'
+                waitForDomInteractiveOrComplete(driver, timeout);
+
+                logger.info("[robustGet] Successfully loaded: {}", driver.getCurrentUrl());
                 return;
+
             } catch (WebDriverException e) {
-                last = e instanceof RuntimeException ? (RuntimeException) e : new RuntimeException(e);
-                try { ((JavascriptExecutor) driver).executeScript("try{window.stop()}catch(e){}"); } catch (Exception ignore) {}
-                try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+                // Some WebDriverExceptions mean the session/window is unusable. Don't bother retrying.
+                if (e instanceof org.openqa.selenium.NoSuchWindowException ||
+                        e instanceof org.openqa.selenium.SessionNotCreatedException ||
+                        e instanceof org.openqa.selenium.NoSuchSessionException) {
+
+                    String msg = String.format(
+                            "[robustGet] Non-recoverable WebDriverException on attempt %d/%d for '%s': %s",
+                            attempt, attempts, url, e);
+                    logger.error(msg, e);
+                    throw new RuntimeException(msg, e);
+                }
+
+                String msg = String.format(
+                        "[robustGet] Transient WebDriverException on attempt %d/%d for '%s': %s",
+                        attempt, attempts, url, e);
+                logger.warn(msg, e);
+                last = new RuntimeException(msg, e);
+
+                // Try to stop the current load
+                try {
+                    ((JavascriptExecutor) driver).executeScript("try{window.stop()}catch(e){}");
+                } catch (Exception ignore) {
+                    // ignore
+                }
+
+                // Exponential backoff: 500ms, 1000ms, 1500ms, ...
+                long sleepMs = 500L * attempt;
+                try {
+                    Thread.sleep(sleepMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    logger.warn("[robustGet] Interrupted during backoff; aborting retries.");
+                    throw last;
+                }
             }
         }
-        if (last != null) throw last;
+
+        if (last != null) {
+            logger.error("[robustGet] Exhausted {} attempts for URL: {}", attempts, url, last);
+            throw last;
+        } else {
+            String msg = "[robustGet] Failed without capturing any exception for URL: " + url;
+            logger.error(msg);
+            throw new RuntimeException(msg);
+        }
     }
 
-    /** Wait for document.readyState ∈ {interactive, complete}. */
+
     private static void waitForDomInteractiveOrComplete(WebDriver driver, Duration timeout) {
         new WebDriverWait(driver, timeout).until(d -> {
             try {
@@ -292,25 +404,24 @@ public class BaseTest {
         });
     }
 
-    /** Delete cookies + clear local/session storage. Safe best-effort. */
     private static void clearCookiesAndStorage(WebDriver driver) {
-        clearCookiesOnly(driver);
-        clearStorageOnly(driver);
-    }
+        if (driver == null) return;
 
-    private static void clearCookiesOnly(WebDriver driver) {
-        try { driver.manage().deleteAllCookies(); } catch (Exception ignored) {}
-    }
+        try {
+            driver.manage().deleteAllCookies();
+        } catch (Exception e) {
+            logger.debug("[clearCookiesAndStorage] Failed to delete cookies: {}", e.toString());
+        }
 
-    private static void clearStorageOnly(WebDriver driver) {
         try {
             ((JavascriptExecutor) driver).executeScript(
-                    "try{localStorage.clear()}catch(e){}; try{sessionStorage.clear()}catch(e){};"
-            );
-        } catch (Exception ignored) {}
+                    "try{localStorage.clear()}catch(e){}; try{sessionStorage.clear()}catch(e){};");
+        } catch (Exception e) {
+            logger.debug("[clearCookiesAndStorage] Failed to clear local/session storage: {}", e.toString());
+        }
     }
 
-    /** Maximize, or fall back to a deterministic size (useful in headless). */
+
     private static void normalizeViewport(WebDriver driver) {
         try { driver.manage().window().maximize(); }
         catch (Exception e) {
@@ -319,32 +430,36 @@ public class BaseTest {
         }
     }
 
-    private static String safeCurrentUrl(WebDriver driver) {
-        try { return driver.getCurrentUrl(); }
-        catch (Exception e) { return "(no url available)"; }
+    private static Duration max(Duration a, Duration b) {
+        return (a.compareTo(b) >= 0) ? a : b;
     }
 
-    private static String sanitize(String name) {
-        return name == null ? "unknown" : name.replaceAll("[^A-Za-z0-9._-]", "_");
+    protected static String maskEmail(String email) {
+        if (email == null || email.isBlank()) return "(blank)";
+        int at = email.indexOf('@');
+        String user = at > -1 ? email.substring(0, at) : email;
+        String dom  = at > -1 ? email.substring(at) : "";
+        if (user.length() <= 2) return user.charAt(0) + "****" + dom;
+        return user.charAt(0) + "****" + user.charAt(user.length() - 1) + dom;
     }
 
-    private static void safeWrite(Path path, byte[] bytes) {
-        try { Files.write(path, bytes); } catch (Exception ignored) {}
+    // =========================================================
+    // MAILSLURP FLAGS & GUARDS
+    // =========================================================
+    private static boolean isMailSlurpForceOn() {
+        String raw = Config.getAny("mailslurp.force", "MAILSLURP_FORCE");
+        boolean on = raw != null && (raw.equalsIgnoreCase("true") || raw.equals("1") || raw.equalsIgnoreCase("yes"));
+        if (on) logger.info("[MailSlurp][Force] EMAIL CHECKS ENABLED globally via MAILSLURP_FORCE=true");
+        return on;
     }
 
-    private static void safeWriteString(Path path, String text) {
-        try { Files.write(path, (text == null ? "" : text).getBytes(StandardCharsets.UTF_8)); } catch (Exception ignored) {}
-    }
-
-    // =================== MailSlurp requirement switches ===================
-    /** Global switch via config: mailslurp.required=true|false (default true). */
     private static boolean isEmailRequiredForSuite() {
-        String raw = Utils.Config.getAny("mailslurp.required", "MAILSLURP_REQUIRED");
-        return raw == null || raw.isBlank() || Boolean.parseBoolean(raw); // default true
+        String raw = Config.getAny("mailslurp.required", "MAILSLURP_REQUIRED");
+        return raw == null || raw.isBlank() || Boolean.parseBoolean(raw);
     }
 
-    /** Per-test switch via TestNG groups: add groups={"ui-only"} to skip MailSlurp. */
     private static boolean isEmailRequiredForTest(Method m) {
+        if (isMailSlurpForceOn()) return true;
         org.testng.annotations.Test ann = m.getAnnotation(org.testng.annotations.Test.class);
         if (ann == null) return true;
         for (String g : ann.groups()) {
@@ -352,4 +467,76 @@ public class BaseTest {
         }
         return true;
     }
+
+    // =========================================================
+    // SCREENSHOT
+    // =========================================================
+    private static void takeScreenshot(WebDriver driver, String methodName) {
+        try {
+            Path dir = Paths.get("target", "screenshots");
+            Files.createDirectories(dir);
+            Path file = dir.resolve(methodName + ".png");
+            byte[] data = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
+            Files.write(file, data);
+            logger.info("[Screenshot] Saved: {}", file.toAbsolutePath());
+        } catch (Exception e) {
+            logger.warn("[Screenshot] Failed to capture: {}", e.getMessage());
+        }
+    }
+
+
+
+    public static String getChromeDownloadDir() {
+        return Paths.get("target/downloads").toAbsolutePath().toString();
+    }
+
+
+
+    protected Path waitForNewPdf(Path downloadDir,
+                                 Instant start,
+                                 Duration timeout) throws Exception {
+        return waitForNewFile(downloadDir, start, timeout, ".pdf");
+    }
+
+    protected Path waitForNewPng(Path downloadDir,
+                                 Instant start,
+                                 Duration timeout) throws Exception {
+        return waitForNewFile(downloadDir, start, timeout, ".png");
+    }
+
+    /**
+     * Generic file waiter: waits for a new file with the given extension.
+     */
+    protected Path waitForNewFile(Path downloadDir,
+                                  Instant start,
+                                  Duration timeout,
+                                  String extension) throws Exception {
+        final long end = System.currentTimeMillis() + timeout.toMillis();
+
+        while (System.currentTimeMillis() < end) {
+            try (var stream = Files.list(downloadDir)) {
+                Optional<Path> newest = stream
+                        .filter(p -> {
+                            try {
+                                return Files.isRegularFile(p)
+                                        && p.getFileName().toString().toLowerCase().endsWith(extension)
+                                        && Files.getLastModifiedTime(p).toMillis() >= start.toEpochMilli();
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        })
+                        .findFirst();
+
+                if (newest.isPresent()) {
+                    return newest.get();
+                }
+            } catch (Throwable ignored) {}
+
+            Thread.sleep(500);
+        }
+
+        return null;
+    }
+
+
 }

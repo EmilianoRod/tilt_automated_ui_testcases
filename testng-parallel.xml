@@ -1,12 +1,38 @@
 <!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
-<suite name="Smoke Parallel" parallel="methods" thread-count="3">
+<suite name="Smoke Parallel"
+       verbose="1"
+       preserve-order="true"
+       parallel="methods"
+       thread-count="4">
+
     <listeners>
         <listener class-name="listeners.TestListener"/>
         <listener class-name="listeners.RetryTransformer"/>
     </listeners>
+
     <test name="Smoke Tests (Parallel)">
+<!--        <groups>-->
+<!--            <run>-->
+<!--                <include name="smoke"/>-->
+<!--                <include name="ui-only"/>-->
+<!--            </run>-->
+<!--        </groups>-->
         <classes>
             <class name="tests.Phase1SmokeTests"/>
+            <class name="tests.individuals.IndividualsListTests"/>
+            <class name="tests.teams.TeamAssessmentPurchaseAndAssignment"/>
+            <class name="tests.ManualEntryValidationTests"/>
+            <class name="tests.TiltSmokeTest"/>
+            <class name="tests.purchases.PurchaseFlowTests"/>
+            <class name="tests.reports.ReportGenerationTests"/>
+            <class name="tests.shop.TtpRecipientSelectionTest"/>
+            <class name="tests.SignUpFlowTests.SignUpFlowTest"/>
+            <class name="tests.teams.TeamClimateTests"/>
+            <class name="tests.OrderPreviewCouponFlowTests"/>
+            <class name="tests.OrderPreviewSmokeTests"/>
+
+
+
             <!-- add more classes as needed -->
         </classes>
     </test>

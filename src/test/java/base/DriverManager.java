@@ -30,6 +30,13 @@ public class DriverManager {
         }
     }
 
+    public static void reinit() {
+        quit();
+        init();
+    }
+
+
+
     public static WebDriver peek() { return TL.get(); } // may be null
     public static boolean isInitialized() { return TL.get() != null; }
     public static WebDriver getOrInit() {
