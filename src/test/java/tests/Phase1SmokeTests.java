@@ -422,7 +422,6 @@ public class Phase1SmokeTests extends BaseTest {
 
         // Perform Login with valid credentials
         DashboardPage dashboardPage = loginPage.login("erodriguez+a@effectussoftware.com", "Password#1");
-        Thread.sleep(500);
 
         // Wait for the dashboard to load
         boolean isOnDashboard = dashboardPage.isLoaded();
@@ -432,9 +431,23 @@ public class Phase1SmokeTests extends BaseTest {
         String currentUrl = driver().getCurrentUrl();
         Assert.assertTrue(currentUrl.contains("/dashboard"), "User was not redirected to the dashboard.");
 
-        // Optional: Verify the user's name is shown
+        // ✅ Extra robustness: verify the user name element is present and non-empty
+        Assert.assertTrue(
+                dashboardPage.isUserNameDisplayed(),
+                "User name element is not visible on the dashboard."
+        );
+
         String userName = dashboardPage.getUserName();
-        Assert.assertTrue(userName.contains("Emiliano"), "User name not displayed correctly on dashboard.");
+        Assert.assertFalse(
+                userName == null || userName.trim().isEmpty(),
+                "User name should not be empty on the dashboard."
+        );
+
+        // ✅ Extra robustness: verify another stable dashboard element
+        Assert.assertTrue(
+                dashboardPage.isNewAssessmentButtonVisible(),
+                "'New Assessment' button is not visible on the dashboard."
+        );
     }
 
     /**

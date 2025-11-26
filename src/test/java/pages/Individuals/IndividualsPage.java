@@ -1,6 +1,7 @@
 package pages.Individuals;
 
 import Utils.Config;
+import Utils.WaitUtils;
 import api.ApiConfig;
 import api.BackendApi;
 import io.qameta.allure.Step;
@@ -21,6 +22,8 @@ import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.regex.Pattern;
+
+import static java.lang.Thread.sleep;
 
 public class IndividualsPage extends BasePage {
 
@@ -688,19 +691,65 @@ public class IndividualsPage extends BasePage {
         return true;
     }
 
+
     public void goToFirstPageIfPossible() {
-        if (!isPresent(pagination)) return;
-        List<WebElement> pages = driver.findElements(pageItems);
-        if (pages.isEmpty()) return;
+        // Only run when we're on Individuals and pagination exists
+        if (!isOnIndividuals() || !isPresent(pagination)) {
+            System.out.println("DEBUG[PAGINATION]: Not on Individuals or pagination missing; skipping goToFirstPageIfPossible()");
+            return;
+        }
 
-        WebElement firstLi = pages.get(0);
-        String cls = firstLi.getAttribute("class");
-        if (cls != null && cls.contains("ant-pagination-item-active")) return;
+        // 1) If "Previous" is disabled, we are already on page 1
+        if (isPresent(prevPageLi)) {
+            WebElement prev = driver.findElement(prevPageLi);
+            String prevCls = String.valueOf(prev.getAttribute("class"));
+            System.out.println("DEBUG[PAGINATION]: prevPageLi class = " + prevCls);
+            if (prevCls.contains("ant-pagination-disabled")) {
+                System.out.println("DEBUG[PAGINATION]: Already on first page (Prev disabled).");
+                return;
+            }
+        }
 
+        // 2) Locate the LI for page 1
+        List<WebElement> pages = driver.findElements(pageItems); // .ant-pagination-item
+        if (pages.isEmpty()) {
+            System.out.println("DEBUG[PAGINATION]: No numeric page items; nothing to do.");
+            return;
+        }
+
+        WebElement firstLi = pages.stream()
+                .filter(li -> {
+                    String cls = String.valueOf(li.getAttribute("class"));
+                    // either explicit "-1" or text "1"
+                    return cls.contains("ant-pagination-item-1")
+                            || "1".equals(li.getText().trim());
+                })
+                .findFirst()
+                .orElse(pages.get(0)); // fallback: first numeric
+
+        String cls = String.valueOf(firstLi.getAttribute("class"));
+        System.out.println("DEBUG[PAGINATION]: first page LI class = " + cls);
+
+        // If it's already active, nothing to do
+        if (cls.contains("ant-pagination-item-active")) {
+            System.out.println("DEBUG[PAGINATION]: Page 1 already active; no-op.");
+            return;
+        }
+
+        // 3) Click the anchor inside it and wait for refresh
         WebElement link = firstLi.findElement(By.tagName("a"));
-        link.click();
+        try {
+            link.click();
+        } catch (Exception e) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", link);
+        }
+
         waitForTableRefreshed();
     }
+
+
+
+
 
 
     /** Returns the highest numeric page shown in the pagination (fallback 1). */
@@ -893,7 +942,7 @@ public class IndividualsPage extends BasePage {
             if (isUserListedByEmail(emailLc)) {
                 return; // ✅ found
             }
-            try { Thread.sleep(sleepMs); }
+            try { sleep(sleepMs); }
             catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
         }
         throw new AssertionError("❌ User not found in Individuals after retries: " + emailLc);
@@ -1205,7 +1254,7 @@ public class IndividualsPage extends BasePage {
         boolean flipped = false;
         try {
             new Actions(driver).moveToElement(sw).pause(Duration.ofMillis(70)).click(sw).perform();
-            Thread.sleep(130); // let AntD apply aria/class
+            sleep(130); // let AntD apply aria/class
             // re-read in-place if menu still open
             flipped = readSwitchState(sw) == on;
         } catch (ElementNotInteractableException ignored) {
@@ -1223,7 +1272,7 @@ public class IndividualsPage extends BasePage {
                     WebElement swNow   = menuNow.findElement(autoReminderSwitchInOpenMenu());
 
                     ((JavascriptExecutor) driver).executeScript("arguments[0].click();", swNow);
-                    Thread.sleep(130);
+                    sleep(130);
                     flipped = readSwitchState(swNow) == on;
 
                     // Last-resort: click the switch handle only (prevents bubbling to the row)
@@ -1231,7 +1280,7 @@ public class IndividualsPage extends BasePage {
                         List<WebElement> handles = swNow.findElements(By.cssSelector(".ant-switch-handle"));
                         if (!handles.isEmpty()) {
                             ((JavascriptExecutor) driver).executeScript("arguments[0].click();", handles.get(0));
-                            Thread.sleep(130);
+                            sleep(130);
                             flipped = readSwitchState(swNow) == on;
                         }
                     }
@@ -1320,7 +1369,7 @@ public class IndividualsPage extends BasePage {
                     .get(0);
 
             // Allow short debounce for class/aria to settle
-            try { Thread.sleep(120); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            try { sleep(120); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
             return readSwitchState(sw) == on;
         } catch (TimeoutException | NoSuchElementException | StaleElementReferenceException e) {
             return false;
@@ -1963,7 +2012,7 @@ public class IndividualsPage extends BasePage {
         WebElement target = safe.isEmpty() ? modal : safe.get(0);
         target.click();
         // tiny pause to allow validation render (or rely on waits below)
-        try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+        try { sleep(150); } catch (InterruptedException ignored) {}
     }
 
     /** Returns true if the Edit info 'Save changes' button is enabled. */
@@ -2183,16 +2232,61 @@ public class IndividualsPage extends BasePage {
 
     /** Try go next; never throws. Returns true only if a refresh actually happened. */
     public boolean goToNextPageIfPossibleSafe() {
-        try {
-            // reuse your existing next-page method; only swallow its refresh timeout
-            boolean clicked = goToNextPageIfPossible(); // if this method itself can throw, wrap below
-            // if your goToNextPageIfPossible() doesn't call wait, do:
-            // boolean clicked = clickNextPageIfEnabled(); return clicked && waitForTableRefreshedSafe();
+        System.out.println("DEBUG[PAGINATION]: Checking if next page exists…");
 
-            // if it returned true but no refresh was detected (rare), normalize to false
-            if (!waitForTableRefreshedSafe()) return false;
-            return clicked;
-        } catch (org.openqa.selenium.TimeoutException ignore) {
+        try {
+            WebElement nextBtn = driver.findElement(nextPageBtn);
+
+            boolean disabled = !nextBtn.isEnabled() ||
+                    nextBtn.getAttribute("class").toLowerCase(Locale.ROOT).contains("disabled");
+
+            System.out.println("DEBUG[PAGINATION]: nextBtn exists? YES");
+            System.out.println("DEBUG[PAGINATION]: nextBtn enabled? " + nextBtn.isEnabled());
+            System.out.println("DEBUG[PAGINATION]: nextBtn disabled class? " + disabled);
+
+            if (disabled) {
+                System.out.println("DEBUG[PAGINATION]: next button disabled → STOP paginating.");
+                return false;
+            }
+
+            System.out.println("DEBUG[PAGINATION]: Clicking NEXT page");
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", nextBtn);
+
+            sleep(1200); // give time for table to update
+
+            int page = debugCurrentPage();
+            System.out.println("DEBUG[PAGINATION]: now on page " + page);
+
+            return true;
+
+        } catch (Exception e) {
+            System.out.println("DEBUG[PAGINATION]: ❌ nextBtn NOT found → STOP paginating.");
+            System.out.println("DEBUG[PAGINATION]: exception = " + e);
+            return false;
+        }
+    }
+
+
+
+
+    public boolean goToNextPageReliable() {
+        if (!isPresent(pagination)) return false;
+
+        String before = getDisplayingRangeTextSafe(); // "Displaying 7–12 of 33"
+
+        WebElement li = driver.findElement(nextPageLi);
+        if (li.getAttribute("class").contains("ant-pagination-disabled")) return false;
+
+        safeClick(nextPageBtn);
+
+        WebDriverWait w = new WebDriverWait(driver, Duration.ofSeconds(5));
+        try {
+            w.until(d -> {
+                String now = getDisplayingRangeTextSafe();
+                return now != null && !now.isBlank() && !now.equals(before);
+            });
+            return true;
+        } catch (TimeoutException e) {
             return false;
         }
     }
@@ -2309,9 +2403,75 @@ public class IndividualsPage extends BasePage {
 
 
 
+    @Step("Check if there is at least one completed AGT Full Report")
     public boolean hasAnyCompletedAgtFullReport() {
-        // At least one AGT link in the Individuals grid
-        return isPresent(COMPLETED_AGT_FULL_REPORT_ICON);
+        goToFirstPageIfPossible();
+
+        do {
+            int page = debugCurrentPage();
+            System.out.println("DEBUG[AGT]: visiting page " + page);
+
+            List<WebElement> rows = driver.findElements(tableRows);
+            System.out.println("DEBUG[AGT]: rows on page " + page + " = " + rows.size());
+
+            for (int i = 0; i < rows.size(); i++) {
+                WebElement row = rows.get(i);
+                String rowText = rowReportText(row);
+                boolean pending = rowReportIsPending(row);
+                boolean hasLink = rowHasReportLink(row);
+
+                // If you added rowHasCompletedAgt(row):
+                boolean completedAgt = rowHasCompletedAgt(row);
+
+                System.out.println("DEBUG[AGT]:   row#" + i +
+                        " text='" + rowText + "'" +
+                        " | pending=" + pending +
+                        " | hasLink=" + hasLink +
+                        " | completedAgt=" + completedAgt);
+
+                if (completedAgt && hasLink) {
+                    System.out.println("DEBUG[AGT]:   ✅ Found completed AGT on page " + page +
+                            " in row#" + i);
+                    return true;
+                }
+            }
+        } while (goToNextPageIfPossibleSafe());
+
+        System.out.println("DEBUG[AGT]: ❌ No completed AGT found on any page");
+        return false;
+    }
+
+
+
+
+
+    /** True if this Individuals row has a completed AGT Full report (not Pending). */
+    private boolean rowHasCompletedAgt(WebElement row) {
+        try {
+            WebElement cell = reportCellInRow(row);     // already exists
+            String txt = cell.getText();
+            if (txt == null) return false;
+            txt = txt.toUpperCase(Locale.ROOT);
+            // “completed AGT” = some AGT text and not Pending
+            return txt.contains("AGT") && !txt.contains("PENDING");
+        } catch (NoSuchElementException e) {
+            return false;
+        }
+    }
+
+    /** Clickable element in the AGT "Report Link" cell. */
+    private WebElement agtReportLinkInRow(WebElement row) {
+        WebElement cell = reportCellInRow(row);
+        // as with TTP, look for <a> with AGT in text or href
+        List<WebElement> candidates = cell.findElements(By.cssSelector("a[href], [role='link'], button[role='link']"));
+        for (WebElement link : candidates) {
+            String txt  = (link.getText() == null) ? "" : link.getText().toUpperCase(Locale.ROOT);
+            String href = safeAttr(link, "href");
+            if (txt.contains("AGT") || (href != null && href.contains("/assess/agt/"))) {
+                return link;
+            }
+        }
+        throw new NoSuchElementException("No clickable AGT report link in row.");
     }
 
 
@@ -2359,43 +2519,99 @@ public class IndividualsPage extends BasePage {
      * We don't need to verify the UA tab here; if the TTP report opens, the UA tab
      * will be accessed later by ReportSummaryPage.clickDownloadUniqueAmplifierPdf().
      */
+    /**
+     * Returns true if there is at least one individual with a completed TTP report
+     * (which implies we can open a TTP summary and then the UA tab).
+     *
+     * IMPORTANT: this method DOES NOT navigate into reports or go back.
+     * It only scans the Individuals table across all pages.
+     */
     public boolean hasAnyCompletedUniqueAmplifierReport() {
-        try {
-            ReportSummaryPage summary = openFirstCompletedUniqueAmplifierReport();
-            // We just proved one exists; go back so the test can control navigation.
-            driver.navigate().back();
-            waitUntilLoaded();
-            return true;
-        } catch (org.testng.SkipException e) {
-            return false;
+        // Start from page 1 (same helper used by AGT; guarded by isOnIndividuals())
+        goToFirstPageIfPossible();
+
+        int page = 1;
+        while (true) {
+            System.out.println("DEBUG[TTP-HAS]: visiting page " + page);
+
+            List<WebElement> rows = driver.findElements(tableRows);
+            System.out.println("DEBUG[TTP-HAS]: rows on page " + page + " = " + rows.size());
+
+            for (int i = 0; i < rows.size(); i++) {
+                WebElement row = rows.get(i);
+                boolean completedTtp = rowHasCompletedTtp(row);
+                String text = safeText(row::getText).trim();
+
+                System.out.println(
+                        "DEBUG[TTP-HAS]:   row#" + i +
+                                " text='" + text + "' | completedTtp=" + completedTtp
+                );
+
+                if (completedTtp) {
+                    System.out.println("DEBUG[TTP-HAS]: ✅ Found at least one completed TTP.");
+                    return true;
+                }
+            }
+
+            // No completed TTP on this page → try next, if any
+            if (!goToNextPageIfPossibleSafe()) {
+                System.out.println("DEBUG[TTP-HAS]: ❌ No completed TTP found in any page.");
+                return false;
+            }
+
+            page++;
         }
     }
 
 
+
+
+
+
     /** Opens the first completed TTP report (used for both SM13 and SM15). */
     public ReportSummaryPage openFirstCompletedTrueTiltProfileReport() {
-        goToFirstPageIfPossible();
 
-        do {
+        int page = debugCurrentPage();  // start WHERE YOU ALREADY ARE
+        System.out.println("DEBUG[TTP-OPEN]: starting on page " + page);
+
+        while (true) {
+            System.out.println("DEBUG[TTP-OPEN]: visiting page " + page);
+
             List<WebElement> rows = driver.findElements(tableRows);
-            for (WebElement row : rows) {
-                if (!rowHasCompletedTtp(row)) continue;
+            System.out.println("DEBUG[TTP-OPEN]: rows = " + rows.size());
 
+            for (int i = 0; i < rows.size(); i++) {
+                WebElement row = rows.get(i);
+
+                boolean completedTtp = rowHasCompletedTtp(row);
+                String rowText = rowReportText(row);
+
+                System.out.println(
+                        "DEBUG[TTP-OPEN]:   row#" + i +
+                                " text='" + rowText + "' | completedTtp=" + completedTtp
+                );
+
+                if (!completedTtp) continue;
+
+                // --- find the link ---
                 WebElement cell = reportCellInRow(row);
-                WebElement linkToClick = null;
+                List<WebElement> candidates = cell.findElements(
+                        By.cssSelector("a, button, [role='button'], [role='link']")
+                );
 
-                for (WebElement link : cell.findElements(By.cssSelector("a[href]"))) {
-                    String txt = link.getText();
-                    String href = link.getAttribute("href");
-                    if ((txt != null && txt.toUpperCase(Locale.ROOT).contains("TTP")) ||
-                            (href != null && href.contains("/assess/ttp/"))) {
-                        linkToClick = link;
+                WebElement linkToClick = null;
+                for (WebElement c : candidates) {
+                    String txt  = (c.getText()==null ? "" : c.getText()).toUpperCase(Locale.ROOT);
+                    String href = c.getAttribute("href");
+                    if (txt.contains("TTP") || (href != null && href.contains("/assess/ttp"))) {
+                        linkToClick = c;
                         break;
                     }
                 }
 
                 if (linkToClick == null) continue;
 
+                // ensure same tab
                 try {
                     ((JavascriptExecutor) driver)
                             .executeScript("arguments[0].setAttribute('target','_self');", linkToClick);
@@ -2404,20 +2620,42 @@ public class IndividualsPage extends BasePage {
                 ((JavascriptExecutor) driver)
                         .executeScript("arguments[0].scrollIntoView({block:'center'});", linkToClick);
 
+                Set<String> beforeHandles = driver.getWindowHandles();
+
                 try {
                     linkToClick.click();
                 } catch (Exception e) {
                     ((JavascriptExecutor) driver).executeScript("arguments[0].click();", linkToClick);
                 }
 
-                switchToNewestTab(); // same helper you already use
+                // switch to new tab if one opened
+                Set<String> afterHandles = driver.getWindowHandles();
+                if (afterHandles.size() > beforeHandles.size()) {
+                    for (String h : afterHandles) {
+                        if (!beforeHandles.contains(h)) {
+                            driver.switchTo().window(h);
+                            break;
+                        }
+                    }
+                }
 
                 return new ReportSummaryPage(driver).waitUntilLoaded();
             }
-        } while (goToNextPageIfPossible());
 
-        throw new SkipException("⚠️ No completed TTP reports found in Individuals table.");
+            // try next page
+            if (!goToNextPageIfPossibleSafe()) {
+                throw new SkipException("⚠️ No completed TTP reports found in Individuals table.");
+            }
+
+            page++;
+        }
     }
+
+
+
+
+
+
 
 
     /** Best-effort: switch to the newest browser tab/window if multiple are open. */
@@ -2441,34 +2679,158 @@ public class IndividualsPage extends BasePage {
 
 
 
+    @Step("Open first completed AGT Full Report from Individuals")
     public ReportSummaryPage openFirstCompletedAgtFullReport() {
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
 
-        WebElement link = wait.until(
-                ExpectedConditions.elementToBeClickable(FIRST_COMPLETED_AGT_FULL_REPORT_LINK)
-        );
+        // We assume we start from Individuals list (whatever page we’re on).
+        // We just walk forward through pages until we find a completed AGT.
+        int safetyPageCount = 0;
 
-        String originalHandle = driver.getWindowHandle();
-        int windowsBefore = driver.getWindowHandles().size();
+        do {
+            int page = debugCurrentPage(); // your existing helper
+            List<WebElement> rows = driver.findElements(tableRows);
+            System.out.println("DEBUG[AGT-OPEN]: page " + page + ", rows=" + rows.size());
 
-        link.click();
+            for (int i = 0; i < rows.size(); i++) {
+                WebElement row = rows.get(i);
 
-        // Wait for new tab/window to appear
-        WebDriverWait tabWait = new WebDriverWait(driver, Duration.ofSeconds(10));
-        tabWait.until(d -> d.getWindowHandles().size() > windowsBefore);
+                String rowText    = rowReportText(row);   // your helper
+                boolean completed = rowHasCompletedAgt(row); // your helper
 
-        // Switch to the new tab
-        for (String handle : driver.getWindowHandles()) {
-            if (!handle.equals(originalHandle)) {
-                driver.switchTo().window(handle);
-                break;
+                System.out.println(
+                        "DEBUG[AGT-OPEN]:   row#" + i +
+                                " text='" + rowText + "', completedAgt=" + completed
+                );
+
+                if (!completed) {
+                    continue;
+                }
+
+                WebElement cell = reportCellInRow(row);   // your helper
+
+                // --- find ONLY AGT clickable element inside the Report cell ---
+                WebElement agtLink = null;
+
+                // First pass: elements whose visible text contains "AGT"
+                List<WebElement> candidates = cell.findElements(
+                        By.cssSelector("a, button, [role='button'], [role='link']")
+                );
+
+                for (WebElement c : candidates) {
+                    String txt  = (c.getText() == null ? "" : c.getText()).toUpperCase(Locale.ROOT);
+                    if (txt.contains("AGT")) {
+                        agtLink = c;
+                        break;
+                    }
+                }
+
+                // Second pass fallback: href contains /assess/agt
+                if (agtLink == null) {
+                    for (WebElement c : candidates) {
+                        String href = c.getAttribute("href");
+                        if (href != null && href.contains("/assess/agt")) {
+                            agtLink = c;
+                            break;
+                        }
+                    }
+                }
+
+                if (agtLink == null) {
+                    System.out.println("DEBUG[AGT-OPEN]:   row#" + i + " has completedAgt=true but no AGT clickable link");
+                    continue; // try next row
+                }
+
+                System.out.println("DEBUG[AGT-OPEN]:   clicking AGT link on page " + page + ", row#" + i);
+
+                // Try to force same-tab navigation
+                try {
+                    ((JavascriptExecutor) driver)
+                            .executeScript("arguments[0].setAttribute('target','_self');", agtLink);
+                } catch (Exception ignored) {}
+
+                ((JavascriptExecutor) driver)
+                        .executeScript("arguments[0].scrollIntoView({block:'center'});", agtLink);
+
+                Set<String> beforeHandles = driver.getWindowHandles();
+
+                try {
+                    agtLink.click();
+                } catch (Exception e) {
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", agtLink);
+                }
+
+                // If a new tab opened, switch to it
+                Set<String> afterHandles = driver.getWindowHandles();
+                if (afterHandles.size() > beforeHandles.size()) {
+                    for (String h : afterHandles) {
+                        if (!beforeHandles.contains(h)) {
+                            driver.switchTo().window(h);
+                            break;
+                        }
+                    }
+                }
+
+                System.out.println("DEBUG[AGT-OPEN]:   AGT link clicked, waiting for AGT summary page…");
+
+                return new ReportSummaryPage(driver).waitUntilAgtLoaded();
             }
-        }
 
-        // Use the AGT-specific loader we defined in ReportSummaryPage
-        return new ReportSummaryPage(driver).waitUntilAgtLoaded();
+            // Safety guard to avoid infinite loops
+            if (++safetyPageCount > 20) {
+                throw new SkipException("⚠ Scanned > 20 Individuals pages without opening an AGT report.");
+            }
+
+        } while (goToNextPageIfPossibleSafe());
+
+        throw new SkipException("⚠ No completed AGT Full Reports found in Individuals table.");
     }
 
+
+
+
+
+
+
+
+
+
+
+
+    private int debugCurrentPage() {
+        try {
+            for (WebElement li : driver.findElements(pageItems)) {
+                String txt = li.getText().trim();
+                if (!txt.matches("\\d+")) continue;
+                String cls = String.valueOf(li.getAttribute("class"));
+                if (cls.contains("ant-pagination-item-active")) {
+                    return Integer.parseInt(txt);
+                }
+            }
+        } catch (Exception ignored) {}
+        return -1;
+    }
+
+
+
+
+    /** Always jump to page 1 explicitly */
+    private void hardGoToPageOne() {
+        if (!isPresent(pagination)) return;
+
+        List<WebElement> pageLis = driver.findElements(By.cssSelector(".ant-pagination-item"));
+        WebElement page1 = pageLis.stream()
+                .filter(li -> li.getAttribute("title").trim().equals("1"))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Cannot find page 1 LI"));
+
+        if (page1.getAttribute("class").contains("ant-pagination-item-active")) {
+            return; // Already on first page
+        }
+
+        WebElement a = page1.findElement(By.tagName("a"));
+        a.click();
+        waitForTableRefreshed();
+    }
 
 
 

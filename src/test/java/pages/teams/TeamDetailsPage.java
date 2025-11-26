@@ -29,7 +29,7 @@ public class TeamDetailsPage extends BasePage {
 
     // Matches "ORG A / Team 1 (17)" or any "xxx / Team y (n)" breadcrumb/title
     private final By teamHeader =
-            By.xpath("//*[contains(normalize-space(), ' / Team ')]");
+            By.xpath("//h1[contains(normalize-space(), ' / ')]");
 
     // Matches the "Add Team Member +" button
     private final By addTeamMemberButton =
@@ -63,6 +63,19 @@ public class TeamDetailsPage extends BasePage {
 
     private static final By PROFILE_INSIGHT_TEXT =
             By.xpath("(//p[@class='sc-3d430a05-20 hWKDSl'])[1]");
+
+
+
+
+    // Members table locators
+    private static final By MEMBERS_TABLE_BODY =
+            By.cssSelector(".ant-table-wrapper .ant-table-tbody");
+    private static final By MEMBER_ROWS =
+            By.cssSelector(".ant-table-wrapper .ant-table-tbody > tr.ant-table-row");
+    private static final By NO_DATA_PLACEHOLDER =
+            By.xpath("//*[contains(@class,'ant-empty') or contains(@class,'ant-table-placeholder')]");
+
+
 
     public TeamDetailsPage(WebDriver driver) {
         super(driver);
@@ -246,6 +259,51 @@ public class TeamDetailsPage extends BasePage {
 
 
 
+
+    // ---------- member assertion helpers ----------
+    /**
+     * Row locator by email – anchored on the <tbody class="ant-table-tbody">,
+     * because <table> has no 'ant-table' class.
+     */
+    private By memberRowByEmail(String email) {
+        String safe = email.replace("'", "\\'");
+        return By.xpath(
+                "//tbody[contains(@class,'ant-table-tbody')]" +
+                        "//tr[" +
+                        " .//td[contains(normalize-space(),'" + safe + "')]" +
+                        " or .//a[contains(normalize-space(),'" + safe + "')]" +
+                        " or .//*[contains(normalize-space(),'" + safe + "')]" +
+                        "]"
+        );
+    }
+
+    public void waitForMemberByEmail(String email, Duration timeout) {
+        WebDriverWait wait = new WebDriverWait(driver, timeout);
+        By locator = memberRowByEmail(email);
+
+        try {
+            wait.until(ExpectedConditions.visibilityOfElementLocated(locator));
+            logger.info("[TeamDetailsPage] Member with email '{}' is visible in the table.", email);
+        } catch (TimeoutException e) {
+            // Debug dump on failure
+            logger.error("[TeamDetailsPage] Member with email '{}' NOT found in table within {}s",
+                    email, timeout.toSeconds());
+            dumpMemberTableForDebug();
+            throw e;
+        }
+    }
+
+    private void dumpMemberTableForDebug() {
+        try {
+            List<WebElement> rows = driver.findElements(MEMBER_ROWS);
+            logger.info("[TeamDetailsPage] Dumping member rows ({} rows):", rows.size());
+            for (WebElement row : rows) {
+                logger.info("  ROW TEXT => '{}'", row.getText().replace("\n", " | "));
+            }
+        } catch (Exception ex) {
+            logger.warn("[TeamDetailsPage] Failed to dump member table: {}", ex.toString());
+        }
+    }
 
 
 }

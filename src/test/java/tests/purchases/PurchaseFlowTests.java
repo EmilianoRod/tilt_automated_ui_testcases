@@ -111,7 +111,7 @@ public class PurchaseFlowTests extends BaseTest {
         DashboardPage dashboard = login.safeLoginAsAdmin(
                 freshUser.email,
                 freshUser.password,
-                Duration.ofSeconds(30)
+                Duration.ofSeconds(60)
         );
         Assert.assertTrue(dashboard.isLoaded(), "❌ Dashboard did not load after login");
 

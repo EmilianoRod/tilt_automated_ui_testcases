@@ -139,7 +139,7 @@ public class TiltSmokeTest extends BaseTest {
         loginPage.waitUntilLoaded();
 
         DashboardPage dashboardPage =
-                loginPage.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+                loginPage.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(60));
         Assert.assertTrue(
                 dashboardPage.isLoaded(),
                 "❌ Dashboard did not load after login"

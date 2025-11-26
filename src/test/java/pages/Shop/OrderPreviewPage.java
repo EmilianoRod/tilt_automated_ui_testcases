@@ -522,16 +522,24 @@ public class OrderPreviewPage extends BasePage {
 
     // Count how many member toggles are ON
     public int getSelectedCount() {
+        waitForRows();
         int c = 0;
-        for (WebElement row : driver.findElements(MEMBER_ROWS)) {
+        int i = 0;
+        for (WebElement row : driver.findElements(PREVIEW_ROWS)) {
+            i++;
             try {
-                WebElement t = row.findElement(TOGGLE_INSIDE_ROW);
-                boolean on = "true".equalsIgnoreCase(t.getAttribute("aria-checked")) || t.isSelected();
+                WebElement cb = rowCheckbox(row);
+                boolean on = isChecked(cb);
+                System.out.printf("[getSelectedCount] row %d -> checked=%s%n", i, on);
                 if (on) c++;
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                System.out.printf("[getSelectedCount] row %d -> ERROR: %s%n", i, e);
+            }
         }
+        System.out.println("[getSelectedCount] total selected=" + c);
         return c;
     }
+
 
     // Click member checkbox by 1-based index using the emails.N.checkbox id
     public void toggleMemberByIndex(int oneBased) {

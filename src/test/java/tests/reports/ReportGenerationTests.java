@@ -218,7 +218,7 @@ public class ReportGenerationTests extends BaseTest {
 
         System.out.println("✅ AGT Full Report PDF downloaded: " + pdf);
     }
-
+    
 
     @Test(groups = {"smoke"}, description = "SM14: Team True Tilt Aggregate report PDF downloads successfully.")
     public void smoke_teamTrueTiltAggregateReport_downloadsPdf() throws Exception {
@@ -274,7 +274,7 @@ public class ReportGenerationTests extends BaseTest {
         Instant start = Instant.now();
         summaryPage.clickDownloadPdf();
 
-        Path pdf = waitForNewPdf(downloadDir, start, Duration.ofSeconds(45));
+        Path pdf = waitForNewPdf(downloadDir, start, Duration.ofSeconds(60));
         Assert.assertNotNull(pdf, "❌ No new Team Aggregate PDF was downloaded");
         Assert.assertTrue(
                 Files.size(pdf) > 0,

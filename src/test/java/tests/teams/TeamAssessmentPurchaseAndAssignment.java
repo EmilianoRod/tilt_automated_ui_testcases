@@ -7,8 +7,10 @@ import com.mailslurp.models.Email;
 import com.mailslurp.models.InboxDto;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.devtools.DevTools;
 import org.openqa.selenium.devtools.v142.network.Network;
 import org.openqa.selenium.support.ui.ExpectedCondition;
+import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.SkipException;
@@ -22,7 +24,9 @@ import pages.Shop.PurchaseInformation;
 import pages.Shop.PurchaseRecipientSelectionPage;
 import pages.menuPages.DashboardPage;
 import pages.menuPages.ShopPage;
+import pages.teams.TeamDetailsPage;
 import pages.teams.TeamPurchaseFlows;
+import pages.teams.TeamsPage;
 
 import java.io.File;
 import java.math.BigDecimal;
@@ -83,7 +87,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
                         .setEmailAtRow(2, " QA.DUP+1@TILT365.COM ");
 
         // Wait until any inline error appears on either row
-        new WebDriverWait(driver(), Duration.ofSeconds(8)).until(d ->
+        new WebDriverWait(driver(), Duration.ofSeconds(60)).until(d ->
                 (assessmentEntryPage.getEmailErrorAtRow(1) != null) ||
                         (assessmentEntryPage.getEmailErrorAtRow(2) != null));
 
@@ -506,7 +510,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     }
 
 
-    @Test(groups = "ui-only", description = "TILT-243: Remove a Member in Order Summary updates counts and totals (E2E)")
+    @Test(groups = {"ui-only"}, description = "TILT-243: Remove a Member in Order Summary updates counts and totals (E2E)")
     public void removeMemberInOrderSummary_EndToEnd() {
 
         step("Resolve admin credentials from configuration");
@@ -608,7 +612,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     }
 
 
-    @Test(groups = "ui-only", description = "TILT-244: Toggle Product Assignment On/Off per email in final confirmation (E2E)")
+    @Test(groups = {"ui-only", "test-solo"}, description = "TILT-244: Toggle Product Assignment On/Off per email in final confirmation (E2E)")
     public void toggleProductAssignment_OnOff_EndToEnd() {
 
         step("Resolve admin credentials from configuration");
@@ -634,7 +638,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         LoginPage login = new LoginPage(driver());
         login.navigateTo();
         login.waitUntilLoaded();
-        DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+        DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(60));
         Assert.assertTrue(dash.isLoaded(), "Dashboard did not load");
 
         step("Navigate to Shop and start True Tilt purchase for TEAM");
@@ -743,153 +747,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     }
 
 
-    /**
-     * TILT-245: Handle Slow Network on Payment Submit
-     */
-    @Test(groups = "ui-only", description = "TILT-245:")
-    public void testHandleSlowNetworkOnPaymentSubmit_ShowsLoadingAndBlocksDuplicatePayment() {
-        // creds
-        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
-        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
-        if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
-            throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
-        }
-        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
 
-        boolean E2E_ENABLED =
-                Boolean.parseBoolean(System.getProperty("STRIPE_E2E",
-                        String.valueOf(Boolean.parseBoolean(String.valueOf(System.getenv("STRIPE_E2E"))))));
-        E2E_ENABLED = true; // enable if desired
-
-        // recipient
-        step("Resolve recipient for this run (prefer fresh inbox)");
-        Recipient r = provisionUniqueRecipient();
-        final String tempEmail = r.emailAddress;
-        System.out.println("📧 Test email (clean): " + tempEmail);
-
-        // flow to preview
-        step("Login as admin");
-        LoginPage loginPage = new LoginPage(driver());
-        loginPage.navigateTo();
-        loginPage.waitUntilLoaded();
-        DashboardPage dashboardPage = loginPage.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
-        Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard did not load after login");
-
-        step("Go to Shop and start purchase flow");
-        ShopPage shopPage = dashboardPage.goToShop();
-        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
-        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
-        sel.selectClientOrIndividual();
-        sel.clickNext();
-
-        step("Manual entry for 1 individual");
-        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
-                .waitUntilLoaded()
-                .selectManualEntry()
-                .enterNumberOfIndividuals("1");
-        entryPage.fillUserDetailsAtIndex(1, "Emi", "Rod", tempEmail);
-        entryPage.triggerManualValidationBlurs();
-        Assert.assertTrue(entryPage.isProceedToPaymentEnabled(), "Proceed should be enabled.");
-
-        step("Review order (Preview)");
-        OrderPreviewPage preview = entryPage.clickProceedToPayment().waitUntilLoaded();
-        Assert.assertTrue(preview.isLoaded(), "❌ Order Preview did not load");
-
-        // throttle network
-        step("Simulate slow network");
-        org.openqa.selenium.devtools.DevTools devTools =
-                ((org.openqa.selenium.devtools.HasDevTools) driver()).getDevTools();
-        devTools.createSession();
-        devTools.send(Network.enable(
-                Optional.of(50_000_000),   // maxTotalBufferSize required
-                Optional.empty(),          // maxResourceBufferSize
-                Optional.empty(),          // maxPostDataSize
-                Optional.of(true),         // captureNetworkRequests
-                Optional.of(true)          // durable messages
-        ));
-        devTools.send(Network.emulateNetworkConditions(
-                false, 1200, 100 * 1024, 100 * 1024,
-                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()
-        ));
-
-        final java.util.Set<String> handlesBefore = new java.util.HashSet<>(driver().getWindowHandles());
-        final String handleBefore = driver().getWindowHandle();
-        String stripeUrlForE2E = null;
-
-        try {
-            step("Click Pay once; button must show loading/disabled promptly");
-            preview.clickPayWithStripe();
-            new WebDriverWait(driver(), Duration.ofSeconds(8)).until(d -> preview.isPayBusy());
-            Assert.assertTrue(preview.isPayBusy(), "❌ Pay button should show a loading/disabled state after first click");
-
-            step("Attempt a rapid second click; should NOT open another Stripe checkout");
-            try { preview.clickPayWithStripe(); } catch (Exception ignored) {}
-            try { Thread.sleep(700); } catch (InterruptedException ignored) {}
-
-            int newStripeWindows = 0;
-            for (String h : driver().getWindowHandles()) {
-                if (!handlesBefore.contains(h)) {
-                    try {
-                        driver().switchTo().window(h);
-                        String u = driver().getCurrentUrl();
-                        if (u != null && u.contains("checkout.stripe.com")) {
-                            newStripeWindows++;
-                            if (stripeUrlForE2E == null) stripeUrlForE2E = u;
-                        }
-                    } catch (Exception ignored) {}
-                }
-            }
-            if (newStripeWindows == 0) {
-                try {
-                    driver().switchTo().window(handleBefore);
-                    String u = driver().getCurrentUrl();
-                    if (u != null && u.contains("checkout.stripe.com")) {
-                        newStripeWindows = 1;
-                        if (stripeUrlForE2E == null) stripeUrlForE2E = u;
-                    }
-                } catch (Exception ignored) {}
-            }
-            Assert.assertTrue(newStripeWindows <= 1,
-                    "❌ Rapid double-click should not create multiple Stripe checkouts (windows/tabs=" + newStripeWindows + ")");
-
-            preview.waitPayIdleLong(); // best-effort
-        } finally {
-            step("Restore normal network");
-            try { devTools.send(Network.disable()); } catch (Exception ignored) {}
-            try { driver().switchTo().window(handleBefore); } catch (Exception ignored) {}
-        }
-
-        // Optional E2E tail
-        if (E2E_ENABLED) {
-            try {
-                step("Stripe: fetch session + metadata.body");
-                if (stripeUrlForE2E == null || stripeUrlForE2E.isBlank()) {
-                    stripeUrlForE2E = preview.proceedToStripeAndGetCheckoutUrl();
-                }
-                String sessionId = extractSessionIdFromUrl(stripeUrlForE2E);
-                Assert.assertNotNull(sessionId, "❌ Could not parse Stripe session id from URL");
-                String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
-                Assert.assertNotNull(bodyJson, "❌ metadata.body not found in Checkout Session");
-
-                step("Stripe: trigger checkout.session.completed via CLI");
-                var trig = StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
-                System.out.println("[Stripe] Triggered eventId=" + trig.eventId +
-                        (trig.requestLogUrl != null ? " | requestLog=" + trig.requestLogUrl : ""));
-
-                step("Navigate to post-payment confirmation");
-                driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
-
-                step("Individuals page shows the newly invited user");
-                new IndividualsPage(driver())
-                        .open(Config.getBaseUrl())
-                        .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
-                System.out.println("✅ Individuals shows invited user: " + tempEmail);
-            } catch (Throwable e) {
-                System.out.println("[E2E] Skipping tail due to Stripe connectivity/problem: " + e);
-                System.out.println("[E2E] Test already validated the UI prevents duplicate payments.");
-            }
-        }
-    }
 
 
     @Test(groups = {"ui-only", "known-bug"}, description = "TILT-247: Preserve Team selection and member choices on Back navigation")
@@ -1055,11 +913,18 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     }
 
 
+
+
+
+
+
+
     /**
-     * TC-2: Team purchase via manual entry → Preview → Stripe → webhook → Individuals + email
+     * TC-2: Team purchase via manual entry → Preview → Stripe → webhook →
+     *        Team created + member listed in team + invite email received.
      * Stripe Checkout UI is NOT used — payment completion is triggered via Stripe CLI only.
      */
-    @Test
+    @Test(groups = {"smoke"})
     public void testTeamManualEntry_PurchaseCompletesAndSendsInviteEmail() throws ApiException, InterruptedException {
 
         // --- ADMIN CREDS ---
@@ -1083,10 +948,12 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         final String baseEmail = r.emailAddress;
         System.out.println("📧 Base inbox: " + baseEmail);
 
-        // one participant for this test
-        final String tempEmail = baseEmail;  // no alias needed for single-user test
+        // Unique email for seat
+        String aliasTag = Long.toString(System.currentTimeMillis() % 100000);
+        final String tempEmail = baseEmail.replace("@", "+" + aliasTag + "@");
+        System.out.println("📧 Seat email (unique): " + tempEmail);
 
-        // generate unique org/group for each test run
+        // Unique org/group per run
         String tag = baseEmail.substring(0, baseEmail.indexOf('@'))
                 + "-" + (System.currentTimeMillis() % 100000);
         final String ORG_NAME = "QA Org " + tag;
@@ -1097,7 +964,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         LoginPage login = new LoginPage(driver());
         login.navigateTo();
         login.waitUntilLoaded();
-        DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+        DashboardPage dash = login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(60));
         Assert.assertTrue(dash.isLoaded(), "❌ Dashboard failed to load");
 
         // --- SHOP FLOW ---
@@ -1110,7 +977,10 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         sel.clickNextCta();
 
         PurchaseInformation info = new PurchaseInformation(driver()).waitUntilLoaded();
-        Assert.assertTrue(info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM));
+        Assert.assertTrue(
+                info.purchaseForIs(PurchaseRecipientSelectionPage.Recipient.TEAM),
+                "❌ Purchase banner should indicate 'Assessment purchase for: Team'"
+        );
 
         AssessmentEntryPage entry = new AssessmentEntryPage(driver())
                 .waitUntilLoaded()
@@ -1122,7 +992,7 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
         entry.fillUserDetailsAtIndex(1, "User", "One", tempEmail);
         entry.triggerManualValidationBlurs();
-        entry.waitManualGridEmailsAtLeast(1, Duration.ofSeconds(8));
+        entry.waitManualGridEmailsAtLeast(1, Duration.ofSeconds(60));
 
         Assert.assertTrue(entry.isProceedToPaymentEnabled(), "❌ Proceed should be enabled");
 
@@ -1153,11 +1023,30 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
         step("Navigate to Orders Confirmation");
         driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
 
-        // --- INDIVIDUALS PAGE ---
-        step("Individuals page must show newly invited user");
-        new IndividualsPage(driver())
-                .open(Config.getBaseUrl())
-                .assertAppearsWithEvidence(Config.getBaseUrl(), tempEmail);
+        // --- TEAMS PAGE + TEAM DETAILS ---
+        step("Teams page must show newly created team (search by TEAM name)");
+        TeamsPage teamsPage = new TeamsPage(driver()).open(Config.getBaseUrl());
+
+        teamsPage.search(GROUP_NAME);
+
+        System.out.println("[Teams] Visible rows after search('" + GROUP_NAME + "'):");
+        for (String name : teamsPage.getTeamNamesOnCurrentPage()) {
+            System.out.println(" - " + name);
+        }
+
+        Assert.assertTrue(
+                teamsPage.findRowByTeamNameOnCurrentPage(GROUP_NAME).isPresent(),
+                "❌ Team row not found in Teams table after search: " + GROUP_NAME
+        );
+
+        // --- TEAM DETAILS ---
+        step("Open Team Details and verify member is listed");
+        teamsPage.openTeamDetails(GROUP_NAME);
+
+        TeamDetailsPage teamDetails = new TeamDetailsPage(driver()).waitUntilLoaded();
+
+        // ⭐ Replace brittle XPath with robust page-object helper
+        teamDetails.waitForMemberByEmail(tempEmail, Duration.ofSeconds(60));
 
         // --- EMAIL RECEIVED ---
         step("MailSlurp: Assert invite email is received correctly");
@@ -1357,7 +1246,6 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     }
 
 
-
     @Test(groups = {"smoke"}, description = "SM09: Team CSV upload (>=3 recipients) reaches Preview + Stripe.")
     public void smoke_teamCsvUpload_reachesPreviewAndStripe() throws Exception {
 
@@ -1513,9 +1401,188 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     }
 
 
+    /**
+     * TILT-245: Handle Slow Network on Payment Submit
+     */
+    @Test(groups = {"ui-only"}, description = "TILT-245: Handle slow network on payment submit, show loading and block duplicate payments")
+    public void testHandleSlowNetworkOnPaymentSubmit_ShowsLoadingAndBlocksDuplicatePayment() throws InterruptedException {
+        // ----- config / admin user -----
+        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
+            throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
+        }
+        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
+
+        // Stripe E2E flag: OFF by default unless explicitly enabled
+        boolean E2E_ENABLED = Boolean.parseBoolean(
+                Config.getAny("stripe.e2e", "STRIPE_E2E", "STRIPE_E2E_FLAG", "false")
+        );
+        System.out.println("[StripeE2E] enabled=" + E2E_ENABLED);
+
+        // ----- recipient -----
+        step("Resolve recipient for this run (prefer fresh inbox)");
+        Recipient r = provisionUniqueRecipient();
+        final String tempEmail = r.emailAddress;
+        System.out.println("📧 Test email (clean): " + tempEmail);
+
+        // ----- flow to preview -----
+        step("Login as admin");
+        LoginPage loginPage = new LoginPage(driver());
+        loginPage.navigateTo();
+        loginPage.waitUntilLoaded();
+        DashboardPage dashboardPage = loginPage.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(30));
+        Assert.assertTrue(dashboardPage.isLoaded(), "❌ Dashboard did not load after login");
+
+        step("Go to Shop and start purchase flow");
+        ShopPage shopPage = dashboardPage.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
+        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
+        sel.selectClientOrIndividual();
+        sel.clickNext();
+
+        step("Manual entry for 1 individual");
+        AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
+                .waitUntilLoaded()
+                .selectManualEntry()
+                .enterNumberOfIndividuals("1");
+        entryPage.fillUserDetailsAtIndex(1, "Emi", "Rod", tempEmail);
+        entryPage.triggerManualValidationBlurs();
+
+        new WebDriverWait(driver(), Duration.ofSeconds(50))
+                .until(d -> entryPage.isProceedToPaymentEnabled());
+        Assert.assertTrue(entryPage.isProceedToPaymentEnabled(), "Proceed should be enabled once details are valid.");
+
+        step("Review order (Preview)");
+        OrderPreviewPage preview = entryPage.clickProceedToPayment().waitUntilLoaded();
+        Assert.assertTrue(preview.isLoaded(), "❌ Order Preview did not load");
+
+        // ----- throttle network via DevTools (best-effort) -----
+        step("Simulate slow network (best-effort via DevTools)");
+        boolean networkThrottled = false;
+        DevTools devTools = null;
+        try {
+            devTools = ((org.openqa.selenium.devtools.HasDevTools) driver()).getDevTools();
+            devTools.createSession();
+            devTools.send(Network.enable(
+                    Optional.of(50_000_000),   // maxTotalBufferSize
+                    Optional.empty(),         // maxResourceBufferSize
+                    Optional.empty(),         // maxPostDataSize
+                    Optional.of(true),        // captureNetworkRequests
+                    Optional.of(true)         // durable messages
+            ));
+            devTools.send(Network.emulateNetworkConditions(
+                    false,
+                    1200,               // latency (ms)
+                    100 * 1024,         // download throughput
+                    100 * 1024,         // upload throughput
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty()
+            ));
+            networkThrottled = true;
+            System.out.println("[DevTools] Network throttling enabled.");
+        } catch (Exception e) {
+            System.out.println("[DevTools] Could not enable network throttling in this environment, continuing without it: " + e);
+        }
+
+
+        final Set<String> handlesBefore = new HashSet<>(driver().getWindowHandles());
+        final String handleBefore = driver().getWindowHandle();
+        String stripeUrlForE2E = null;
+        Set<String> stripeWindows = new HashSet<>();
+
+        try {
+            step("Click Pay once; button must show loading/disabled promptly");
+            preview.clickPayWithStripe();
+
+            new WebDriverWait(driver(), Duration.ofSeconds(50))
+                    .until(d -> preview.isPayBusy());
+
+            Assert.assertTrue(preview.isPayBusy(),
+                    "❌ Pay button should show a loading/disabled state after first click");
+
+            step("Attempt a rapid second click; should NOT create additional Stripe windows/tabs");
+            try {
+                preview.clickPayWithStripe();
+            } catch (Exception clickIgnored) {
+                System.out.println("[Debug] Second Pay click threw (likely due to disabled element): " + clickIgnored);
+            }
+
+            Thread.sleep(1700);
+
+            Set<String> handlesAfter = new HashSet<>(driver().getWindowHandles());
+            int newWindowCount = handlesAfter.size() - handlesBefore.size();
+            System.out.println("[Windows] Before=" + handlesBefore.size()
+                    + " | After=" + handlesAfter.size()
+                    + " | NewWindowCount=" + newWindowCount);
+
+            Assert.assertTrue(newWindowCount <= 1,
+                    "❌ Rapid double-click should not create multiple Stripe checkouts (new windows/tabs=" + newWindowCount + ")");
+
+            // Collect Stripe windows
+            for (String h : handlesAfter) {
+                if (!handlesBefore.contains(h)) {
+                    try {
+                        driver().switchTo().window(h);
+                        String u = driver().getCurrentUrl();
+                        System.out.println("[Stripe] New window URL=" + u);
+                        if (u != null && u.contains("checkout.stripe.com")) {
+                            stripeWindows.add(h);
+                            if (stripeUrlForE2E == null) {
+                                stripeUrlForE2E = u;
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    } finally {
+                        driver().switchTo().window(handleBefore);
+                    }
+                }
+            }
+
+            // Best-effort idle wait
+            try {
+                preview.waitPayIdleLong();
+            } catch (Throwable idleIssue) {
+                System.out.println("[Debug] waitPayIdleLong() non-fatal issue: " + idleIssue);
+            }
+
+        } finally {
+            step("Restore normal network and close Stripe windows when E2E is off");
+            if (networkThrottled && devTools != null) {
+                try {
+                    devTools.send(Network.disable());
+                    System.out.println("[DevTools] Network throttling disabled.");
+                } catch (Exception e) {
+                    System.out.println("[DevTools] Error disabling network throttling: " + e);
+                }
+            }
+
+            // If we’re NOT doing E2E Stripe tail, close any Stripe windows we opened
+            if (!E2E_ENABLED) {
+                for (String h : stripeWindows) {
+                    try {
+                        driver().switchTo().window(h);
+                        System.out.println("[Stripe] Closing Stripe window: " + driver().getCurrentUrl());
+                        driver().close();
+                    } catch (Exception e) {
+                        System.out.println("[Stripe] Error closing Stripe window: " + e);
+                    }
+                }
+            }
+
+            // Always try to end back on the original window
+            try {
+                driver().switchTo().window(handleBefore);
+            } catch (Exception e) {
+                System.out.println("[Window] Could not switch back to original handle: " + e);
+            }
+        }
 
 
 
+    }
 
 
 

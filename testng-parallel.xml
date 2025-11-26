@@ -3,7 +3,7 @@
        verbose="1"
        preserve-order="true"
        parallel="methods"
-       thread-count="4">
+       thread-count="3">
 
     <listeners>
         <listener class-name="listeners.TestListener"/>
@@ -13,7 +13,7 @@
     <test name="Smoke Tests (Parallel)">
 <!--        <groups>-->
 <!--            <run>-->
-<!--                <include name="smoke"/>-->
+<!--                <include name="test-solo"/>-->
 <!--                <include name="ui-only"/>-->
 <!--            </run>-->
 <!--        </groups>-->

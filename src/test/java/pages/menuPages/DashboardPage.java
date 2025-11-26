@@ -53,6 +53,11 @@ public class DashboardPage extends BasePage{
         return isVisible(newAssessmentBtn);
     }
 
+    public boolean isCoreDashboardUiVisible() {
+        // Pick elements that are always present for this admin user
+        return isVisible(userName) && isVisible(individualsButton);
+    }
+
 
     public IndividualsPage goToIndividuals() {
         WebElement individualsButtonSideBarMenu = wait.waitForElementClickable(individualsButton);

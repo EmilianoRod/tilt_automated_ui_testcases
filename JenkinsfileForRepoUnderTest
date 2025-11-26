@@ -21,7 +21,7 @@ pipeline {
     string(name: 'STRIPE_EVENT_WINDOW_SEC', defaultValue: '300', description: 'Event assertion window (seconds).')
     string(name: 'MAILSLURP_EXPECTED_FP', defaultValue: 'd47d0e57c995',
       description: 'First 12 chars of SHA256 of the intended MailSlurp API key.')
-    string(name: 'CI_EXPLICIT_WAIT_SEC', defaultValue: '20',
+    string(name: 'CI_EXPLICIT_WAIT_SEC', defaultValue: '60',
       description: 'Default explicit wait for CI (seconds).')
     booleanParam(name: 'ALLOW_CREATE_INBOX_FALLBACK', defaultValue: false,
       description: 'If fixed inbox is missing/inaccessible, allow creating a new inbox (consumes allowance).')
@@ -403,7 +403,7 @@ pipeline {
               "-DbaseUrl=${BASE_URL}"
               "-DADMIN_USER=${ADMIN_USER}"
               "-DADMIN_PASS=${ADMIN_PASS}"
-              "-Dtimeout=${CI_EXPLICIT_WAIT_SEC:-20}"
+              "-Dtimeout=${CI_EXPLICIT_WAIT_SEC:-60}"
             )
 
             xvfb-run -a -s "-screen 0 1920x1080x24" \

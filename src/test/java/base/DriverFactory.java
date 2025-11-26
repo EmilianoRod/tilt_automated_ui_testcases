@@ -88,7 +88,10 @@ public final class DriverFactory {
                 "--disable-dev-shm-usage",
                 "--force-device-scale-factor=" + Config.getDeviceScale(),
                 "--disable-pdf-viewer",
-                "--pdfjs-disable"
+                "--pdfjs-disable",
+                "--no-sandbox",
+               "--remote-allow-origins=*"
+
         );
 
         // Window size applied once; headless also needs an explicit size

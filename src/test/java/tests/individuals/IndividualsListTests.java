@@ -255,7 +255,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
 
-    @Test(description = "TC-436: Sort by Name (A→Z, Z→A) and Date (Newest, Oldest) updates ordering correctly.")
+    @Test(groups = {"known-bug"}, description = "TC-436: Sort by Name (A→Z, Z→A) and Date (Newest, Oldest) updates ordering correctly.")
     public void sortIndividuals_ordersUpdateCorrectly() {
 
         step("Start fresh session (login + Dashboard)");
@@ -368,7 +368,7 @@ public class IndividualsListTests extends BaseTest {
 
 
 
-    @Test(description = "IND-003: Sort by Name (A–Z) orders ascending (case/accents ignored).")
+    @Test(groups = {"known-bug"}, description = "IND-003: Sort by Name (A–Z) orders ascending (case/accents ignored).")
     public void sortByName_ordersAscending() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());

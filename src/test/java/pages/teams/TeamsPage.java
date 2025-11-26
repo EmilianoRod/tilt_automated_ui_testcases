@@ -401,13 +401,62 @@ public class TeamsPage extends BasePage {
 
     // ===== Row actions (shortcuts you’ll likely need) =====
     /** Opens the team detail by clicking on the team name cell. */
+    /** Opens the team detail by clicking the real "View all" / team link in the row. */
     public void openTeamDetails(String teamName) {
-        Optional<WebElement> row = findRowByTeamName(teamName);
-        if (row.isEmpty()) throw new NoSuchElementException("Row not found for team: " + teamName);
-        WebElement cell = teamNameCellInRow(row.get());
-        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", cell);
-        try { cell.click(); } catch (Exception e) { ((JavascriptExecutor) driver).executeScript("arguments[0].click();", cell); }
+        Optional<WebElement> row;
+
+        // If search is on the page, assume caller already filtered and try current page first
+        if (isPresent(searchInput)) {
+            row = findRowByTeamNameOnCurrentPage(teamName);
+
+            // Fallback: if not found on current page (or caller didn't search), do the full scan
+            if (row.isEmpty()) {
+                row = findRowByTeamName(teamName);
+            }
+        } else {
+            row = findRowByTeamName(teamName);
+        }
+
+        if (row.isEmpty()) {
+            System.out.println("[TeamsPage] openTeamDetails – row NOT found for team='" + teamName + "'. Visible rows:");
+            for (String sig : getTeamNamesOnCurrentPage()) {
+                System.out.println("  - " + sig);
+            }
+            throw new NoSuchElementException("Row not found for team: " + teamName);
+        }
+
+        WebElement link = teamLinkInRow(row.get()); // <-- the "View all" / team link
+
+        try {
+            scrollToElement(link);
+        } catch (Throwable ignored) {}
+
+        try {
+            ((JavascriptExecutor) driver)
+                    .executeScript("arguments[0].scrollIntoView({block:'center'});", link);
+        } catch (Exception ignored) {}
+
+        // force same tab, just in case
+        try {
+            ((JavascriptExecutor) driver)
+                    .executeScript("arguments[0].setAttribute('target','_self');", link);
+        } catch (Exception ignored) {}
+
+        try {
+            link.click();
+        } catch (Exception e) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", link);
+        }
     }
+
+
+//    public void openTeamDetails(String teamName) {
+//        Optional<WebElement> row = findRowByTeamName(teamName);
+//        if (row.isEmpty()) throw new NoSuchElementException("Row not found for team: " + teamName);
+//        WebElement cell = teamNameCellInRow(row.get());
+//        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", cell);
+//        try { cell.click(); } catch (Exception e) { ((JavascriptExecutor) driver).executeScript("arguments[0].click();", cell); }
+//    }
 
     /** Clicks the “Team Climate” button in the row (Report column). */
     public void openTeamClimate(String teamName) {
