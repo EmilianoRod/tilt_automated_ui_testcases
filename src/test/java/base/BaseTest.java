@@ -214,13 +214,21 @@ public class BaseTest {
     }
 
     public static DashboardPage startFreshSession(WebDriver driver, int maxAttempts) {
+        // If caller passed null, try to bootstrap a driver via DriverManager
         if (driver == null) {
-            throw new SkipException("[BaseTest] WebDriver is null.");
+            try {
+                System.out.println("[BaseTest] startFreshSession received null driver; initializing via DriverManager.");
+                DriverManager.init();
+                driver = DriverManager.get();
+            } catch (Throwable t) {
+                throw new SkipException("[BaseTest] Unable to initialize WebDriver in startFreshSession: " + t.getMessage(), t);
+            }
         }
 
-        final String baseUrl   = Config.getAny("base.url", "BASE_URL", "APP_BASE_URL", "BASEURL");
-        final String adminUser = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
-        final String adminPass = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        // Use Config helpers so we always resolve the same way
+        final String baseUrl   = Config.getBaseUrl();
+        final String adminUser = Config.getAdminEmail();
+        final String adminPass = Config.getAdminPassword();
 
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new SkipException("[Config] BASE_URL missing.");
@@ -229,12 +237,39 @@ public class BaseTest {
             throw new SkipException("[Config] Admin credentials missing.");
         }
 
-        final Duration navTimeout   = Config.getTimeout().compareTo(Duration.ofSeconds(20)) > 0
-                ? Config.getTimeout()
-                : Duration.ofSeconds(20);
-        final Duration loginTimeout = Config.getTimeout().compareTo(Duration.ofSeconds(10)) > 0
-                ? Config.getTimeout()
-                : Duration.ofSeconds(10);
+//        final boolean isCi = Optional.ofNullable(System.getenv("CI"))
+//                .map(v -> !v.isBlank() && !"false".equalsIgnoreCase(v))
+//                .orElse(false);
+
+        final boolean isCi = true;
+
+        final Duration navTimeout =
+                Config.getTimeout().compareTo(Duration.ofSeconds(20)) > 0
+                        ? Config.getTimeout()
+                        : Duration.ofSeconds(20);
+        final Duration loginTimeout =
+                Config.getTimeout().compareTo(Duration.ofSeconds(10)) > 0
+                        ? Config.getTimeout()
+                        : Duration.ofSeconds(10);
+
+        // Pre-compute sign-in URL and log it clearly
+        final String signInUrl = baseUrl.endsWith("/")
+                ? baseUrl + "auth/sign-in"
+                : baseUrl + "/auth/sign-in";
+
+        logger.info("[BaseTest] startFreshSession bootstrap → BASE_URL={} | SIGN_IN_URL={} | admin={} | isCi={} | navTimeout={}s | loginTimeout={}s",
+                baseUrl,
+                signInUrl,
+                maskEmail(adminUser),
+                isCi,
+                navTimeout.toSeconds(),
+                loginTimeout.toSeconds()
+        );
+
+        System.out.println("[BaseTest] BASE_URL=" + baseUrl);
+        System.out.println("[BaseTest] SIGN_IN_URL=" + signInUrl);
+        System.out.println("[BaseTest] ADMIN_USER=" + maskEmail(adminUser));
+        System.out.println("[BaseTest] CI=" + isCi);
 
         Throwable lastError = null;
 
@@ -242,25 +277,60 @@ public class BaseTest {
             try {
                 logger.info("[BaseTest] Starting fresh session attempt {}/{} at {}",
                         attempt, maxAttempts, baseUrl);
+                System.out.println("[BaseTest] === startFreshSession attempt " + attempt + "/" + maxAttempts + " ===");
+
+                // On attempts > 1, do a HARD driver reset (full new browser)
+                if (attempt > 1) {
+                    System.out.println("[BaseTest] Attempt " + attempt + " → full WebDriver restart.");
+                    try {
+                        if (DriverManager.isInitialized()) {
+                            DriverManager.quit();
+                        }
+                    } catch (Throwable t) {
+                        logger.warn("[BaseTest] Suppressed exception while quitting driver on retry: {}", t.toString());
+                    }
+
+                    DriverManager.init();
+                    driver = DriverManager.get();
+                }
+
+                if (driver == null) {
+                    throw new SkipException("[BaseTest] WebDriver is null inside startFreshSession attempt " + attempt);
+                }
 
                 // 1) Hard reset browser session
                 clearCookiesAndStorage(driver);
                 normalizeViewport(driver);
 
                 // 2) Go straight to sign-in
-                String signInUrl = baseUrl.endsWith("/")
-                        ? baseUrl + "auth/sign-in"
-                        : baseUrl + "/auth/sign-in";
-
                 logger.info("[BaseTest] Navigating to sign-in: {}", signInUrl);
+                System.out.println("[BaseTest] Navigating to SIGN_IN_URL: " + signInUrl);
+
                 robustGet(driver, signInUrl, /*retries*/ 2, navTimeout);
+
+                try {
+                    String current = driver.getCurrentUrl();
+                    System.out.println("[BaseTest] After robustGet currentUrl=" + current);
+                    logger.info("[BaseTest] After robustGet currentUrl={}", current);
+                } catch (Throwable ignore) {
+                    // best effort
+                }
 
                 // 3) Perform login
                 LoginPage login = new LoginPage(driver);
                 DashboardPage dashboard = login.safeLoginAsAdmin(adminUser, adminPass, loginTimeout);
 
+                try {
+                    String afterLoginUrl = driver.getCurrentUrl();
+                    System.out.println("[BaseTest] After safeLoginAsAdmin currentUrl=" + afterLoginUrl);
+                    logger.info("[BaseTest] After safeLoginAsAdmin currentUrl={}", afterLoginUrl);
+                } catch (Throwable ignore) {
+                    // best effort
+                }
+
                 if (dashboard != null && dashboard.isLoaded()) {
                     logger.info("[BaseTest] Login successful as {} on attempt {}", adminUser, attempt);
+                    System.out.println("[BaseTest] ✅ Dashboard loaded successfully on attempt " + attempt);
                     return dashboard;
                 }
 
@@ -269,21 +339,25 @@ public class BaseTest {
                         attempt, maxAttempts, adminUser
                 );
                 logger.warn(msg);
+                System.out.println("[BaseTest] " + msg);
                 lastError = new RuntimeException(msg);
 
             } catch (TimeoutException e) {
                 lastError = e;
-                logger.warn("[BaseTest] Timeout Exception during startFreshSession attempt {}/{}: {}",
+                logger.warn("[BaseTest] TimeoutException during startFreshSession attempt {}/{}: {}",
                         attempt, maxAttempts, e.toString());
+                System.out.println("[BaseTest] TimeoutException on attempt " + attempt + ": " + e);
+
             } catch (WebDriverException e) {
                 lastError = e;
-                logger.warn("[BaseTest] WebDriverException Exception during startFreshSession attempt {}/{}: {}",
+                logger.warn("[BaseTest] WebDriverException during startFreshSession attempt {}/{}: {}",
                         attempt, maxAttempts, e.toString());
+                System.out.println("[BaseTest] WebDriverException on attempt " + attempt + ": " + e);
             }
 
             // Small backoff between attempts (optional)
             try {
-                Thread.sleep(1500L);
+                Thread.sleep(isCi ? 2500L : 1500L);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 break;
@@ -294,6 +368,7 @@ public class BaseTest {
         String failMsg = "❌ Unable to start fresh session and reach Dashboard after "
                 + maxAttempts + " attempts for user " + adminUser;
         logger.error(failMsg, lastError);
+        System.out.println("[BaseTest] " + failMsg);
         throw new AssertionError(failMsg, lastError);
     }
 
