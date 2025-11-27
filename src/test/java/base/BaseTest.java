@@ -177,7 +177,7 @@ public class BaseTest {
 
         START.set(System.currentTimeMillis());
         logger.info("========== STARTING TEST: {} (admin={}) ==========",
-                method.getName(), maskEmail(adminEmail));
+                method.getName(), adminEmail);
     }
 
     // =========================================================
@@ -210,7 +210,7 @@ public class BaseTest {
     // PUBLIC SESSION HELPERS
     // =========================================================
     public static DashboardPage startFreshSession(WebDriver driver) {
-        return startFreshSession(driver, 3); // 3 attempts for transient issues
+        return startFreshSession(driver, 5); // 5 attempts for transient issues
     }
 
     public static DashboardPage startFreshSession(WebDriver driver, int maxAttempts) {
@@ -260,7 +260,7 @@ public class BaseTest {
         logger.info("[BaseTest] startFreshSession bootstrap → BASE_URL={} | SIGN_IN_URL={} | admin={} | isCi={} | navTimeout={}s | loginTimeout={}s",
                 baseUrl,
                 signInUrl,
-                maskEmail(adminUser),
+                adminUser,
                 isCi,
                 navTimeout.toSeconds(),
                 loginTimeout.toSeconds()
@@ -268,7 +268,7 @@ public class BaseTest {
 
         System.out.println("[BaseTest] BASE_URL=" + baseUrl);
         System.out.println("[BaseTest] SIGN_IN_URL=" + signInUrl);
-        System.out.println("[BaseTest] ADMIN_USER=" + maskEmail(adminUser));
+        System.out.println("[BaseTest] ADMIN_USER=" + adminUser);
         System.out.println("[BaseTest] CI=" + isCi);
 
         Throwable lastError = null;

@@ -74,7 +74,7 @@ public class TiltSmokeTest extends BaseTest {
         if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
             throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
         }
-        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
+        System.out.println("[AdminCreds] email=" + ADMIN_USER + " | passLen=" + ADMIN_PASS.length());
 
         // -------------------- LOGIN → DASHBOARD --------------------
         step("Login as admin and land on Dashboard");
@@ -130,7 +130,7 @@ public class TiltSmokeTest extends BaseTest {
         if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
             throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
         }
-        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
+        System.out.println("[AdminCreds] email=" + ADMIN_USER + " | passLen=" + ADMIN_PASS.length());
 
         // -------------------- LOGIN → DASHBOARD --------------------
         step("Login as admin and land on Dashboard");
@@ -182,7 +182,7 @@ public class TiltSmokeTest extends BaseTest {
         if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
             throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
         }
-        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
+        System.out.println("[AdminCreds] email=" + ADMIN_USER + " | passLen=" + ADMIN_PASS.length());
 
         // -------------------- LOGIN → DASHBOARD --------------------
         step("Navigate to Login and authenticate as admin");
@@ -410,7 +410,7 @@ public class TiltSmokeTest extends BaseTest {
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
         final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
 
-        System.out.println("[AdminCreds] email=" + BaseTest.maskEmail(ADMIN_USER)
+        System.out.println("[AdminCreds] email=" + ADMIN_USER
                 + " | passLen=" + (ADMIN_PASS == null ? -1 : ADMIN_PASS.length())
                 + " | blank=" + (ADMIN_PASS == null || ADMIN_PASS.isBlank()));
         System.out.println("[AdminCreds] baseUrl=" + Config.getAny("baseUrl"));

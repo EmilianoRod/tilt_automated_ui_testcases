@@ -84,7 +84,7 @@ public class Phase1SmokeTests extends BaseTest {
         if (ADMIN_USER == null || ADMIN_USER.isBlank() || ADMIN_PASS == null || ADMIN_PASS.isBlank()) {
             throw new SkipException("[Config] Admin credentials missing (admin.email/.password or ADMIN_* env).");
         }
-        System.out.println("[AdminCreds] email=" + maskEmail(ADMIN_USER) + " | passLen=" + ADMIN_PASS.length());
+        System.out.println("[AdminCreds] email=" + ADMIN_USER + " | passLen=" + ADMIN_PASS.length());
 
         final Duration EMAIL_TIMEOUT = Duration.ofSeconds(120);
         final String CTA_TEXT       = "Accept Assessment";
