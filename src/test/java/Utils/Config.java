@@ -151,11 +151,13 @@ public final class Config {
 
 
     public static String getAdminEmail() {
-        return getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        return "erodriguez+a@effectussoftware.com";
+//        return getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
     }
 
     public static String getAdminPassword() {
-        return getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+//        return getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        return "Password#1";
     }
 
     /* ===========================

@@ -405,6 +405,26 @@ public class TiltSmokeTest extends BaseTest {
 
 
 
+    @Test
+    public void debug_adminLogin_only() throws InterruptedException {
+        final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+
+        System.out.println("[AdminCreds] email=" + BaseTest.maskEmail(ADMIN_USER)
+                + " | passLen=" + (ADMIN_PASS == null ? -1 : ADMIN_PASS.length())
+                + " | blank=" + (ADMIN_PASS == null || ADMIN_PASS.isBlank()));
+        System.out.println("[AdminCreds] baseUrl=" + Config.getAny("baseUrl"));
+
+        LoginPage login = new LoginPage(driver());
+        login.navigateTo();
+        login.waitUntilLoaded();
+        login.safeLoginAsAdmin(ADMIN_USER, ADMIN_PASS, Duration.ofSeconds(60));
+
+        // Hold a bit so screenshot / manual eyeball can see final state
+        Thread.sleep(3000);
+    }
+
+
 
 
 
