@@ -16,6 +16,8 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -29,6 +31,7 @@ public class TestListener implements ITestListener {
         WebDriver driver = currentDriver();
         if (driver == null) return;
 
+        saveScreenshotToFile(driver, result);
         attachUrl(driver);
         attachScreenshot(driver);
         attachPageSource(driver);
@@ -145,4 +148,27 @@ public class TestListener implements ITestListener {
     @Override public void onTestSuccess(ITestResult r) {}
     @Override public void onTestFailedButWithinSuccessPercentage(ITestResult r) {}
     @Override public void onFinish(ITestContext c) {}
+
+
+
+
+
+    private void saveScreenshotToFile(WebDriver driver, ITestResult result) {
+        try {
+            Path dir = Path.of(System.getProperty("user.dir"), "target", "screenshots");
+            Files.createDirectories(dir);
+
+            String method = result.getMethod().getMethodName().replaceAll("[^a-zA-Z0-9_.-]", "_");
+            String ts = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+            Path out = dir.resolve(method + "_" + ts + ".png");
+
+            byte[] png = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
+            Files.write(out, png);
+
+            System.out.println("[Screenshot] Saved to " + out.toAbsolutePath());
+        } catch (Throwable e) {
+            System.out.println("[Screenshot] Failed to save: " + e.getMessage());
+        }
+    }
+
 }
