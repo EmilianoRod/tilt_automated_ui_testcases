@@ -99,11 +99,11 @@ public class LoginPage extends BasePage {
     }
 
 
-    /** Throttle-aware login with narrowed error waits + always-one refresh+retry. */
+    /** Throttle-aware login with narrowed error waits + multi-try typing & clicking. */
     public DashboardPage safeLoginAsAdmin(String email, String pass, Duration baseWait) {
         // CI tends to be slower → give it more time after clicking login
-        // boolean isCi = Boolean.parseBoolean(System.getenv().getOrDefault("CI", "true"));
-        boolean isCi = true; // forced for debugging
+//        boolean isCi = Boolean.parseBoolean(System.getenv().getOrDefault("CI", "true"));
+        boolean isCi = true;
         Duration postClickWait = isCi ? baseWait.plusSeconds(20) : baseWait.plusSeconds(8);
 
         // basic debug about what we're sending
@@ -115,15 +115,13 @@ public class LoginPage extends BasePage {
         WebDriver driver = driver();
         WebDriverWait signInWait = new WebDriverWait(driver, baseWait);
 
-        // make sure we're actually on sign-in (once per attempt; loop below)
         By errorBanner   = By.cssSelector("[data-test='login-error'], .ant-alert-error, .ant-message-error, [role='alert']");
-        By dashboardRoot = By.cssSelector("[data-test='dashboard-root']"); // adjust if needed
+        By dashboardRoot = By.xpath("//*[@id=\"__next\"]/div");
 
         // success = URL or known dashboard element
         ExpectedCondition<Boolean> successUrl = d -> {
             String u = d.getCurrentUrl();
             if (u == null) return false;
-            // add here any post-login URLs your app might redirect to
             return u.contains("/dashboard")
                     || u.contains("/individuals")
                     || u.contains("/teams")
@@ -149,18 +147,17 @@ public class LoginPage extends BasePage {
                         if (text != null && !text.isBlank()) break;
                     }
                 }
-            } catch (Exception ignore) {
-            }
+            } catch (Exception ignore) {}
             if (text == null || text.isBlank()) {
                 try {
                     text = d.findElement(By.tagName("body")).getText();
-                } catch (Exception ignore) {
-                }
+                } catch (Exception ignore) {}
             }
             return java.util.Objects.toString(text, "");
         };
 
-        int maxAttempts = isCi ? 3 : 2;
+        int maxAttempts   = isCi ? 3 : 2;  // full page-level attempts
+        int maxSubTries   = 2;             // how many times to retype+click within one attempt
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
 
@@ -188,126 +185,206 @@ public class LoginPage extends BasePage {
                 }
             }
 
-            // ---- actual login attempt ----
-            try {
-                WebElement emailEl = signInWait.until(ExpectedConditions.elementToBeClickable(emailField));
-                WebElement passEl  = signInWait.until(ExpectedConditions.elementToBeClickable(passwordField));
-                emailEl.clear();
-                emailEl.sendKeys(email);
-                passEl.clear();
-                passEl.sendKeys(pass);
+            // --- inner sub-attempts: retype + click multiple times before giving up this page ---
+            boolean lastBadCreds      = false;
+            boolean lastThrottled     = false;
+            String  lastErrorSnapshot = "";
 
-                try {
-                    signInWait.until(ExpectedConditions.elementToBeClickable(loginButton)).click();
-                } catch (ElementClickInterceptedException e) {
-                    WebElement btn = driver.findElement(loginButton);
-                    ((JavascriptExecutor) driver).executeScript("arguments[0].click()", btn);
+            for (int sub = 1; sub <= maxSubTries; sub++) {
+                if (sub > 1) {
+                    System.out.println("[Login] Sub-attempt " + sub + "/" + maxSubTries +
+                            " within attempt " + attempt + " — retyping credentials and clicking again.");
                 }
 
-                // Wait until either:
-                //  - we clearly landed somewhere "logged in" (URL / dashboardRoot), OR
-                //  - we clearly see a login-related error message.
                 try {
-                    new WebDriverWait(driver, postClickWait).until(d -> {
-                        if (Boolean.TRUE.equals(successUrl.apply(d)) ||
-                                Boolean.TRUE.equals(dashboardVisible.apply(d))) {
-                            return true;
+                    WebElement emailEl = signInWait.until(ExpectedConditions.elementToBeClickable(emailField));
+                    WebElement passEl  = signInWait.until(ExpectedConditions.elementToBeClickable(passwordField));
+
+                    // Clear & retype
+                    emailEl.click();
+                    emailEl.clear();
+                    emailEl.sendKeys(email);
+
+                    passEl.click();
+                    passEl.clear();
+                    passEl.sendKeys(pass);
+
+                    // Best-effort verification of what ended up in the fields
+                    try {
+                        String emailVal = emailEl.getAttribute("value");
+                        String passVal  = passEl.getAttribute("value"); // usually returns the actual text for <input type="password">
+                        int passLenAttr = passVal == null ? -1 : passVal.length();
+
+                        System.out.println("[LoginDebug] After typing: emailVal=" + emailVal +
+                                " | passLenAttr=" + passLenAttr);
+
+                        if ((emailVal == null || !emailVal.equals(email)) ||
+                                (passLenAttr != -1 && passLenAttr != pass.length())) {
+                            System.out.println("[LoginDebug] Field value mismatch after typing (sub-try " + sub +
+                                    "). Will retype on next sub-attempt.");
+                            if (sub < maxSubTries) {
+                                try { Thread.sleep(800L); } catch (InterruptedException ignored) {}
+                                continue; // retype on next sub attempt
+                            }
                         }
-                        String low = extractErrorText.apply(d).toLowerCase(Locale.ROOT);
-                        boolean knownErr =
-                                low.contains("invalid email or password") ||
-                                        low.contains("too many attempts") ||
-                                        low.contains("try again later") ||
-                                        low.contains("rate limit");
-                        return knownErr;
-                    });
-                } catch (TimeoutException ignore) {
-                    // we'll classify below
-                }
+                    } catch (Exception verifyEx) {
+                        System.out.println("[LoginDebug] Could not verify field values: " + verifyEx.getMessage());
+                    }
 
-                // ---- classify outcome after the wait ----
-                boolean success = Boolean.TRUE.equals(successUrl.apply(driver)) ||
-                        Boolean.TRUE.equals(dashboardVisible.apply(driver));
+                    // Click login: first normal, then JS fallback
+                    try {
+                        signInWait.until(ExpectedConditions.elementToBeClickable(loginButton)).click();
+                    } catch (ElementClickInterceptedException e) {
+                        System.out.println("[Login] ElementClickInterceptedException — retrying click via JS.");
+                        try {
+                            WebElement btn = driver.findElement(loginButton);
+                            ((JavascriptExecutor) driver).executeScript("arguments[0].click()", btn);
+                        } catch (Exception jsEx) {
+                            System.out.println("[Login] JS click also failed: " + jsEx.getMessage());
+                        }
+                    }
 
-                if (success) {
-                    System.out.println("[Login] Success after attempt " + attempt + "/" + maxAttempts +
-                            " | URL=" + driver.getCurrentUrl());
-                    return new DashboardPage(driver);
-                }
+                    // Wait until either success or a clear login error appears
+                    try {
+                        new WebDriverWait(driver, postClickWait).until(d -> {
+                            if (Boolean.TRUE.equals(successUrl.apply(d)) ||
+                                    Boolean.TRUE.equals(dashboardVisible.apply(d))) {
+                                return true;
+                            }
+                            String low = extractErrorText.apply(d).toLowerCase(Locale.ROOT);
+                            boolean knownErr =
+                                    low.contains("invalid email or password") ||
+                                            low.contains("too many attempts") ||
+                                            low.contains("try again later") ||
+                                            low.contains("rate limit");
+                            return knownErr;
+                        });
+                    } catch (TimeoutException ignore) {
+                        // we'll classify below
+                    }
 
-                String fullText = extractErrorText.apply(driver);
-                String low      = fullText.toLowerCase(Locale.ROOT);
-                boolean badCreds =
-                        low.contains("invalid email or password");
-                boolean throttled =
-                        low.contains("too many attempts") ||
-                                low.contains("try again later") ||
-                                low.contains("rate limit");
+                    // ---- classify outcome after the wait ----
+                    boolean success = Boolean.TRUE.equals(successUrl.apply(driver)) ||
+                            Boolean.TRUE.equals(dashboardVisible.apply(driver));
 
-                System.out.println("[LoginFail] Attempt " + attempt + "/" + maxAttempts);
-                System.out.println("[LoginFail] URL: " + driver.getCurrentUrl());
-                System.out.println("[LoginFail] Title: " + driver.getTitle());
-                System.out.println("[LoginFail] Detected text (trimmed): " +
-                        low.substring(0, Math.min(low.length(), 300)));
+                    if (success) {
+                        System.out.println("[Login] Success after attempt " + attempt + "/" + maxAttempts +
+                                " (sub " + sub + "/" + maxSubTries + ")" +
+                                " | URL=" + driver.getCurrentUrl());
+                        return new DashboardPage(driver);
+                    }
 
-                String bodyPreview = "";
-                try {
-                    bodyPreview = driver.findElement(By.tagName("body")).getText();
-                } catch (Exception ignore) {
-                }
-                System.out.println("[LoginFail] body preview (first lines):");
-                java.util.Arrays.stream(java.util.Objects.toString(bodyPreview, "").split("\\R"))
-                        .limit(12)
-                        .map(String::trim)
-                        .forEach(l -> System.out.println("  • " + l));
+                    String fullText = extractErrorText.apply(driver);
+                    String low      = fullText.toLowerCase(Locale.ROOT);
+                    boolean badCreds =
+                            low.contains("invalid email or password");
+                    boolean throttled =
+                            low.contains("too many attempts") ||
+                                    low.contains("try again later") ||
+                                    low.contains("rate limit");
 
-                if (badCreds) {
-                    System.out.println("[Login] badCreds detected, dumping network logs…");
-                    dumpLoginNetworkLogs(driver);
-                    // hard fail: no point in retrying more
-                    throw new TimeoutException("Login failed: invalid credentials or locked account.");
-                }
+                    lastBadCreds      = badCreds;
+                    lastThrottled     = throttled;
+                    lastErrorSnapshot = low;
 
-                if (throttled) {
-                    if (attempt < maxAttempts) {
-                        System.out.println("[Login] Throttled / temporary error. Backing off before next attempt.");
-                        try { Thread.sleep(isCi ? 4000L : 2000L); } catch (InterruptedException ignored) {}
-                        continue; // next attempt in the for-loop
-                    } else {
-                        System.out.println("[Login] Throttled on final attempt, dumping network logs…");
+                    System.out.println("[LoginFail] Attempt " + attempt + "/" + maxAttempts +
+                            " (sub " + sub + "/" + maxSubTries + ")");
+                    System.out.println("[LoginFail] URL: " + driver.getCurrentUrl());
+                    System.out.println("[LoginFail] Title: " + driver.getTitle());
+                    System.out.println("[LoginFail] Detected text (trimmed): " +
+                            low.substring(0, Math.min(low.length(), 300)));
+
+                    String bodyPreview = "";
+                    try {
+                        bodyPreview = driver.findElement(By.tagName("body")).getText();
+                    } catch (Exception ignore) {}
+                    System.out.println("[LoginFail] body preview (first lines):");
+                    java.util.Arrays.stream(java.util.Objects.toString(bodyPreview, "").split("\\R"))
+                            .limit(12)
+                            .map(String::trim)
+                            .forEach(l -> System.out.println("  • " + l));
+
+                    // If it's clearly bad credentials → don't keep poking
+                    if (badCreds) {
+                        System.out.println("[Login] badCreds detected on sub-attempt " + sub +
+                                ". Dumping network logs and aborting.");
                         dumpLoginNetworkLogs(driver);
-                        throw new TimeoutException("Login failed due to repeated throttling / rate limiting.");
+                        throw new TimeoutException("Login failed: invalid credentials or locked account.");
+                    }
+
+                    // If it's clearly throttling → break inner loop, outer will decide retry/backoff
+                    if (throttled) {
+                        System.out.println("[Login] Throttled (sub " + sub + ").");
+                        break; // let outer attempt handle backoff
+                    }
+
+                    // Unknown reason; if we still have a sub-try left, retype and click again
+                    if (sub < maxSubTries) {
+                        System.out.println("[Login] Unknown login failure, will retry typing+clicking once more in this attempt.");
+                        try { Thread.sleep(1200L); } catch (InterruptedException ignored) {}
+                        continue;
+                    }
+
+                } catch (TimeoutException te) {
+                    if (sub == maxSubTries) {
+                        // Let outer loop decide; we just log here
+                        System.out.println("[Login] TimeoutException within attempt " + attempt +
+                                " on final sub-attempt; will escalate to outer attempts.");
+                        break;
+                    } else {
+                        System.out.println("[Login] TimeoutException on sub-attempt " + sub +
+                                ", will retry typing/clicking again.");
+                        try { Thread.sleep(1200L); } catch (InterruptedException ignored) {}
+                    }
+                } catch (RuntimeException re) {
+                    System.out.println("[Login] RuntimeException during attempt " + attempt +
+                            " (sub " + sub + "): " + re.getMessage());
+                    if (sub == maxSubTries) {
+                        // Final sub-try of this attempt → let outer loop handle or fail
+                        break;
                     }
                 }
+            } // end sub-attempts
 
-                // Unknown reason, but we already logged. Let next attempt retry if we have any left.
+            // --- after inner loop: decide what to do at outer attempt level ---
+
+            if (lastBadCreds) {
+                System.out.println("[Login] lastBadCreds=true after attempt " + attempt +
+                        ". Dumping network logs and aborting.");
+                dumpLoginNetworkLogs(driver);
+                throw new TimeoutException("Login failed: invalid credentials or locked account. Last error: " +
+                        (lastErrorSnapshot == null ? "" : lastErrorSnapshot));
+            }
+
+            if (lastThrottled) {
                 if (attempt < maxAttempts) {
-                    System.out.println("[Login] Unknown login failure, will retry once more.");
-                    try { Thread.sleep(1500L); } catch (InterruptedException ignored) {}
+                    System.out.println("[Login] Throttled on attempt " + attempt +
+                            "/" + maxAttempts + ". Backing off before next attempt.");
+                    try { Thread.sleep(isCi ? 4000L : 2000L); } catch (InterruptedException ignored) {}
                     continue;
-                }
-
-            } catch (TimeoutException te) {
-                // rethrow if last attempt, otherwise loop will retry
-                if (attempt == maxAttempts) {
-                    System.out.println("[Login] TimeoutException on final attempt, dumping network logs…");
-                    dumpLoginNetworkLogs(driver);
-                    throw te;
                 } else {
-                    System.out.println("[Login] TimeoutException during attempt " + attempt + ", will retry.");
-                }
-            } catch (RuntimeException re) {
-                // Unexpected runtime, log & decide
-                System.out.println("[Login] RuntimeException during attempt " + attempt + ": " + re.getMessage());
-                if (attempt == maxAttempts) {
-                    System.out.println("[Login] RuntimeException on final attempt, dumping network logs…");
+                    System.out.println("[Login] Throttled on final attempt; dumping network logs.");
                     dumpLoginNetworkLogs(driver);
-                    throw re;
+                    throw new TimeoutException("Login failed due to repeated throttling / rate limiting. Last error: " +
+                            (lastErrorSnapshot == null ? "" : lastErrorSnapshot));
                 }
+            }
+
+            // Unknown failure reason at this attempt level
+            if (attempt < maxAttempts) {
+                System.out.println("[Login] Unknown login failure at outer attempt " + attempt +
+                        "/" + maxAttempts + ". Will refresh and retry.");
+                try { Thread.sleep(1500L); } catch (InterruptedException ignored) {}
+            } else {
+                System.out.println("[Login] Final outer attempt failed with unknown reason; dumping network logs.");
+                dumpLoginNetworkLogs(driver);
+                throw new TimeoutException("Login did not reach dashboard after " + maxAttempts +
+                        " attempts. Last error: " +
+                        (lastErrorSnapshot == null ? "" : lastErrorSnapshot));
             }
         }
 
-        // If we exit the loop without returning, we never reached dashboard
+        // Should never reach here, but just in case
         System.out.println("[Login] Exited login loop without success, dumping network logs…");
         dumpLoginNetworkLogs(driver);
         throw new TimeoutException("Login did not reach dashboard after " + maxAttempts + " attempts.");

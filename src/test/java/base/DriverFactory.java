@@ -149,7 +149,7 @@ public final class DriverFactory {
         options.setExperimentalOption("prefs", prefs);
         // ---------- end prefs ----------
 
-        // Logging (opt-in)
+// Logging (opt-in)
         if (Config.isPerfLoggingEnabled() || Config.isBrowserLoggingEnabled()) {
             LoggingPreferences logs = new LoggingPreferences();
             if (Config.isPerfLoggingEnabled())   logs.enable(LogType.PERFORMANCE, Level.ALL);
