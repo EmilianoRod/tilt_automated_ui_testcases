@@ -4,6 +4,9 @@ import Utils.Config;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.*;
+import org.openqa.selenium.logging.LogEntries;
+import org.openqa.selenium.logging.LogEntry;
+import org.openqa.selenium.logging.LogType;
 import org.openqa.selenium.support.ui.ExpectedCondition;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
@@ -13,6 +16,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 import static base.BaseTest.driver;
 
@@ -65,11 +69,48 @@ public class LoginPage extends BasePage {
 
     // ==================== login helper ====================
 
+
+
+
+
+
+
+    private void dumpLoginNetworkLogs(WebDriver driver) {
+        try {
+            Set<String> types = driver.manage().logs().getAvailableLogTypes();
+            if (!types.contains(LogType.PERFORMANCE)) {
+                System.out.println("[LoginNet] PERFORMANCE log type not available.");
+                return;
+            }
+
+            System.out.println("[LoginNet] ---- Network logs around login ----");
+            LogEntries perf = driver.manage().logs().get(LogType.PERFORMANCE);
+            for (LogEntry e : perf.getAll()) {
+                String msg = e.getMessage();
+                // Filter to only login-related calls to keep noise low
+                if (msg.contains("/auth/sign-in") || msg.contains("/auth/sign") || msg.contains("/login")) {
+                    System.out.println("[LoginNet] " + msg);
+                }
+            }
+            System.out.println("[LoginNet] ---- end ----");
+        } catch (Throwable t) {
+            System.out.println("[LoginNet] Failed to read performance logs: " + t.getMessage());
+        }
+    }
+
+
     /** Throttle-aware login with narrowed error waits + always-one refresh+retry. */
     public DashboardPage safeLoginAsAdmin(String email, String pass, Duration baseWait) {
         // CI tends to be slower → give it more time after clicking login
-        boolean isCi = Boolean.parseBoolean(System.getenv().getOrDefault("CI", "true"));
+        // boolean isCi = Boolean.parseBoolean(System.getenv().getOrDefault("CI", "true"));
+        boolean isCi = true; // forced for debugging
         Duration postClickWait = isCi ? baseWait.plusSeconds(20) : baseWait.plusSeconds(8);
+
+        // basic debug about what we're sending
+        System.out.println("[LoginDebug] isCi=" + isCi
+                + " | email=" + email
+                + " | passLen=" + (pass == null ? -1 : pass.length())
+                + " | passBlank=" + (pass == null || pass.isBlank()));
 
         WebDriver driver = driver();
         WebDriverWait signInWait = new WebDriverWait(driver, baseWait);
@@ -139,7 +180,9 @@ public class LoginPage extends BasePage {
             } catch (TimeoutException te) {
                 System.out.println("[Login] Could not reach sign-in page on attempt " + attempt + ". URL=" + driver.getCurrentUrl());
                 if (attempt == maxAttempts) {
-                    throw new TimeoutException("Could not reach sign-in page before login attempts.");
+                    System.out.println("[Login] Final failure to reach sign-in, dumping network logs…");
+                    dumpLoginNetworkLogs(driver);
+                    throw new TimeoutException("Could not reach sign-in page before login attempts.", te);
                 } else {
                     continue;
                 }
@@ -219,6 +262,8 @@ public class LoginPage extends BasePage {
                         .forEach(l -> System.out.println("  • " + l));
 
                 if (badCreds) {
+                    System.out.println("[Login] badCreds detected, dumping network logs…");
+                    dumpLoginNetworkLogs(driver);
                     // hard fail: no point in retrying more
                     throw new TimeoutException("Login failed: invalid credentials or locked account.");
                 }
@@ -229,6 +274,8 @@ public class LoginPage extends BasePage {
                         try { Thread.sleep(isCi ? 4000L : 2000L); } catch (InterruptedException ignored) {}
                         continue; // next attempt in the for-loop
                     } else {
+                        System.out.println("[Login] Throttled on final attempt, dumping network logs…");
+                        dumpLoginNetworkLogs(driver);
                         throw new TimeoutException("Login failed due to repeated throttling / rate limiting.");
                     }
                 }
@@ -243,6 +290,8 @@ public class LoginPage extends BasePage {
             } catch (TimeoutException te) {
                 // rethrow if last attempt, otherwise loop will retry
                 if (attempt == maxAttempts) {
+                    System.out.println("[Login] TimeoutException on final attempt, dumping network logs…");
+                    dumpLoginNetworkLogs(driver);
                     throw te;
                 } else {
                     System.out.println("[Login] TimeoutException during attempt " + attempt + ", will retry.");
@@ -251,15 +300,18 @@ public class LoginPage extends BasePage {
                 // Unexpected runtime, log & decide
                 System.out.println("[Login] RuntimeException during attempt " + attempt + ": " + re.getMessage());
                 if (attempt == maxAttempts) {
+                    System.out.println("[Login] RuntimeException on final attempt, dumping network logs…");
+                    dumpLoginNetworkLogs(driver);
                     throw re;
                 }
             }
         }
 
         // If we exit the loop without returning, we never reached dashboard
+        System.out.println("[Login] Exited login loop without success, dumping network logs…");
+        dumpLoginNetworkLogs(driver);
         throw new TimeoutException("Login did not reach dashboard after " + maxAttempts + " attempts.");
     }
-
 
 
 
