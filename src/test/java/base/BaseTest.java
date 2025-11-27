@@ -318,7 +318,7 @@ public class BaseTest {
     // =========================================================
     // INTERNAL UTILITIES
     // =========================================================
-    protected static WebDriver driver() {
+    public static WebDriver driver() {
         return DriverManager.get();
     }
 
