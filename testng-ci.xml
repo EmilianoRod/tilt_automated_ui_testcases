@@ -1,0 +1,33 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd" >
+<suite name="Unified-CI-Suite"
+       verbose="1"
+       preserve-order="true"
+       parallel="classes"
+       thread-count="3"
+       data-provider-thread-count="3">
+
+    <!-- Optional: use listeners only if they exist in your project -->
+    <listeners>
+        <listener class-name="listeners.TestListener"/>
+        <listener class-name="listeners.RetryTransformer"/>
+    </listeners>
+
+    <!-- Run smoke + ui-only; exclude mobile group entirely -->
+    <test name="UI-All">
+        <groups>
+            <run>
+                <include name="smoke"/>
+                <include name="ui-only"/>
+                <exclude name="ui-mobile"/>
+            </run>
+        </groups>
+
+        <classes>
+            <!-- Keep only classes that actually exist in your repo -->
+            <class name="tests.individuals.IndividualsListTests"/>
+            <class name="tests.teams.TeamAssessmentPurchaseAndAssignment"/>
+            <class name="tests.Phase1SmokeTests"/>
+            <class name="tests.OrderPreviewCouponFlowTests"/>
+        </classes>
+    </test>
+</suite>

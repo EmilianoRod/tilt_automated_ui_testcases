@@ -231,4 +231,40 @@ public class StripeCheckoutHelper {
         int r;
         while ((r = in.read(b)) != -1) out.write(b, 0, r);
     }
+
+
+
+
+    /**
+     * Returns true if the Stripe CLI looks callable on this machine.
+     * Honours STRIPE_CLI_PATH if set (full path to the binary).
+     * Falls back to looking for `stripe` on PATH.
+     */
+    public static boolean isCliAvailable() {
+        final String explicit = System.getenv("STRIPE_CLI_PATH"); // e.g. /opt/homebrew/bin/stripe
+        final String[] cmd = (explicit != null && !explicit.isBlank())
+                ? new String[] { explicit, "--version" }
+                : new String[] { "stripe", "--version" };
+
+        try {
+            Process p = new ProcessBuilder(cmd)
+                    .redirectErrorStream(true)
+                    .start();
+            // small timeout so we don't hang the test if PATH is weird
+            if (!p.waitFor(2, TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return false;
+            }
+            // read output once (optional, useful for logs)
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+                String line = br.readLine();
+                if (line != null) System.out.println("[StripeCLI] " + line);
+            } catch (Exception ignored) {}
+            return p.exitValue() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+
 }

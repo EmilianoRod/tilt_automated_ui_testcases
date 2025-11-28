@@ -1,328 +1,298 @@
 package Utils;
 
-import java.io.*;
+
+import java.io.IOException;
 import java.nio.file.*;
+import java.time.Duration;
 import java.util.*;
 
 /**
- * Ultra-robust configuration loader.
- *
- * Precedence (highest to lowest) for each lookup:
- *   1) System property (-Dkey=...)
- *   2) Environment variable (KEY and dot->ENV form)
- *   3) Classpath props: config.local.properties, then config.properties
- *   4) Files in project root if present: env.local, .env.local, .env
- *
- * Also:
- *   - Supports alias keys for the same setting.
- *   - After loading, propagates critical values into system properties in BOTH styles:
- *       dotted (e.g., mailslurp.inboxId) AND UPPER_SNAKE (e.g., MAILSLURP_INBOX_ID)
+ * Centralized test configuration facade.
+ * Priority: System property (-D) > Environment variable > .env.local file > defaults.
  */
-public class Config {
+public final class Config {
 
     private static final Properties props = new Properties();
-    private static final List<String> FS_FILES = List.of(
-            "env.local",
-            ".env.local",
-            ".env"
-    );
+    private static boolean loaded = false;
 
-    /** Convert dotted key to ENV style: admin.email -> ADMIN_EMAIL */
-    private static String toEnv(String key) {
-        return key == null ? null : key.replace('.', '_').toUpperCase(Locale.ROOT);
-    }
+    private Config() {}
 
-    /** Load a classpath properties file if present, putting into target props. */
-    private static void loadFromClasspath(Properties target, String resourceName) {
-        try (InputStream in = Config.class.getClassLoader().getResourceAsStream(resourceName)) {
-            if (in != null) {
-                Properties p = new Properties();
-                p.load(in);
-                target.putAll(p);
-                System.out.println("ℹ️  Loaded " + resourceName + " from classpath.");
-            }
-        } catch (IOException e) {
-            throw new RuntimeException("❌ Failed to load " + resourceName + " from classpath: " + e.getMessage(), e);
-        }
-    }
-
-    /** Load a filesystem properties file (KEY=VALUE), if present. */
-    private static void loadFromFilesystem(Properties target, String path) {
-        Path p = Paths.get(path);
-        if (!Files.exists(p)) return;
-        try (InputStream in = Files.newInputStream(p)) {
-            Properties fp = new Properties();
-            fp.load(in);
-            target.putAll(fp);
-            System.out.println("ℹ️  Loaded " + path + " from filesystem.");
-        } catch (IOException e) {
-            throw new RuntimeException("❌ Failed to read " + path + ": " + e.getMessage(), e);
-        }
-    }
-
-    /** First non-blank helper. */
-    private static String firstNonBlank(String... vals) {
-        if (vals == null) return null;
-        for (String v : vals) {
-            if (v != null && !v.isBlank()) return v;
-        }
-        return null;
-    }
-
-    /**
-     * Try to resolve a key from: -D → ENV → props (dotted/upper) → filesystem props (already merged).
-     * We also try aliases in the same order.
-     */
-    private static String resolve(String primary, String... aliases) {
-        // 1) System properties
-        String v = System.getProperty(primary);
-        if (v != null && !v.isBlank()) return v;
-        for (String a : aliases) {
-            v = System.getProperty(a);
-            if (v != null && !v.isBlank()) return v;
-        }
-
-        // 2) Environment variables (both raw and dotted→ENV)
-        v = System.getenv(primary);
-        if (v != null && !v.isBlank()) return v;
-        v = System.getenv(toEnv(primary));
-        if (v != null && !v.isBlank()) return v;
-
-        for (String a : aliases) {
-            v = System.getenv(a);
-            if (v != null && !v.isBlank()) return v;
-            v = System.getenv(toEnv(a));
-            if (v != null && !v.isBlank()) return v;
-        }
-
-        // 3) Properties loaded (keep both dotted and uppercase)
-        v = props.getProperty(primary);
-        if (v != null && !v.isBlank()) return v;
-        v = props.getProperty(toEnv(primary));
-        if (v != null && !v.isBlank()) return v;
-
-        for (String a : aliases) {
-            v = props.getProperty(a);
-            if (v != null && !v.isBlank()) return v;
-            v = props.getProperty(toEnv(a));
-            if (v != null && !v.isBlank()) return v;
-        }
-
-        return null;
-    }
-
-    /** Set a -D system property if absent and value is non-blank. */
-    private static void setSysIfAbsent(String key, String value) {
-        if (key == null || value == null || value.isBlank()) return;
-        if (System.getProperty(key) == null) {
-            System.setProperty(key, value);
-        }
-    }
-
-    /** Set -D for both dotted and UPPER_SNAKE variants. */
-    private static void setBothStylesIfAbsent(String dottedKey, String value) {
-        if (dottedKey == null) return;
-        setSysIfAbsent(dottedKey, value);
-        setSysIfAbsent(toEnv(dottedKey), value);
-    }
+    /* ===========================
+     * Loader
+     * =========================== */
 
     static {
-        // ---- 1) Classpath properties (base then local overrides) ----
-        loadFromClasspath(props, "config.properties");
-        loadFromClasspath(props, "config.local.properties");
+        load();
+    }
 
-        // ---- 2) Filesystem properties (optional) ----
-        for (String f : FS_FILES) {
-            loadFromFilesystem(props, f);
+    private static void load() {
+        if (loaded) return;
+
+        Path envFile = Paths.get(".env.local");
+        if (Files.exists(envFile)) {
+            try {
+                System.out.println("[Config] Loaded: " + envFile.toAbsolutePath());
+                List<String> lines = Files.readAllLines(envFile);
+                for (String line : lines) {
+                    String trimmed = line.trim();
+                    if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                    int eq = trimmed.indexOf('=');
+                    if (eq > 0) {
+                        String key = trimmed.substring(0, eq).trim();
+                        String val = trimmed.substring(eq + 1).trim();
+                        props.setProperty(key, val);
+                    }
+                }
+            } catch (IOException e) {
+                System.err.println("[Config] Failed to read .env.local: " + e.getMessage());
+            }
+        } else {
+            System.out.println("[Config] No .env.local found — relying on system/env vars.");
         }
 
-        // ---- 3) Resolve critical values then propagate to -D in BOTH styles ----
+        loaded = true;
+    }
 
-        // MailSlurp API key
-        String mailSlurpKey = resolve(
-                "mailslurp.apiKey",
-                "mailslurp.forceKey",
-                "MAILSLURP_API_KEY"
+    /* ===========================
+     * Generic helpers
+     * =========================== */
+
+    private static String firstNonBlank(String... vals) {
+        if (vals == null) return null;
+        for (String s : vals) {
+            if (s != null && !s.isBlank()) return s;
+        }
+        return null;
+    }
+
+    private static String getFromPropsCaseInsensitive(String key) {
+        for (String k : props.stringPropertyNames()) {
+            if (k.equalsIgnoreCase(key))
+                return props.getProperty(k).trim();
+        }
+        return null;
+    }
+
+    private static String getFromEnvCaseInsensitive(String key) {
+        for (Map.Entry<String, String> e : System.getenv().entrySet()) {
+            if (e.getKey().equalsIgnoreCase(key))
+                return e.getValue().trim();
+        }
+        return null;
+    }
+
+    /** Return the first non-blank among sysProp, env, .env.local. */
+    public static String getAny(String... keys) {
+        for (String key : keys) {
+            if (key == null) continue;
+
+            String sys = System.getProperty(key);
+            if (sys != null && !sys.isBlank()) return sys.trim();
+
+            String env = getFromEnvCaseInsensitive(key);
+            if (env != null && !env.isBlank()) return env.trim();
+
+            String prop = getFromPropsCaseInsensitive(key);
+            if (prop != null && !prop.isBlank()) return prop.trim();
+        }
+        return null;
+    }
+
+    public static String get(String key, String envKey, String defaultVal) {
+        String v = firstNonBlank(
+                System.getProperty(key),
+                getFromEnvCaseInsensitive(envKey),
+                getFromPropsCaseInsensitive(key)
         );
-        // MailSlurp inbox id
-        String mailSlurpInbox = resolve(
-                "mailslurp.inboxId",
-                "MAILSLURP_INBOX_ID"
+        return (v == null || v.isBlank()) ? defaultVal : v.trim();
+    }
+
+    public static String get(String key, String env1, String env2, String defaultVal) {
+        String v = firstNonBlank(
+                System.getProperty(key),
+                getFromEnvCaseInsensitive(env1),
+                getFromEnvCaseInsensitive(env2),
+                getFromPropsCaseInsensitive(key)
         );
-        // MailSlurp allowCreate (boolean-ish)
-        String mailSlurpAllowCreate = resolve(
-                "mailslurp.allowCreate",
-                "MAILSLURP_ALLOW_CREATE"
-        );
-
-        // Propagate: prefer setting BOTH dotted and UPPERCASE so any code path can read them
-        setBothStylesIfAbsent("mailslurp.apiKey", mailSlurpKey);
-        setBothStylesIfAbsent("mailslurp.forceKey", mailSlurpKey);
-        setBothStylesIfAbsent("mailslurp.inboxId", mailSlurpInbox);
-        setBothStylesIfAbsent("mailslurp.allowCreate", mailSlurpAllowCreate);
-
-        // Optional: Stripe common aliases to -D (dotted form; most of our code reads dotted)
-        String stripeTestSecret = resolve("stripe.test.secret.key",
-                "STRIPE_TEST_SECRET_KEY", "STRIPE_SECRET_KEY", "stripe.secret.key");
-        setBothStylesIfAbsent("stripe.test.secret.key", stripeTestSecret);
-
-        String stripeWebhookSecret = resolve("stripe.webhook.secret", "STRIPE_WEBHOOK_SECRET");
-        setBothStylesIfAbsent("stripe.webhook.secret", stripeWebhookSecret);
-
-        String stripePublishable = resolve("stripe.publishable.key", "STRIPE_PUBLISHABLE_KEY");
-        setBothStylesIfAbsent("stripe.publishable.key", stripePublishable);
-
-        String baseUrl = resolve("baseUrl", "base.url", "BASE_URL");
-        setBothStylesIfAbsent("baseUrl", baseUrl);
-
-        // Friendly logging for troubleshooting (single line)
-        System.out.println("[Config] Effective sources prepared. "
-                + "mailslurp.apiKey? " + (System.getProperty("mailslurp.apiKey") != null)
-                + " | MAILSLURP_API_KEY? " + (System.getProperty("MAILSLURP_API_KEY") != null)
-                + " | inboxId(dotted)? " + (System.getProperty("mailslurp.inboxId") != null)
-                + " | MAILSLURP_INBOX_ID? " + (System.getProperty("MAILSLURP_INBOX_ID") != null)
-                + " | allowCreate=" + String.valueOf(getMailSlurpAllowCreate())
-                + " | baseUrl=" + (baseUrl != null ? baseUrl : "(null)"));
+        return (v == null || v.isBlank()) ? defaultVal : v.trim();
     }
 
-    // ---------- Public API ----------
-
-    /** Generic get with priority: -D → ENV → props (dotted or UPPERCASE) */
-    public static String get(String key) {
-        return resolve(key);
+    public static String joinUrl(String base, String path) {
+        if (base == null) base = "";
+        if (path == null) path = "";
+        String a = base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
+        String b = path.startsWith("/") ? path : "/" + path;
+        return a + b;
     }
 
-    /** Generic get with aliases (same precedence) */
-    public static String getAny(String primary, String... aliases) {
-        return resolve(primary, aliases);
-    }
 
-    public static String get(String key, String def) {
-        String v = get(key);
-        return (v == null || v.isBlank()) ? def : v;
-    }
 
-    public static int getInt(String key) {
-        return Integer.parseInt(get(key));
-    }
 
-    public static boolean getBoolean(String key) {
-        String v = get(key);
-        return v != null && (v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes"));
-    }
-
-    // ---------- Convenience getters ----------
 
     public static String getBaseUrl() {
-        return firstNonBlank(
-                get("baseUrl"),
-                get("base.url"),
-                get("BASE_URL"),
-                "https://tilt-dashboard-dev.tilt365.com/"
+        // Try sysprop, env var, then .env.local
+        String baseUrl = getAny("baseUrl", "BASE_URL");
+
+        if (baseUrl != null && !baseUrl.isBlank()) {
+            return baseUrl.trim();
+        }
+
+        throw new IllegalStateException(
+                "BASE_URL is not configured. Set it in .env.local or pass -DbaseUrl=..."
         );
     }
 
-    public static int getTimeout() {
-        String v = getAny("timeout", "TIMEOUT");
-        return Integer.parseInt(v != null ? v : "10");
-    }
 
-    public static boolean isHeadless() {
-        String v = getAny("headless", "HEADLESS");
-        return v == null ? true : getBoolean(v) || v.equals("true");
-    }
 
-    public static String getBrowser() {
-        String v = getAny("browser", "BROWSER");
-        return v != null ? v : "chrome";
-    }
 
-    public static String getScreenshotPath() {
-        String v = getAny("screenshotPath", "SCREENSHOT_PATH");
-        return v != null ? v : "screenshots";
-    }
+
+
 
 
 
     public static String getAdminEmail() {
-        // add ADMIN_USER as an alias
-        return getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
+        return "erodriguez+a@effectussoftware.com";
+//        return getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
     }
 
     public static String getAdminPassword() {
-        // add ADMIN_PASS as an alias
-        return getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+//        return getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
+        return "Password#1";
     }
 
+    /* ===========================
+     * Browser / WebDriver
+     * =========================== */
 
-    // ---------- Stripe helpers ----------
-
-    /** Returns a Stripe *test* key, resolving multiple aliases. */
-    public static String getStripeSecretKey() {
-        String k = getAny(
-                "stripe.test.secret.key",
-                "STRIPE_TEST_SECRET_KEY",
-                "stripe.secret.key",
-                "STRIPE_SECRET_KEY"
-        );
-        if (k != null && !k.isBlank() && !(k.startsWith("rk_test_") || k.startsWith("sk_test_"))) {
-            System.err.println("⚠️  Non-test Stripe key detected (expected rk_test_/sk_test_). Prefix: "
-                    + k.substring(0, Math.min(10, k.length())) + "…");
-        }
-        return k;
+    public static String getBrowser() {
+        return get("browser", "BROWSER", "chrome").toLowerCase(Locale.ROOT);
     }
 
-    public static String getStripeWebhookSecret() {
-        return getAny("stripe.webhook.secret", "STRIPE_WEBHOOK_SECRET");
-    }
-
-    public static String getStripePublishableKey() {
-        return getAny("stripe.publishable.key", "STRIPE_PUBLISHABLE_KEY");
-    }
-
-    public static String getStripeSuccessUrl() {
-        return getAny("stripe.success.url", "STRIPE_SUCCESS_URL");
-    }
-
-    // ---------- MailSlurp helpers ----------
-
-    public static String getMailSlurpApiKey() {
-        return getAny("mailslurp.apiKey", "MAILSLURP_API_KEY", "mailslurp.forceKey");
-    }
-
-    public static String getMailSlurpInboxId() {
-        return getAny("mailslurp.inboxId", "MAILSLURP_INBOX_ID");
-    }
-
-    public static boolean getMailSlurpAllowCreate() {
-        String v = getAny("mailslurp.allowCreate", "MAILSLURP_ALLOW_CREATE");
-        if (v == null) return false; // default: fixed inbox mode
+    public static boolean useWebDriverManager() {
+        String v = get("webdriver.manager", "WEBDRIVER_MANAGER", "true");
         return v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes");
     }
 
-    // ---------- Misc ----------
-
-    public static int getDefaultTimeout() {
-        return getTimeout();
+    public static String getPageLoadStrategyName() {
+        return get("page.load.strategy", "PAGE_LOAD_STRATEGY", "normal").toLowerCase(Locale.ROOT);
     }
 
-    public static String joinUrl(String base, String path) {
-        if (base == null || base.isBlank()) return path;
-        if (base.endsWith("/")) return base + (path.startsWith("/") ? path.substring(1) : path);
-        return base + (path.startsWith("/") ? path : "/" + path);
+    public static String getUiLanguage() {
+        return get("ui.lang", "UI_LANG", "en-US");
     }
 
-    /** Optional helper for debugging: dump a few important values */
-    public static void debugPrintImportant() {
-        System.out.println(
-                "[Config] baseUrl=" + getBaseUrl()
-                        + " | headless=" + isHeadless()
-                        + " | browser=" + getBrowser()
-                        + " | mailslurp.apiKey? " + (System.getProperty("mailslurp.apiKey") != null)
-                        + " | MAILSLURP_API_KEY? " + (System.getProperty("MAILSLURP_API_KEY") != null)
-                        + " | mailslurp.inboxId=" + System.getProperty("mailslurp.inboxId")
-                        + " | MAILSLURP_INBOX_ID=" + System.getProperty("MAILSLURP_INBOX_ID")
-                        + " | allowCreate=" + getMailSlurpAllowCreate()
-        );
+    public static String getUiTimezone() {
+        return get("ui.tz", "UI_TZ", "America/Montevideo");
+    }
+
+    public static double getDeviceScale() {
+        String raw = get("device.scale", "DEVICE_SCALE", "1.0");
+        try { return Double.parseDouble(raw); } catch (Exception ignore) { return 1.0; }
+    }
+
+    public static String getWindowSize() {
+        return get("window.size", "WINDOW_SIZE", "1920x1080");
+    }
+
+    public static boolean isHeadless() {
+        String ci = System.getenv("CI");
+        String raw = get("headless", "HEADLESS",
+                (ci != null && !ci.isBlank()) ? "true" : "false");
+        return raw.equalsIgnoreCase("true") || raw.equals("1") || raw.equalsIgnoreCase("yes");
+    }
+
+    public static String getChromeBinaryPath() {
+        return getAny("chrome.binary", "CHROME_BIN");
+    }
+
+    public static boolean isPerfLoggingEnabled() {
+        String raw = get("perf.log", "PERF_LOG", "false");
+        return raw.equalsIgnoreCase("true") || raw.equals("1") || raw.equalsIgnoreCase("yes");
+    }
+
+    public static boolean isBrowserLoggingEnabled() {
+        String raw = get("browser.log", "BROWSER_LOG", "true");
+        return raw.equalsIgnoreCase("true") || raw.equals("1") || raw.equalsIgnoreCase("yes");
+    }
+
+    /* ===========================
+     * Timeouts
+     * =========================== */
+
+    public static Duration getTimeout() {
+        String raw = getAny("timeout", "timeout.seconds", "TIMEOUT_SECONDS", "20");
+        int seconds;
+        try { seconds = Integer.parseInt(raw.trim()); } catch (Exception ignore) { seconds = 20; }
+        return Duration.ofSeconds(seconds);
+    }
+
+    public static long getTimeoutMillis() {
+        return getTimeout().toMillis();
+    }
+
+    /* ===========================
+     * Stripe
+     * =========================== */
+
+//    public static String getStripeSecretKey() {
+//        return getAny("stripe.secretKey", "STRIPE_SECRET_KEY", "STRIPE_TEST_SECRET_KEY");
+//    }
+
+    public static String getStripeSecretKey() {
+        String fromSys = System.getProperty("stripe.secretKey");
+        String fromEnv1 = System.getenv("STRIPE_SECRET_KEY");
+        String fromEnv2 = System.getenv("STRIPE_TEST_SECRET_KEY");
+        String fromProps = getFromPropsCaseInsensitive("stripe.secretKey");
+
+        System.out.println("[StripeDebug] sysProp=" + fromSys);
+        System.out.println("[StripeDebug] STRIPE_SECRET_KEY=" + fromEnv1);
+        System.out.println("[StripeDebug] STRIPE_TEST_SECRET_KEY=" + fromEnv2);
+        System.out.println("[StripeDebug] props(.env.local)=" + fromProps);
+
+        return getAny("stripe.secretKey", "STRIPE_SECRET_KEY", "STRIPE_TEST_SECRET_KEY");
+    }
+
+
+    public static boolean isStripeE2EEnabled() {
+        String raw = get("STRIPE_E2E", "STRIPE_E2E", "false");
+        return raw.equalsIgnoreCase("true") || raw.equals("1") || raw.equalsIgnoreCase("yes");
+    }
+
+    /* ===========================
+     * MailSlurp
+     * =========================== */
+
+    public static String getMailSlurpApiKey() {
+        return getAny("mailslurp.forceKey", "mailslurp.apiKey", "MAILSLURP_API_KEY");
+    }
+
+    public static boolean getMailSlurpAllowCreate() {
+        String raw = getAny("ALLOW_CREATE_INBOX_FALLBACK",
+                "mailslurp.allowCreate", "MAILSLURP_ALLOW_CREATE");
+        if (raw == null) return System.getenv("CI") == null;
+        return raw.equalsIgnoreCase("true") || raw.equals("1") || raw.equalsIgnoreCase("yes");
+    }
+
+    public static String getMailSlurpFixedInboxId() {
+        return getAny("MAILSLURP_INBOX_ID", "mailslurp.inboxId");
+    }
+
+    /* ===========================
+     * Misc quick getters
+     * =========================== */
+
+    public static boolean getBoolean(String sysProp, String env, boolean defVal) {
+        String raw = get(sysProp, env, defVal ? "true" : "false");
+        return raw.equalsIgnoreCase("true") || raw.equals("1") || raw.equalsIgnoreCase("yes");
+    }
+
+    public static int getInt(String sysProp, String env, int defVal) {
+        String raw = get(sysProp, env, String.valueOf(defVal));
+        try { return Integer.parseInt(raw.trim()); } catch (Exception ignore) { return defVal; }
+    }
+
+    public static double getDouble(String sysProp, String env, double defVal) {
+        String raw = get(sysProp, env, String.valueOf(defVal));
+        try { return Double.parseDouble(raw.trim()); } catch (Exception ignore) { return defVal; }
     }
 }
