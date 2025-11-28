@@ -3,7 +3,7 @@
        verbose="1"
        preserve-order="true"
        parallel="methods"
-       thread-count="10">
+       thread-count="8">
 
     <listeners>
         <listener class-name="listeners.TestListener"/>
