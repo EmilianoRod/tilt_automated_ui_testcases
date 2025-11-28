@@ -667,6 +667,32 @@ public class IndividualsPage extends BasePage {
     }
 
 
+    /**
+     * Opens the Actions menu for a given row element.
+     */
+    private void openActionsMenuFor(WebElement row) {
+        // Adjust selector if you already have a locator for the 3-dots menu
+        WebElement trigger = row.findElement(By.cssSelector(
+                ".ant-dropdown-trigger, " +   // inner div
+                        "[data-testid='row-actions'], " +
+                        "svg"                          // fallback: the svg icon
+        ));
+
+        ((JavascriptExecutor) driver)
+                .executeScript("arguments[0].scrollIntoView({block:'center'});", trigger);
+
+        try {
+            trigger.click();
+        } catch (Exception e) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", trigger);
+        }
+
+        // Reuse your existing “menu is open” wait
+        waitForMenuOpen();
+    }
+
+
+
     public boolean clickActionInMenu(String actionText) {
         By menuItem = By.xpath("//div[contains(@class,'ant-dropdown') and contains(@class,'ant-dropdown-open')]//li[normalize-space()='" + actionText + "']");
         try {
@@ -692,6 +718,8 @@ public class IndividualsPage extends BasePage {
     }
 
 
+
+
     public void goToFirstPageIfPossible() {
         // Only run when we're on Individuals and pagination exists
         if (!isOnIndividuals() || !isPresent(pagination)) {
@@ -699,53 +727,73 @@ public class IndividualsPage extends BasePage {
             return;
         }
 
-        // 1) If "Previous" is disabled, we are already on page 1
-        if (isPresent(prevPageLi)) {
-            WebElement prev = driver.findElement(prevPageLi);
-            String prevCls = String.valueOf(prev.getAttribute("class"));
-            System.out.println("DEBUG[PAGINATION]: prevPageLi class = " + prevCls);
-            if (prevCls.contains("ant-pagination-disabled")) {
-                System.out.println("DEBUG[PAGINATION]: Already on first page (Prev disabled).");
+        try {
+            // 1) If "Previous" is disabled, we are already on page 1
+            if (isPresent(prevPageLi)) {
+                WebElement prev = driver.findElement(prevPageLi);
+                String prevCls = String.valueOf(prev.getAttribute("class"));
+                System.out.println("DEBUG[PAGINATION]: prevPageLi class = " + prevCls);
+                if (prevCls.contains("ant-pagination-disabled")) {
+                    System.out.println("DEBUG[PAGINATION]: Already on first page (Prev disabled).");
+                    return;
+                }
+            }
+
+            // 2) Locate the LI for page 1
+            List<WebElement> pages = driver.findElements(pageItems); // .ant-pagination-item
+            if (pages.isEmpty()) {
+                System.out.println("DEBUG[PAGINATION]: No numeric page items; nothing to do.");
                 return;
             }
-        }
 
-        // 2) Locate the LI for page 1
-        List<WebElement> pages = driver.findElements(pageItems); // .ant-pagination-item
-        if (pages.isEmpty()) {
-            System.out.println("DEBUG[PAGINATION]: No numeric page items; nothing to do.");
-            return;
-        }
+            WebElement firstLi = pages.stream()
+                    .filter(li -> {
+                        String cls = String.valueOf(li.getAttribute("class"));
+                        // either explicit "-1" or text "1"
+                        return cls.contains("ant-pagination-item-1")
+                                || "1".equals(li.getText().trim());
+                    })
+                    .findFirst()
+                    .orElse(pages.get(0)); // fallback: first numeric
 
-        WebElement firstLi = pages.stream()
-                .filter(li -> {
-                    String cls = String.valueOf(li.getAttribute("class"));
-                    // either explicit "-1" or text "1"
-                    return cls.contains("ant-pagination-item-1")
-                            || "1".equals(li.getText().trim());
-                })
-                .findFirst()
-                .orElse(pages.get(0)); // fallback: first numeric
+            String cls = String.valueOf(firstLi.getAttribute("class"));
+            System.out.println("DEBUG[PAGINATION]: first page LI class = " + cls);
 
-        String cls = String.valueOf(firstLi.getAttribute("class"));
-        System.out.println("DEBUG[PAGINATION]: first page LI class = " + cls);
+            // If it's already active, nothing to do
+            if (cls.contains("ant-pagination-item-active")) {
+                System.out.println("DEBUG[PAGINATION]: Page 1 already active; no-op.");
+                return;
+            }
 
-        // If it's already active, nothing to do
-        if (cls.contains("ant-pagination-item-active")) {
-            System.out.println("DEBUG[PAGINATION]: Page 1 already active; no-op.");
-            return;
-        }
+            // 3) Click the anchor inside it and wait for refresh (safely)
+            WebElement link = firstLi.findElement(By.tagName("a"));
+            try {
+                link.click();
+            } catch (Exception e) {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", link);
+            }
 
-        // 3) Click the anchor inside it and wait for refresh
-        WebElement link = firstLi.findElement(By.tagName("a"));
-        try {
-            link.click();
+            // small pause so the table can start re-rendering
+            sleep(800);
+
+            try {
+                // your existing wait, but if it times out we just log and move on
+                waitForTableRefreshed();
+            } catch (TimeoutException te) {
+                System.out.println("DEBUG[PAGINATION]: waitForTableRefreshed() timed out after clicking page 1; " +
+                        "continuing from whatever page we ended up on. " + te);
+            } catch (StaleElementReferenceException se) {
+                System.out.println("DEBUG[PAGINATION]: Stale element during waitForTableRefreshed(); " +
+                        "continuing anyway. " + se);
+            }
+
         } catch (Exception e) {
-            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", link);
+            // Absolutely last-resort guard: we never want goToFirstPageIfPossible to kill the test
+            System.out.println("DEBUG[PAGINATION]: Unexpected error in goToFirstPageIfPossible; " +
+                    "continuing from current page. " + e);
         }
-
-        waitForTableRefreshed();
     }
+
 
 
 
@@ -1042,24 +1090,17 @@ public class IndividualsPage extends BasePage {
 
 
     public boolean rowReportIsPending(WebElement row) {
-        try {
-            WebElement cell = reportCellInRow(row);
-            String txt = cell.getText();
-            if (txt != null && txt.toLowerCase(Locale.ROOT).contains("pending")) return true;
+        WebElement cell = reportCellInRow(row);
 
-            // also catch common AntD badges/tags that may render the text separately
-            List<WebElement> badges = cell.findElements(By.cssSelector(
-                    ".ant-tag, .ant-badge, .ant-badge-status, .ant-badge-status-text"
-            ));
-            for (WebElement b : badges) {
-                String t = b.getText();
-                if (t != null && t.toLowerCase(Locale.ROOT).contains("pending")) return true;
-            }
-            return false;
-        } catch (Exception e) {
+        // If we find a completed link, it's *not* pending even if the pill is still there
+        if (findCompletedReportLinkInRow(row) != null) {
             return false;
         }
+
+        // Pure pending row: has only the "Pending" pill
+        return !cell.findElements(By.xpath(".//a[normalize-space()='Pending']")).isEmpty();
     }
+
 
     /** Useful for debugging assertions/messages. */
     public String rowReportText(WebElement row) {
@@ -1144,15 +1185,7 @@ public class IndividualsPage extends BasePage {
 
     /** Report link exists and has a non-empty href. */
     public boolean rowHasReportLink(WebElement row) {
-        try {
-            WebElement cell = reportCellInRow(row);
-            List<WebElement> links = cell.findElements(By.tagName("a"));
-            if (links.isEmpty()) return false;
-            String href = links.get(0).getAttribute("href");
-            return links.get(0).isDisplayed() && links.get(0).isEnabled() && href != null && !href.isBlank();
-        } catch (Exception e) {
-            return false;
-        }
+        return findCompletedReportLinkInRow(row) != null;
     }
 
 
@@ -1229,128 +1262,82 @@ public class IndividualsPage extends BasePage {
 
 
 
-    /** Ensures Auto reminder is ON/OFF using the row-actions dropdown. Clicks the SWITCH button. */
-    public void setAutoReminder(String email, boolean on) {
-        final By OPEN_MENU = By.cssSelector(".ant-dropdown.ant-dropdown-open, .ant-dropdown:not([hidden])");
+    public void setAutoReminder(String email, boolean targetOn) {
+        System.out.println("[Individuals][AutoReminder] setAutoReminder(" + email + ", target=" + targetOn + ")");
 
-        // 1) Open actions menu for this row
-        if (!openActionsMenuFor(email)) {
-            throw new NoSuchElementException("Could not open actions menu for: " + email);
-        }
-        waitForMenuOpen();
-
-        // 2) Scope in the open dropdown
-        WebElement menu = wdw.until(ExpectedConditions.visibilityOfElementLocated(OPEN_MENU));
-        WebElement sw   = wdw.until(
-                ExpectedConditions.visibilityOfNestedElementsLocatedBy(menu, autoReminderSwitchInOpenMenu())
-        ).get(0);
-
-        boolean current = readSwitchState(sw);
-        if (current == on) { closeMenuIfOpen(); return; }
-
-        // 3) Fire ONCE with guarded fallback (no SPACE key, no row click)
-        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", sw);
-
-        boolean flipped = false;
+        // Open menu just once for this operation
+        openActionsMenuFor(email);
         try {
-            new Actions(driver).moveToElement(sw).pause(Duration.ofMillis(70)).click(sw).perform();
-            sleep(130); // let AntD apply aria/class
-            // re-read in-place if menu still open
-            flipped = readSwitchState(sw) == on;
-        } catch (ElementNotInteractableException ignored) {
-            // we'll attempt JS fallback below
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-        }
+            waitForMenuOpen();
 
-        if (!flipped) {
-            // Re-find inside the (still) open menu to avoid stale refs
-            try {
-                List<WebElement> menus = driver.findElements(OPEN_MENU);
-                if (!menus.isEmpty()) {
-                    WebElement menuNow = menus.get(menus.size() - 1);
-                    WebElement swNow   = menuNow.findElement(autoReminderSwitchInOpenMenu());
+            WebDriverWait w = new WebDriverWait(driver, Duration.ofSeconds(8));
 
-                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", swNow);
-                    sleep(130);
-                    flipped = readSwitchState(swNow) == on;
+            WebElement row = w.until(
+                    ExpectedConditions.visibilityOfElementLocated(autoReminderRowInOpenMenu())
+            );
 
-                    // Last-resort: click the switch handle only (prevents bubbling to the row)
-                    if (!flipped) {
-                        List<WebElement> handles = swNow.findElements(By.cssSelector(".ant-switch-handle"));
-                        if (!handles.isEmpty()) {
-                            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", handles.get(0));
-                            sleep(130);
-                            flipped = readSwitchState(swNow) == on;
-                        }
-                    }
-                }
-            } catch (NoSuchElementException | StaleElementReferenceException ignored) {
-                // We'll confirm via the strict path below
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
+            // Use the helper that already knows how to find the switch in this row
+            WebElement sw = autoReminderSwitchInRow(row);
+            boolean currentOn = isSwitchOn(sw);
+
+            System.out.println("[Individuals][AutoReminder] current=" + currentOn);
+
+            // Idempotent: if already in desired state → done
+            if (currentOn == targetOn) {
+                System.out.println("[Individuals][AutoReminder] already in desired state; no click.");
+                return;
             }
-        }
 
-        // 4) STRICT confirm (does not treat "menu closed" as success)
-        if (!confirmAutoReminderState(email, on, Duration.ofSeconds(6))) {
-            // Retry once (cleanly reopen if needed, then click switch once)
+            // Click once (JS fallback)
             try {
-                List<WebElement> menus = driver.findElements(OPEN_MENU);
-                if (menus.isEmpty()) {
-                    if (!openActionsMenuFor(email)) {
-                        throw new NoSuchElementException("Could not reopen actions menu for retry: " + email);
-                    }
-                    waitForMenuOpen();
-                    menus = driver.findElements(OPEN_MENU);
-                }
-                WebElement menu2 = menus.get(menus.size() - 1);
-                WebElement sw2   = wdw.until(
-                        ExpectedConditions.visibilityOfNestedElementsLocatedBy(menu2, autoReminderSwitchInOpenMenu())
-                ).get(0);
-
-                ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", sw2);
-
-                try {
-                    new Actions(driver).moveToElement(sw2).pause(Duration.ofMillis(60)).click(sw2).perform();
-                } catch (ElementNotInteractableException e) {
-                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", sw2);
-                }
-            } catch (TimeoutException | NoSuchElementException | StaleElementReferenceException ignored) { }
-
-            if (!confirmAutoReminderState(email, on, Duration.ofSeconds(4))) {
-                // Hard recovery: reload page and do one last clean toggle + confirm
-                closeMenuIfOpen();
-                reloadWithBuster(Config.getBaseUrl());
-
-                if (!openActionsMenuFor(email)) {
-                    throw new NoSuchElementException("Could not reopen actions menu for verification: " + email);
-                }
-                waitForMenuOpen();
-
-                WebElement menu3 = wdw.until(ExpectedConditions.visibilityOfElementLocated(OPEN_MENU));
-                WebElement sw3   = wdw.until(
-                        ExpectedConditions.visibilityOfNestedElementsLocatedBy(menu3, autoReminderSwitchInOpenMenu())
-                ).get(0);
-
-                if (readSwitchState(sw3) != on) {
-                    try {
-                        new Actions(driver).moveToElement(sw3).pause(Duration.ofMillis(60)).click(sw3).perform();
-                    } catch (ElementNotInteractableException e) {
-                        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", sw3);
-                    }
-                    if (!confirmAutoReminderState(email, on, Duration.ofSeconds(4))) {
-                        throw new AssertionError("Auto reminder did not reach desired state=" + on + " for " + email);
-                    }
-                }
+                sw.click();
+            } catch (Exception e) {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", sw);
             }
+
+            // Wait until the state flips
+            boolean ok = waitForSwitchState(sw, targetOn, Duration.ofSeconds(8));
+            if (!ok) {
+                throw new AssertionError(
+                        "[Individuals][AutoReminder] switch did not reach state=" + targetOn + " for " + email
+                );
+            }
+            System.out.println("[Individuals][AutoReminder] ✅ switched to " + targetOn);
+
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } finally {
+            // Always close menu so we leave DOM clean for other steps/tests
+            closeAnyOpenMenu();
         }
-
-        // Optional toast wait
-        try { waitForSuccessToast(); } catch (Exception ignore) {}
-
-        closeMenuIfOpen();
     }
+
+    private boolean waitForSwitchState(WebElement sw, boolean expectedOn, Duration timeout) throws InterruptedException {
+        long end = System.currentTimeMillis() + timeout.toMillis();
+        while (System.currentTimeMillis() < end) {
+            try {
+                if (isSwitchOn(sw) == expectedOn) {
+                    return true;
+                }
+            } catch (StaleElementReferenceException ignored) {
+                // Switch might re-render; try to recover by ignoring once or twice
+            }
+            sleep(500);
+        }
+        return false;
+    }
+
+
+
+
+
+
+
+
+
+
+
+
 
     /** Strictly verifies state = `on` by reopening and reading the switch inside the dropdown. */
     private boolean confirmAutoReminderState(String email, boolean on, Duration timeout) {
@@ -1419,35 +1406,93 @@ public class IndividualsPage extends BasePage {
 
 
 
-// --- [ADD] public API: read state ---
     /** Returns true if the Auto reminder toggle is ON for the given email.
      *  Note: expects the actions menu for this row to be open (your tests already do openActionsFor(email)).
      *  If not open, we try to open it once.
      */
     public boolean isAutoReminderOn(String email) {
-        // Try to find it in the current open menu
-        WebElement sw;
+        System.out.println("[Individuals][AutoReminder] isAutoReminderOn(" + email + ")");
+        openActionsMenuFor(email);
         try {
-            sw = new WebDriverWait(driver, java.time.Duration.ofSeconds(3))
-                    .until(ExpectedConditions.visibilityOfElementLocated(autoReminderSwitchInOpenMenu()));
-        } catch (TimeoutException te) {
-            // If not visible, open the menu for this email and try again
-            openActionsFor(email);
-            sw = new WebDriverWait(driver, java.time.Duration.ofSeconds(5))
-                    .until(ExpectedConditions.visibilityOfElementLocated(autoReminderSwitchInOpenMenu()));
+            waitForMenuOpen();
+
+            // Keep this if you actually need the row for something else:
+            WebElement row = new WebDriverWait(driver, Duration.ofSeconds(5))
+                    .until(ExpectedConditions.visibilityOfElementLocated(autoReminderRowInOpenMenu()));
+
+            // 🔧 FIX: use our helper that returns the switch element
+            WebElement sw = autoReminderSwitchInRow(row);
+            boolean on = isSwitchOn(sw);
+
+            System.out.println("[Individuals][AutoReminder] isOn = " + on);
+            return on;
+        } finally {
+            closeAnyOpenMenu();
+        }
+    }
+
+
+
+
+
+
+    /**
+     * Legacy behavior: get the Auto reminder switch from the *currently open*
+     * Actions menu (no row context).
+     *
+     * This keeps existing callers that assume the menu is already open working.
+     */
+    private WebElement autoReminderSwitchInRow() {
+        WebDriverWait w = new WebDriverWait(driver, Duration.ofSeconds(10));
+        return w.until(
+                ExpectedConditions.elementToBeClickable(autoReminderSwitchInOpenMenu())
+        );
+    }
+
+    /**
+     * New helper: return the Auto reminder switch for a specific row.
+     *
+     * 1) Try to find an inline switch inside the row.
+     * 2) If not found, open that row's Actions menu and fall back to the
+     *    legacy no-arg helper above.
+     */
+    private WebElement autoReminderSwitchInRow(WebElement row) {
+        // 1) Try inline switch inside the row
+        try {
+            return row.findElement(By.cssSelector(
+                    ".ant-switch, " +
+                            "button[role='switch'], " +
+                            "input[type='checkbox'][role='switch']"
+            ));
+        } catch (NoSuchElementException ignored) {
+            // fall through
         }
 
-        String ariaChecked = sw.getAttribute("aria-checked");
-        if (ariaChecked != null && !ariaChecked.isBlank()) {
-            return "true".equalsIgnoreCase(ariaChecked.trim());
-        }
-        String ariaPressed = sw.getAttribute("aria-pressed");
-        if (ariaPressed != null && !ariaPressed.isBlank()) {
-            return "true".equalsIgnoreCase(ariaPressed.trim());
-        }
-        String checked = sw.getAttribute("checked");
-        return checked != null && !checked.isBlank() && "true".equalsIgnoreCase(checked.trim());
+        // 2) Fallback: open Actions menu for that row and use legacy helper
+        openActionsMenuFor(row);
+        return autoReminderSwitchInRow();
     }
+
+
+
+    /**
+     * Thin wrapper over the generic switch-state reader.
+     * Returns true if the switch is currently ON.
+     */
+    private boolean isSwitchOn(WebElement switchElement) {
+        // Uses your existing helper:
+        //   private boolean readSwitchState(WebElement el)
+        return readSwitchState(switchElement);
+    }
+
+    /**
+     * Public helper so tests can safely close any stray actions menu
+     * between steps without caring about implementation details.
+     */
+    public void closeAnyOpenMenu() {
+        closeMenuIfOpen(); // your existing private helper
+    }
+
 
 
 
@@ -2296,6 +2341,7 @@ public class IndividualsPage extends BasePage {
     /** Chequeo sólo en la página actual usando helpers existentes. */
     private boolean isEmailOnCurrentPage(String email) {
         try {
+
             java.util.List<WebElement> rows = driver.findElements(tableRows);
             for (WebElement r : rows) {
                 try {
@@ -2342,21 +2388,41 @@ public class IndividualsPage extends BasePage {
      */
     @Step("Check if there is at least one completed True Tilt report")
     public boolean hasAnyCompletedTrueTiltReport() {
-        // Start from page 1 to keep behaviour predictable
-        goToFirstPageIfPossible();
+        // Best effort: try to start from page 1, but don’t die if it fails
+        try {
+            goToFirstPageIfPossible();
+        } catch (Exception e) {
+            System.out.println("[Individuals] hasAnyCompletedTrueTiltReport: error in goToFirstPageIfPossible; " +
+                    "continuing from current page. " + e);
+        }
+
+        boolean found = false;
 
         do {
-            java.util.List<WebElement> rows = driver.findElements(tableRows);
+            List<WebElement> rows = driver.findElements(tableRows);
             for (WebElement row : rows) {
-                // “Completed” = has link AND not pending
-                if (!rowReportIsPending(row) && rowHasReportLink(row)) {
-                    return true;
+                WebElement link = findCompletedReportLinkInRow(row); // the helper we wrote
+                if (link != null) {
+                    System.out.println("[Individuals] Found completed report link on this page.");
+                    found = true;
+                    break;
                 }
             }
+
+            if (found) {
+                break;
+            }
+
+            // move to next page if possible; stops when there’s no next
         } while (goToNextPageIfPossibleSafe());
 
-        return false;
+        if (!found) {
+            System.out.println("[Individuals] No completed report link found in ANY page.");
+        }
+
+        return found;
     }
+
 
     /**
      * Opens the first completed True Tilt report (non-pending, with link)
@@ -2367,20 +2433,20 @@ public class IndividualsPage extends BasePage {
      */
     @Step("Open first completed True Tilt report from Individuals")
     public ReportSummaryPage openFirstCompletedTrueTiltReport() {
-        goToFirstPageIfPossible();
+        goToFirstPageIfPossible();   // or a safe version, see below
 
         do {
             java.util.List<WebElement> rows = driver.findElements(tableRows);
             for (WebElement row : rows) {
-                if (rowReportIsPending(row) || !rowHasReportLink(row)) continue;
+                if (rowReportIsPending(row)) {
+                    continue;
+                }
 
-                // Click the report link in that row (same logic as rowHasReportLink)
-                WebElement cell = reportCellInRow(row);
-                java.util.List<WebElement> links =
-                        cell.findElements(By.cssSelector("a, [role='link'], button[role='link']"));
-                if (links.isEmpty()) continue;
+                WebElement link = findCompletedReportLinkInRow(row);
+                if (link == null) {
+                    continue;
+                }
 
-                WebElement link = links.get(0);
                 ((JavascriptExecutor) driver)
                         .executeScript("arguments[0].scrollIntoView({block:'center'});", link);
                 try {
@@ -2394,12 +2460,15 @@ public class IndividualsPage extends BasePage {
                     ((JavascriptExecutor) driver).executeScript("arguments[0].click();", link);
                 }
 
-                return new ReportSummaryPage(driver).waitUntilLoaded();
+                ReportSummaryPage summary = new ReportSummaryPage(driver).waitUntilLoaded();
+                System.out.println("[Individuals] After click, landed on: " + driver.getCurrentUrl());
+                return summary;
             }
         } while (goToNextPageIfPossibleSafe());
 
-        throw new AssertionError("❌ No completed True Tilt report found in Individuals to open.");
+        throw new AssertionError("❌ No completed True Tilt (TTP/AGT) report link found in Individuals.");
     }
+
 
 
 
@@ -2787,10 +2856,139 @@ public class IndividualsPage extends BasePage {
 
 
 
+    /** Always jump to page 1 explicitly */
+    private void hardGoToPageOne() {
+        if (!isPresent(pagination)) return;
+
+        List<WebElement> pageLis = driver.findElements(By.cssSelector(".ant-pagination-item"));
+        WebElement page1 = pageLis.stream()
+                .filter(li -> li.getAttribute("title").trim().equals("1"))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Cannot find page 1 LI"));
+
+        if (page1.getAttribute("class").contains("ant-pagination-item-active")) {
+            return; // Already on first page
+        }
+
+        WebElement a = page1.findElement(By.tagName("a"));
+        a.click();
+        waitForTableRefreshed();
+    }
+
+
+    private WebElement chooseBestReportLink(WebElement cell) {
+        java.util.List<WebElement> links =
+                cell.findElements(By.cssSelector("a, [role='link'], button[role='link']"));
+
+        if (links.isEmpty()) {
+            System.out.println("[Individuals] No link-like elements in report cell.");
+            return null;
+        }
+
+        System.out.println("[Individuals] Candidate links in report cell:");
+        for (WebElement l : links) {
+            String text  = "";
+            String href  = "";
+            String role  = "";
+            try { text = l.getText(); } catch (Exception ignored) {}
+            try { href = l.getAttribute("href"); } catch (Exception ignored) {}
+            try { role = l.getAttribute("role"); } catch (Exception ignored) {}
+
+            System.out.printf("  - text=\"%s\" | href=%s | role=%s%n", text, href, role);
+        }
+
+        // 1) Prefer links whose href looks like a SUMMARY / REPORT, not a start page
+        for (WebElement l : links) {
+            String href = "";
+            String text = "";
+            try { href = String.valueOf(l.getAttribute("href")).toLowerCase(); } catch (Exception ignored) {}
+            try { text = String.valueOf(l.getText()).toLowerCase(); } catch (Exception ignored) {}
+
+            boolean looksLikeSummaryUrl =
+                    href.contains("/summary")
+                            || href.contains("/assess/ttp/")
+                            || href.contains("/assess/agt/");
+
+            boolean looksLikeReportText =
+                    text.contains("report")
+                            || text.contains("view")
+                            || text.contains("profile");
+
+            if (looksLikeSummaryUrl || looksLikeReportText) {
+                System.out.println("[Individuals] 👉 Choosing link as REPORT/SUMMARY: text=\"" + text + "\" href=" + href);
+                return l;
+            }
+        }
+
+        // 2) Avoid obvious “start assessment” CTAs if possible
+        for (WebElement l : links) {
+            String text = "";
+            try { text = String.valueOf(l.getText()).toLowerCase(); } catch (Exception ignored) {}
+
+            if (text.contains("start") || text.contains("begin") || text.contains("take")) {
+                // just log, don't pick
+                System.out.println("[Individuals] Skipping possible START CTA: text=\"" + text + "\"");
+                continue;
+            }
+
+            // if we get here, it’s not an obvious start CTA → better than nothing
+            System.out.println("[Individuals] 👉 Fallback to non-start link: text=\"" + text + "\"");
+            return l;
+        }
+
+        // 3) Fallback: first link, but log loudly
+        WebElement fallback = links.get(0);
+        System.out.println("[Individuals] ⚠️ Fallback to first link in cell (no better match found).");
+        return fallback;
+    }
 
 
 
 
+    /**
+     * In the "Report Link" cell, returns the *completed* report link
+     * (e.g. "TTP - 7/21/2025", "AGT - 7/21/2025"), or null if the row
+     * only has "Pending".
+     */
+    private WebElement findCompletedReportLinkInRow(WebElement row) {
+        WebElement cell = reportCellInRow(row);  // your existing helper for the 3rd column
+
+        java.util.List<WebElement> anchors = cell.findElements(By.tagName("a"));
+        if (anchors.isEmpty()) {
+            return null;
+        }
+
+        WebElement completed = null;
+
+        System.out.println("[Individuals] Report cell anchors:");
+        for (WebElement a : anchors) {
+            String text = "";
+            String href = "";
+            try { text = a.getText().trim(); } catch (Exception ignored) {}
+            try { href = String.valueOf(a.getAttribute("href")); } catch (Exception ignored) {}
+
+            System.out.printf("  - text=\"%s\" | href=%s%n", text, href);
+
+            String lowerText = text.toLowerCase();
+
+            // Ignore the "Pending" pill
+            if (lowerText.equals("pending")) {
+                continue;
+            }
+
+            boolean looksLikeTiltCode =
+                    lowerText.startsWith("ttp") ||
+                            lowerText.startsWith("agt") ||
+                            (href != null && (href.contains("/assess/ttp/") || href.contains("/assess/agt/")));
+
+            if (looksLikeTiltCode) {
+                completed = a;
+                break;
+            }
+        }
+
+        return completed;
+    }
 
 
 
@@ -2812,25 +3010,6 @@ public class IndividualsPage extends BasePage {
 
 
 
-
-    /** Always jump to page 1 explicitly */
-    private void hardGoToPageOne() {
-        if (!isPresent(pagination)) return;
-
-        List<WebElement> pageLis = driver.findElements(By.cssSelector(".ant-pagination-item"));
-        WebElement page1 = pageLis.stream()
-                .filter(li -> li.getAttribute("title").trim().equals("1"))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Cannot find page 1 LI"));
-
-        if (page1.getAttribute("class").contains("ant-pagination-item-active")) {
-            return; // Already on first page
-        }
-
-        WebElement a = page1.findElement(By.tagName("a"));
-        a.click();
-        waitForTableRefreshed();
-    }
 
 
 

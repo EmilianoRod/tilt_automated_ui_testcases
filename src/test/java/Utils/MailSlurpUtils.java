@@ -508,5 +508,95 @@ public class MailSlurpUtils {
     }
 
 
+    /**
+     * DEBUG ONLY:
+     * List and fetch the most recent emails for an inbox.
+     *
+     * @param inboxId     MailSlurp inbox UUID
+     * @param limit       max number of emails to fetch (defaults to 10 if <= 0)
+     * @param unreadOnly  if true, tries to filter only unread messages
+     * @return list of full Email objects (newest first)
+     */
+    public static java.util.List<Email> listRecentEmails(UUID inboxId, int limit, boolean unreadOnly) {
+        Objects.requireNonNull(inboxId, "inboxId must not be null");
+        if (limit <= 0) limit = 10;
+
+        ensureClientReadyOrThrow();
+
+        java.util.List<Email> result = new ArrayList<>();
+        try {
+            // MailSlurp returns newest-first by default
+            java.util.List<EmailPreview> previews =
+                    inboxController.getEmails(inboxId).size(limit).execute();
+
+            if (previews == null || previews.isEmpty()) {
+                logger.info("[MailSlurp][debug] Inbox {} has no emails.", inboxId);
+                return result;
+            }
+
+            for (EmailPreview p : previews) {
+                try {
+                    // Optional unread filter at preview level
+                    if (unreadOnly) {
+                        try {
+                            Method gm = p.getClass().getMethod("getRead");
+                            Object rv = gm.invoke(p);
+                            if (rv instanceof Boolean && (Boolean) rv) {
+                                continue; // skip read
+                            }
+                        } catch (NoSuchMethodException ignore) {
+                            // preview might not expose read flag; fall through
+                        }
+                    }
+
+                    Email e = emailController.getEmail(p.getId()).execute();
+
+                    // Optional unread filter at full Email level
+                    if (unreadOnly) {
+                        try {
+                            Method gm = e.getClass().getMethod("getIsRead");
+                            Object rv = gm.invoke(e);
+                            if (rv instanceof Boolean && (Boolean) rv) {
+                                continue; // skip read
+                            }
+                        } catch (NoSuchMethodException ignore) {
+                            // not all SDK versions have getIsRead
+                        }
+                    }
+
+                    result.add(e);
+
+                    // Log a short summary for debugging
+                    logger.info(
+                            "[MailSlurp][debug] id={} | from={} | to={} | subj='{}' | snippet='{}'",
+                            e.getId(),
+                            e.getFrom(),
+                            e.getTo(),
+                            e.getSubject(),
+                            debugSnippet(safeEmailBody(e), 140)
+                    );
+                } catch (Exception ex) {
+                    logger.warn("[MailSlurp][debug] Failed to fetch email {}: {}",
+                            p.getId(), safeMsg(ex));
+                }
+            }
+        } catch (Exception ex) {
+            throw new RuntimeException(
+                    "[MailSlurp][debug] Failed to list recent emails for inbox " + inboxId + ": " + safeMsg(ex),
+                    ex
+            );
+        }
+        return result;
+    }
+
+    /** Small helper for logging body snippets. */
+    private static String debugSnippet(String text, int maxLen) {
+        if (text == null) return "";
+        String trimmed = text.replaceAll("\\s+", " ").trim();
+        if (trimmed.length() <= maxLen) return trimmed;
+        return trimmed.substring(0, maxLen) + "…";
+    }
+
+
 
 }

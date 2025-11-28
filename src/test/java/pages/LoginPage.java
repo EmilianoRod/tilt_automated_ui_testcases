@@ -102,8 +102,7 @@ public class LoginPage extends BasePage {
     /** Throttle-aware login with narrowed error waits + multi-try typing & clicking. */
     public DashboardPage safeLoginAsAdmin(String email, String pass, Duration baseWait) {
         // CI tends to be slower → give it more time after clicking login
-//        boolean isCi = Boolean.parseBoolean(System.getenv().getOrDefault("CI", "true"));
-        boolean isCi = true;
+        boolean isCi = Boolean.parseBoolean(System.getenv().getOrDefault("CI", "false"));
         Duration postClickWait = isCi ? baseWait.plusSeconds(20) : baseWait.plusSeconds(8);
 
         // basic debug about what we're sending

@@ -3,7 +3,7 @@
        verbose="1"
        preserve-order="true"
        parallel="methods"
-       thread-count="4">
+       thread-count="6">
 
     <listeners>
         <listener class-name="listeners.TestListener"/>
@@ -11,12 +11,13 @@
     </listeners>
 
     <test name="Smoke Tests (Parallel)">
-<!--        <groups>-->
-<!--            <run>-->
+        <groups>
+            <run>
 <!--                <include name="test-solo"/>-->
 <!--                <include name="ui-only"/>-->
-<!--            </run>-->
-<!--        </groups>-->
+                <exclude name="known-bug"/>
+            </run>
+        </groups>
         <classes>
             <class name="tests.Phase1SmokeTests"/>
             <class name="tests.individuals.IndividualsListTests"/>

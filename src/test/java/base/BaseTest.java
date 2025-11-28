@@ -210,7 +210,7 @@ public class BaseTest {
     // PUBLIC SESSION HELPERS
     // =========================================================
     public static DashboardPage startFreshSession(WebDriver driver) {
-        return startFreshSession(driver, 5); // 5 attempts for transient issues
+        return startFreshSession(driver, 3); // 3 attempts for transient issues
     }
 
     public static DashboardPage startFreshSession(WebDriver driver, int maxAttempts) {
@@ -237,11 +237,11 @@ public class BaseTest {
             throw new SkipException("[Config] Admin credentials missing.");
         }
 
-//        final boolean isCi = Optional.ofNullable(System.getenv("CI"))
-//                .map(v -> !v.isBlank() && !"false".equalsIgnoreCase(v))
-//                .orElse(false);
+        final boolean isCi = Optional.ofNullable(System.getenv("CI"))
+                .map(v -> !v.isBlank() && !"false".equalsIgnoreCase(v))
+                .orElse(false);
 
-        final boolean isCi = true;
+//        final boolean isCi = true;
 
         final Duration navTimeout =
                 Config.getTimeout().compareTo(Duration.ofSeconds(20)) > 0

@@ -75,6 +75,7 @@ public class ReportSummaryPage extends BasePage {
         super(driver);
     }
 
+
     @Override
     public ReportSummaryPage waitUntilLoaded() {
         WebDriverWait w = new WebDriverWait(driver, Duration.ofSeconds(20));
@@ -106,8 +107,13 @@ public class ReportSummaryPage extends BasePage {
                         || !d.findElements(fullReportTab).isEmpty()
                         || !d.findElements(whatIsTilt).isEmpty()
         );
+
+        // ✅ add this:
+        logCurrentContext("waitUntilLoaded");
+
         return this;
     }
+
 
     public boolean isLoaded() {
         try {
@@ -118,6 +124,7 @@ public class ReportSummaryPage extends BasePage {
         return !driver.findElements(fullReportTab).isEmpty()
                 || !driver.findElements(whatIsTilt).isEmpty();
     }
+
 
 
     /**
@@ -136,6 +143,7 @@ public class ReportSummaryPage extends BasePage {
             return hasDownload && hasIntro;
         });
 
+        logCurrentContext("waitUntilAgtLoaded");
         return this;
     }
 
@@ -153,7 +161,7 @@ public class ReportSummaryPage extends BasePage {
         return false;
     }
 
-    // 🔹 NEW: used by the smoke test
+
     public boolean hasTrueTiltGraph() {
         try {
             if (!driver.findElements(kiteGraph).isEmpty()) return true;
@@ -374,6 +382,80 @@ public class ReportSummaryPage extends BasePage {
             ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btn);
         }
 
-
     }
+
+
+
+
+
+
+    private void logCurrentContext(String from) {
+        try {
+            String url   = driver.getCurrentUrl();
+            String title = driver.getTitle();
+            String h1    = findTopHeadingSafe();
+            System.out.printf("[ReportSummaryPage#%s] URL=%s | title=%s | h1=%s%n",
+                    from, url, title, h1);
+        } catch (Exception e) {
+            System.out.println("[ReportSummaryPage#logCurrentContext] Error reading context: " + e);
+        }
+    }
+
+    private String findTopHeadingSafe() {
+        try {
+            WebElement h1 = driver.findElement(By.cssSelector("h1, [data-testid='report-title']"));
+            return h1.getText();
+        } catch (Exception e) {
+            return "<no heading>";
+        }
+    }
+
+    /**
+     * Detects if we were redirected to an assessment "start / first page"
+     * instead of staying on the summary.
+     */
+    public boolean isOnAssessmentStartPage() {
+        String url = driver.getCurrentUrl().toLowerCase(Locale.ROOT);
+        String bodyText;
+        try {
+            bodyText = driver.findElement(By.tagName("body")).getText().toLowerCase(Locale.ROOT);
+        } catch (Exception e) {
+            bodyText = "";
+        }
+
+        // If URL already contains "summary", this is NOT the start page
+        if (url.contains("/summary")) {
+            System.out.println("[ReportSummaryPage] isOnAssessmentStartPage? false (url has /summary)");
+            return false;
+        }
+
+        // Start page URLs look like .../assess/agt/12345 or .../assess/ttp/12345 (no /summary)
+        boolean looksLikeStartUrl =
+                url.matches(".*/assess/(agt|ttp)/\\d+(/?$|\\?.*)");
+
+        boolean looksLikeStartCopy =
+                bodyText.contains("start your assessment")
+                        || bodyText.contains("begin assessment")
+                        || bodyText.contains("question 1 of")
+                        || bodyText.contains("before you begin");
+
+        boolean result = looksLikeStartUrl && looksLikeStartCopy;
+        System.out.printf("[ReportSummaryPage] isOnAssessmentStartPage? %s (url=%s)%n",
+                result, url);
+        return result;
+    }
+
+
+    /**
+     * Detects if we bounced back to dashboard / individuals.
+     */
+    public boolean isOnDashboardOrIndividuals() {
+        String url = driver.getCurrentUrl().toLowerCase();
+        return url.contains("/dashboard") || url.contains("/individuals");
+    }
+
+    // ---------- AGT HELPERS ----------
+
+
+
 }

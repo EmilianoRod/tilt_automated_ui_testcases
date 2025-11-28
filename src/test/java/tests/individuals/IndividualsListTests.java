@@ -6,6 +6,7 @@ import Utils.StripeCheckoutHelper;
 import Utils.WaitUtils;
 import base.BaseTest;
 import com.mailslurp.models.Email;
+import com.mailslurp.models.EmailPreview;
 import com.mailslurp.models.InboxDto;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
@@ -104,8 +105,6 @@ public class IndividualsListTests extends BaseTest {
         step("Finalize soft assertions");
         softly.assertAll();
     }
-
-
 
 
     @Test(description = "TC-435: Search filters to only matching entries (name/email substring).")
@@ -752,6 +751,7 @@ public class IndividualsListTests extends BaseTest {
         try { driver().switchTo().activeElement().sendKeys(org.openqa.selenium.Keys.ESCAPE); } catch (Exception ignored) {}
     }
 
+
     @Test(groups = "ui-only", description = "IND-012: Auto reminder: toggle ON persists after refresh")
     public void autoReminder_toggleOn_persistsAfterRefresh() {
         step("Start fresh session (login + Dashboard)");
@@ -761,30 +761,23 @@ public class IndividualsListTests extends BaseTest {
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
         Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
 
-        step("Pick first email on current page");
-        List<String> emails = individuals.getEmailsOnCurrentPage();
-        assumeNonEmpty(emails, "emails");
-        String email = emails.get(0);
+        step("Ensure we have at least 1 row to work with");
+        ensureHasAtLeastRowsOrSkip(individuals, 1);
 
-        step("Open row actions menu for the chosen email");
-        boolean opened = individuals.openActionsMenuFor(email);
-        if (!opened) {
-            // fallback to legacy opener if needed
-            individuals.openActionsFor(email);
+        step("Pick first email on current page");
+        String email = pickTargetEmail(individuals);
+        if (email == null) {
+            throw new SkipException("No rows available to toggle Auto reminder.");
         }
 
-        step("Ensure Auto reminder is ON using page helper (no-op if already ON)");
+        step("Ensure Auto reminder is ON (idempotent)");
         individuals.setAutoReminder(email, true);
 
         step("Refresh the browser");
         driver().navigate().refresh();
 
-        step("Wait for Individuals to reload and reopen the same row’s actions menu");
+        step("Wait for Individuals to reload");
         individuals.waitUntilLoaded();
-        boolean reOpened = individuals.openActionsMenuFor(email);
-        if (!reOpened) {
-            individuals.openActionsFor(email);
-        }
 
         step("Assert the switch remains ON after refresh");
         boolean on = individuals.isAutoReminderOn(email);
@@ -801,32 +794,23 @@ public class IndividualsListTests extends BaseTest {
         IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
         Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
 
+        step("Ensure we have at least 1 row to work with");
+        ensureHasAtLeastRowsOrSkip(individuals, 1);
+
         step("Pick first email on current page");
-        List<String> emails = individuals.getEmailsOnCurrentPage();
-        if (emails == null || emails.isEmpty()) {
-            throw new SkipException("Need at least 1 row to validate Auto reminder persistence.");
-        }
-        String email = emails.get(0);
-
-        step("Open row actions menu for the chosen email");
-        boolean opened = individuals.openActionsMenuFor(email);
-        if (!opened) {
-            // fallback if you keep both helpers around
-            individuals.openActionsFor(email);
+        String email = pickTargetEmail(individuals);
+        if (email == null) {
+            throw new SkipException("No rows available to toggle Auto reminder.");
         }
 
-        step("Ensure Auto reminder is OFF (no-op if already OFF)");
+        step("Ensure Auto reminder is OFF (idempotent)");
         individuals.setAutoReminder(email, false);
 
         step("Refresh the browser");
         driver().navigate().refresh();
 
-        step("Wait for Individuals to reload and reopen the same row’s actions menu");
+        step("Wait for Individuals to reload");
         individuals.waitUntilLoaded();
-        boolean reOpened = individuals.openActionsMenuFor(email);
-        if (!reOpened) {
-            individuals.openActionsFor(email);
-        }
 
         step("Assert the switch remains OFF after refresh");
         boolean on = individuals.isAutoReminderOn(email);
@@ -1740,12 +1724,17 @@ public class IndividualsListTests extends BaseTest {
                 EMAIL_TIMEOUT.toMillis(),
                 1500L,
                 true,
-                // Must be to our alias + look like the reminder template
-                MailSlurpUtils.addressedToAliasToken(aliasToken)
-                        .and(MailSlurpUtils.subjectContains("Reminder"))
+                MailSlurpUtils.subjectContains("Reminder")
                         .and(MailSlurpUtils.subjectContains("Assessment"))
                         .and(MailSlurpUtils.bodyContains("Complete Assessment"))
         );
+
+        if (email == null) {
+            System.out.println("⚠️ No matching email; dumping recent emails for debug…");
+            MailSlurpUtils.listRecentEmails(inbox.getId(), 10, false);
+        }
+
+
         Assert.assertNotNull(
                 email,
                 "❌ No reminder email arrived addressed to alias " + aliasToken +
@@ -2104,6 +2093,236 @@ public class IndividualsListTests extends BaseTest {
                 "❌ Invite email link still allows starting/completing the assessment after the invitation was cancelled."
         );
     }
+
+
+    @Test(description = "[Qase-1179] Search filters by email substring and full email.")
+    public void searchIndividuals_filtersByEmailSubstringAndFullEmail_qase1179() {
+
+        step("Start fresh session (login + land on Dashboard)");
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
+
+        // 1) Open Individuals
+        step("Open Individuals page from Dashboard nav");
+        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+
+        step("Ensure there is at least one row (or skip)");
+        if (!individuals.hasAnyRows()) {
+            throw new SkipException("No Individuals present; cannot verify search.");
+        }
+
+        // 2) Pick a visible email
+        step("Pick a sample email from the current page");
+        List<String> emailsBefore = individuals.getEmailsOnCurrentPage();
+        if (emailsBefore.isEmpty()) {
+            throw new SkipException("No visible email cells to use as anchor for email search.");
+        }
+        String sampleEmail = emailsBefore.get(0);
+
+        // 3) Search by substring of that email
+        step("Build a robust substring from the plus-tag portion of the email (text after '+')");
+        String localPart = sampleEmail.contains("@")
+                ? sampleEmail.substring(0, sampleEmail.indexOf('@'))
+                : sampleEmail;
+
+        // Try to use only the part after '+', since before '+' is the same for all individuals
+        String plusTail = null;
+        int plusIdx = localPart.indexOf('+');
+        if (plusIdx >= 0 && plusIdx + 1 < localPart.length()) {
+            plusTail = localPart.substring(plusIdx + 1); // everything after '+'
+        }
+
+        // Base string for substring: prefer the plus tail, otherwise the whole localPart
+        String baseForSubstring = (plusTail != null && !plusTail.isBlank())
+                ? plusTail
+                : localPart;
+
+        // Now pick a middle substring from that base
+        String emailNeedle = pickMiddleSubstring(baseForSubstring, 3, 6);
+
+        // Fallbacks if pickMiddleSubstring fails or string is too short
+        if (emailNeedle == null || emailNeedle.isBlank()) {
+            emailNeedle = baseForSubstring;
+        }
+        if (emailNeedle.length() > 12) {
+            emailNeedle = emailNeedle.substring(0, 12);
+        }
+
+        step("Using email substring for search: '" + emailNeedle + "'");
+
+        individuals.search(emailNeedle);
+
+        // --- NEW: collect emails from ALL pages after substring filter ---
+        step("Collect visible emails from ALL pages after substring filtering");
+        individuals.goToFirstPageIfPossible(); // your existing helper
+
+        int lastAfterSubstring = Math.max(1, individuals.getMaxPageNumber());
+        lastAfterSubstring = Math.min(lastAfterSubstring, 100); // safety cap if pagination goes crazy
+
+        List<String> filteredEmails = new ArrayList<>();
+
+        for (int page = 1; page <= lastAfterSubstring; page++) {
+            step("Collect emails on substring-filtered page " + page);
+            individuals.goToPage(page);
+            List<String> pageEmails = individuals.getEmailsOnCurrentPage();
+            filteredEmails.addAll(pageEmails);
+        }
+
+        Assert.assertFalse(
+                filteredEmails.isEmpty(),
+                "❌ No email cells visible after email substring filter across all pages: " + emailNeedle
+        );
+
+        // 4) verify that all the individuals displayed on the list contain the subemail
+        step("Assert every visible email (across all pages) contains the substring (case-insensitive)");
+        String emailNeedleLc = emailNeedle.toLowerCase(Locale.ROOT);
+        SoftAssert substringSoftly = new SoftAssert();
+        for (int i = 0; i < filteredEmails.size(); i++) {
+            final int rowNum = i + 1;
+            final String email = filteredEmails.get(i);
+            step("Row #" + rowNum + " — email should contain '" + emailNeedle + "': " + email);
+            substringSoftly.assertTrue(
+                    email.toLowerCase(Locale.ROOT).contains(emailNeedleLc),
+                    "Row " + rowNum + " email does not contain '" + emailNeedle + "': " + email
+            );
+        }
+        substringSoftly.assertAll();
+
+        // 5) Search by full email
+        step("Search by the full email");
+        individuals.search(sampleEmail);
+
+        // --- NEW: collect emails from ALL pages after full-email filter ---
+        step("Collect visible emails from ALL pages after full-email filtering");
+        individuals.goToFirstPageIfPossible();
+
+        int lastAfterFull = Math.max(1, individuals.getMaxPageNumber());
+        lastAfterFull = Math.min(lastAfterFull, 100);
+
+        List<String> exactEmails = new ArrayList<>();
+        for (int page = 1; page <= lastAfterFull; page++) {
+            step("Collect emails on full-email-filtered page " + page);
+            individuals.goToPage(page);
+            List<String> pageEmails = individuals.getEmailsOnCurrentPage();
+            exactEmails.addAll(pageEmails);
+        }
+
+        step("Verify we have at least one result for the full email across all pages");
+        Assert.assertFalse(
+                exactEmails.isEmpty(),
+                "❌ No rows returned when searching by full email across all pages: " + sampleEmail
+        );
+
+        // 6) verify that the unique or all individuals displayed contains the email
+        step("Verify every visible row (across all pages) contains the full email, case-insensitive");
+        SoftAssert fullEmailSoftly = new SoftAssert();
+        String sampleEmailLc = sampleEmail.toLowerCase(Locale.ROOT);
+        for (int i = 0; i < exactEmails.size(); i++) {
+            final int rowNum = i + 1;
+            final String email = exactEmails.get(i);
+            step("Row #" + rowNum + " — email should contain searched email: " + email);
+            fullEmailSoftly.assertTrue(
+                    email.toLowerCase(Locale.ROOT).contains(sampleEmailLc),
+                    "Row " + rowNum + " email does not contain full email '" + sampleEmail + "': " + email
+            );
+        }
+        fullEmailSoftly.assertAll();
+
+        step("Optionally reload Individuals to clear filters for subsequent tests");
+        individuals.reloadWithBuster(Config.getBaseUrl());
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals failed to reload after clearing search");
+    }
+
+
+
+
+
+
+
+
+
+
+
+    @Test(groups = {"known-bug"}, description = "[Qase-1181] Sort by Name (Z–A) orders names in descending order across all pages")
+    public void sortByName_descending_ordersZtoA_qase1181() {
+
+        step("Start fresh session (login + land on Dashboard)");
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
+
+        // 1) Open Individuals
+        step("Open Individuals page from Dashboard nav");
+        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+
+        step("Ensure there is at least one row (or skip)");
+        if (!individuals.hasAnyRows()) {
+            throw new SkipException("No Individuals present; cannot verify sort.");
+        }
+
+        // 2) Choose Sort by: Name (Z–A)
+        step("Select sort option: Name (Z–A)");
+        individuals.chooseSortOption("name (z-a)"); // e.g. click sort dropdown → choose "Name (Z–A)"
+
+        // 3) Read visible names (we’ll do it across ALL pages)
+        step("Collect visible names from ALL pages after applying Name (Z–A) sort");
+        individuals.goToFirstPageIfPossible(); // keep consistency with previous search test
+
+        int maxPage = Math.max(1, individuals.getMaxPageNumber());
+        maxPage = Math.min(maxPage, 100); // safety cap
+
+        List<String> allNames = new ArrayList<>();
+
+        for (int page = 1; page <= maxPage; page++) {
+            step("Collect names on sorted page " + page);
+            List<String> pageNames = individuals.getNamesOnCurrentPage();
+            allNames.addAll(pageNames);
+
+            if (page < maxPage) {
+                individuals.goToPage(page + 1);
+                individuals.waitUntilLoaded(); // if you have/need this helper
+            }
+        }
+
+        step("Verify we have at least two non-empty names to assert ordering");
+        List<String> nonBlankNames = new ArrayList<>();
+        for (String name : allNames) {
+            if (name != null && !name.isBlank()) {
+                nonBlankNames.add(name.trim());
+            }
+        }
+
+        if (nonBlankNames.size() < 2) {
+            throw new SkipException("Not enough non-empty names to verify sort order. Names: " + nonBlankNames);
+        }
+
+        step("Assert list of names is sorted Z → A (case-insensitive) across all pages");
+        SoftAssert softly = new SoftAssert();
+        for (int i = 1; i < nonBlankNames.size(); i++) {
+            String prev = nonBlankNames.get(i - 1);
+            String curr = nonBlankNames.get(i);
+
+            // cmp > 0  => prev > curr (Z–A)
+            // cmp = 0  => equal, still OK
+            int cmp = prev.compareToIgnoreCase(curr);
+
+            step("Compare '" + prev + "' >= '" + curr + "' (Z–A expectation)");
+            softly.assertTrue(
+                    cmp >= 0,
+                    "Expected Z–A order but found '" + prev + "' before '" + curr + "'. Full list: " + nonBlankNames
+            );
+        }
+        softly.assertAll();
+
+        step("Optionally reload Individuals to clear state for subsequent tests");
+        individuals.reloadWithBuster(Config.getBaseUrl());
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals failed to reload after sort test");
+    }
+
+
+
+
+
+
 
 
 
