@@ -5,6 +5,7 @@ import base.BaseTest;
 import com.mailslurp.clients.ApiException;
 import com.mailslurp.models.Email;
 import com.mailslurp.models.InboxDto;
+import io.qameta.allure.*;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.devtools.DevTools;
@@ -39,13 +40,24 @@ import java.util.regex.Pattern;
 
 import static Utils.Config.joinUrl;
 
+
+
+@Epic("Tilt – Purchases")
+@Feature("TTP Team Assessment Purchase & Assignment")
+@Owner("Emiliano")
 public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
+
+
 
     // Duplicate message detector
     public static final java.util.regex.Pattern DUP_MSG =
             java.util.regex.Pattern.compile("(?is)\\b(duplicate|duplicated|already\\s*exists?|already\\s*in\\s*use|in\\s*use|used)\\b");
 
+
+
     @Test(groups = "ui-only", description = "TILT-238: Duplicate email should show inline error and block Proceed")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Team manual entry – duplicate emails blocked before payment")
     public void duplicateEmailBlocksProceed_TTP_Team_ManualEntry() {
         // creds
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
@@ -112,6 +124,8 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
     @Test(groups ={"ui-only", "known-bug" }, description = "TILT-239: Exceeding max team members (20) validates/clamps and blocks Proceed")
+    @Severity(SeverityLevel.NORMAL)
+    @Story("Team manual entry – enforce 20 member maximum")
     //we are waiting for a error message but is not being displauyed
     public void exceedingMaxTeamMembersValidation_TTP_Team_ManualEntry() {
         // creds
@@ -180,6 +194,8 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
     @Test(groups = "ui-only", description = "TILT-240: Invalid template upload shows appropriate error and blocks Proceed")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Team CSV upload – invalid template is rejected and blocks payment")
     public void invalidTemplateUpload_showsError_and_blocksProceed() throws Exception {
         // creds
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
@@ -293,8 +309,9 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
     }
 
 
-    @Test(groups = "ui-only",
-            description = "TILT-241: CSV without Email header is parsed to grid with inline errors; Proceed remains disabled")
+    @Test(groups = "ui-only", description = "TILT-241: CSV without Email header is parsed to grid with inline errors; Proceed remains disabled")
+    @Severity(SeverityLevel.NORMAL)
+    @Story("Team CSV upload – missing Email header soft-rejects to grid with inline errors")
     public void upload_withoutEmailHeader_parsesToGrid_withInlineErrors_andBlocksProceed() throws Exception {
         // creds
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
@@ -409,6 +426,8 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
     @Test(groups = "ui-only", description = "TILT-242: Verify Total Cost Calculation Accuracy when toggling member selection in Order Preview")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Team preview – totals recalculate correctly when toggling member selection")
     public void verifyTotalCostRecalculation_OnToggleInPreview() throws InterruptedException {
         step("Resolve admin credentials from config");
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
@@ -511,6 +530,8 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
     @Test(groups = {"ui-only"}, description = "TILT-243: Remove a Member in Order Summary updates counts and totals (E2E)")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Team preview – removing member updates counts and totals end-to-end")
     public void removeMemberInOrderSummary_EndToEnd() {
 
         step("Resolve admin credentials from configuration");
@@ -613,6 +634,8 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
     @Test(groups = {"ui-only", "test-solo"}, description = "TILT-244: Toggle Product Assignment On/Off per email in final confirmation (E2E)")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Team preview – toggle product assignment per recipient row")
     public void toggleProductAssignment_OnOff_EndToEnd() {
 
         step("Resolve admin credentials from configuration");
@@ -748,9 +771,9 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
 
-
-
     @Test(groups = {"ui-only", "known-bug"}, description = "TILT-247: Preserve Team selection and member choices on Back navigation")
+    @Severity(SeverityLevel.NORMAL)
+    @Story("Team purchase – selections and members persist when navigating Back/Forward")
     public void preserveTeamSelection_onBackNavigation_persists() {
         // creds
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
@@ -914,17 +937,14 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
 
-
-
-
-
-
     /**
      * TC-2: Team purchase via manual entry → Preview → Stripe → webhook →
      *        Team created + member listed in team + invite email received.
      * Stripe Checkout UI is NOT used — payment completion is triggered via Stripe CLI only.
      */
     @Test(groups = {"smoke"})
+    @Severity(SeverityLevel.BLOCKER)
+    @Story("Team manual entry – full E2E purchase and invite email via Stripe CLI")
     public void testTeamManualEntry_PurchaseCompletesAndSendsInviteEmail() throws ApiException, InterruptedException {
 
         // --- ADMIN CREDS ---
@@ -1084,6 +1104,8 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM08: Team manual entry (3 recipients) reaches Stripe Checkout.")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Smoke – team manual entry with 3 recipients reaches Stripe Checkout")
     public void smoke_teamManualEntryThreeRecipients_reachesStripeCheckout() throws Exception {
 
         // -------------------- CONFIG / ADMIN CREDS --------------------
@@ -1247,6 +1269,8 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM09: Team CSV upload (>=3 recipients) reaches Preview + Stripe.")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Smoke – team CSV upload with >=3 recipients reaches Preview and Stripe Checkout")
     public void smoke_teamCsvUpload_reachesPreviewAndStripe() throws Exception {
 
         // -------------------- CONFIG / ADMIN CREDS --------------------
@@ -1405,6 +1429,8 @@ public class TeamAssessmentPurchaseAndAssignment extends BaseTest {
      * TILT-245: Handle Slow Network on Payment Submit
      */
     @Test(groups = {"ui-only"}, description = "TILT-245: Handle slow network on payment submit, show loading and block duplicate payments")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Payment submit – slow network must show loading and prevent duplicate payments")
     public void testHandleSlowNetworkOnPaymentSubmit_ShowsLoadingAndBlocksDuplicatePayment() throws InterruptedException {
         // ----- config / admin user -----
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");

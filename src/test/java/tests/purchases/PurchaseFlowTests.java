@@ -21,6 +21,17 @@ import java.time.Duration;
 import static Utils.WaitUtils.waitForLoadersToDisappear;
 import static io.qameta.allure.Allure.step;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Owner;
+import io.qameta.allure.Severity;
+import io.qameta.allure.SeverityLevel;
+
+
+
+@Epic("Tilt – Purchases & Checkout")
+@Feature("PurchaseFlow Tests")
+@Owner("Emiliano")
 public class PurchaseFlowTests extends BaseTest {
 
     // One per suite; re-used across tests
@@ -47,8 +58,8 @@ public class PurchaseFlowTests extends BaseTest {
 
 
 
-    @Test(groups = "ui-only",
-            description = "Myself path → lands on Purchase Information with no order preview")
+    @Test(groups = "ui-only", description = "Myself path → lands on Purchase Information with no order preview")
+    @Severity(SeverityLevel.NORMAL)
     public void myselfFlow_goesToPurchaseInformation() throws Exception {
 
         // 🔹 driver() is safe to use here
@@ -99,6 +110,7 @@ public class PurchaseFlowTests extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM07: Manual entry (1 recipient) reaches Stripe Checkout successfully.")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_manualEntrySingleRecipient_reachesStripeCheckout() throws Exception {
 
         // Ensure we have a practitioner without TTP

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "Product Defects – Functional",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?i).*(AssertionError|expected .* but found .*|should be .*|did not appear|state mismatch|object to not be null|expected to be null|order preview page failed).*"
+  },
+  {
+    "name": "Email Delivery / Notifications",
+    "matchedStatuses": ["failed"],
+    "messageRegex": ".*(Invite email not received|No invitation email arrived|No reminder email arrived|not received in time|PTZM expected object).*"
+  },
+  {
+    "name": "Reports & PDF Downloads",
+    "matchedStatuses": ["failed"],
+    "messageRegex": ".*(No PDF file downloaded|PDF did not appear|report PDF|AGT Full Report expected object).*"
+  },
+  {
+    "name": "UI / Timing / Flaky – Selenium / Browser",
+    "matchedStatuses": ["failed", "broken"],
+    "traceRegex": ".*(TimeoutException|Renderer timeout|NoSuchElementException|StaleElementReferenceException|ElementClickInterceptedException|Detached frame|Transient WebDriverException|target frame detached|stale element reference).*"
+  },
+  {
+    "name": "Environment / 3rd-Party / Integration",
+    "matchedStatuses": ["failed", "broken"],
+    "messageRegex": ".*(MailSlurp|mailslurp|SendGrid|Stripe|Connection refused|ECONNREFUSED|503 Service Unavailable|SessionNotCreatedException|network error|503|426).*"
+  },
+  {
+    "name": "Auth / Token / Security Issues",
+    "matchedStatuses": ["failed", "broken"],
+    "messageRegex": ".*(JWT|token|unauthorized|redirected to login|invalid session|persist:root missing).*"
+  },
+  {
+    "name": "Test / Data / Fixtures",
+    "matchedStatuses": ["failed", "broken"],
+    "messageRegex": ".*(NullPointerException|IllegalStateException|fixture not found|Large team fixture not found|configuration error|test data mismatch|alias token missing).*"
+  },
+  {
+    "name": "Skipped / Config Guards",
+    "matchedStatuses": ["skipped"],
+    "messageRegex": ".*(Admin credentials missing|Profile user credentials missing|MAILSLURP_FORCE|skipped due to config|SkipException).*"
+  }
+]
+
+
+//Organize tests by:
+//Smoke
+//Checkout
+//Notifications
+//Teams & Climate
+//Reports & PDFs
+//Authentication / Login
+//Settings / Profile

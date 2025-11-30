@@ -3,6 +3,7 @@ package tests;
 import base.BaseTest;
 
 import Utils.Config;
+import io.qameta.allure.*;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -17,10 +18,18 @@ import pages.menuPages.ShopPage;
 
 import java.util.UUID;
 
+
+
+
+@Epic("Tilt – Purchases")
+@Feature("Recipient Selection & Manual Entry Validation")
+@Owner("Emiliano")
 public class ManualEntryValidationTests extends BaseTest {
 
 
     @Test(groups = {"shop","preview","validation","smoke"})
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Manual entry – email field validation blocks checkout when invalid")
     public void testManualEntryInvalidEmailBlocksProceed_FullFlow() {
         // Login
         LoginPage login = new LoginPage(driver());

@@ -3,6 +3,7 @@ package tests;
 import base.BaseTest;
 import Utils.Config;
 import base.BaseTest;
+import io.qameta.allure.*;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -16,11 +17,19 @@ import pages.menuPages.ShopPage;
 
 import java.util.UUID;
 
+
+
+
+@Epic("Tilt – Purchases")
+@Feature("Order Preview – Coupon Behaviour")
+@Owner("Emiliano")
 public class OrderPreviewCouponFlowTests extends BaseTest {
 
 
 
     @Test(groups = {"shop","preview","coupon","smoke"})
+    @Severity(SeverityLevel.NORMAL)
+    @Story("Coupon – default state is OFF on first load")
     public void testCouponDefaultUncheckedOnFirstLoad() throws InterruptedException {
         // Login
         LoginPage login = new LoginPage(driver());
@@ -54,6 +63,8 @@ public class OrderPreviewCouponFlowTests extends BaseTest {
 
 
     @Test(groups = {"shop","preview","coupon"})
+    @Severity(SeverityLevel.NORMAL)
+    @Story("Coupon – toggled ON by user, but resets to default after Back/Forward")
     public void testCouponResetsWhenNavigatingBackAndForward_FullFlow() {
         // Login
         LoginPage login = new LoginPage(driver());
@@ -95,7 +106,10 @@ public class OrderPreviewCouponFlowTests extends BaseTest {
         Assert.assertTrue(preview.isProceedEnabled(), "Proceed/Pay button should be enabled.");
     }
 
+
     @Test(groups = {"shop","preview","coupon"})
+    @Severity(SeverityLevel.MINOR)
+    @Story("Coupon – default OFF state persists when user does not interact with it")
     public void testCouponDefaultRemainsUncheckedAfterBackForward_FullFlow() {
         // Login
         LoginPage login = new LoginPage(driver());

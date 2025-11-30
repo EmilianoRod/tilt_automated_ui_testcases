@@ -2,6 +2,7 @@ package tests.reports;
 
 import Utils.Config;
 import base.BaseTest;
+import io.qameta.allure.*;
 import org.testng.Assert;
 import org.testng.SkipException;
 import org.testng.annotations.Test;
@@ -25,6 +26,9 @@ import java.util.Optional;
 import static io.qameta.allure.Allure.step;
 
 
+@Epic("Tilt – Reports")
+@Feature("Report Generation & Download")
+@Owner("Emiliano")
 public class ReportGenerationTests extends BaseTest {
 
 
@@ -32,6 +36,8 @@ public class ReportGenerationTests extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM10: True Tilt FULL REPORT opens from Individuals and downloads PDF.")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("True Tilt – Individual full report generation & PDF download")
     public void smoke_individualTrueTiltReport_openAndDownload() throws Exception {
         // ----- config / admin user -----
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
@@ -94,6 +100,7 @@ public class ReportGenerationTests extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM11: True Tilt Snapshot report downloads PDF successfully.")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_individualTrueTiltSnapshot_downloadsPdf() throws Exception {
 
         // ----- config / admin user -----
@@ -143,6 +150,7 @@ public class ReportGenerationTests extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM12: True Tilt Mobile image downloads PNG successfully.")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_individualTrueTiltMobileImage_downloadsPng() throws Exception {
 
         // ----- config -----
@@ -188,6 +196,7 @@ public class ReportGenerationTests extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM13: AGT Full Report downloads PDF successfully.")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_individualAgtFullReport_downloadsPdf() throws Exception {
 
         // ----- config -----
@@ -233,6 +242,7 @@ public class ReportGenerationTests extends BaseTest {
     
 
     @Test(groups = {"smoke"}, description = "SM14: Team True Tilt Aggregate report PDF downloads successfully.")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_teamTrueTiltAggregateReport_downloadsPdf() throws Exception {
 
         // ----- config / admin user -----
@@ -298,6 +308,7 @@ public class ReportGenerationTests extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM15: Unique Amplifier report downloads PDF successfully.")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_individualUniqueAmplifier_downloadsPdf() throws Exception {
 
         // ----- config -----

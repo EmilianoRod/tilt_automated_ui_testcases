@@ -1,6 +1,5 @@
 package Utils;
 
-
 import java.io.IOException;
 import java.nio.file.*;
 import java.time.Duration;
@@ -125,30 +124,27 @@ public final class Config {
         return a + b;
     }
 
-
-
-
+    /* ===========================
+     * Core URLs / credentials
+     * =========================== */
 
     public static String getBaseUrl() {
         // Try sysprop, env var, then .env.local
         String baseUrl = getAny("baseUrl", "BASE_URL");
 
         if (baseUrl != null && !baseUrl.isBlank()) {
-            return baseUrl.trim();
+            baseUrl = baseUrl.trim();
+            // ✅ NEW: also push into System properties so listeners can read it
+            if (System.getProperty("baseUrl") == null) {
+                System.setProperty("baseUrl", baseUrl);
+            }
+            return baseUrl;
         }
 
         throw new IllegalStateException(
                 "BASE_URL is not configured. Set it in .env.local or pass -DbaseUrl=..."
         );
     }
-
-
-
-
-
-
-
-
 
     public static String getAdminEmail() {
         return "erodriguez+a@effectussoftware.com";
@@ -252,7 +248,6 @@ public final class Config {
         return getAny("stripe.secretKey", "STRIPE_SECRET_KEY", "STRIPE_TEST_SECRET_KEY");
     }
 
-
     public static boolean isStripeE2EEnabled() {
         String raw = get("STRIPE_E2E", "STRIPE_E2E", "false");
         return raw.equalsIgnoreCase("true") || raw.equals("1") || raw.equalsIgnoreCase("yes");
@@ -294,5 +289,68 @@ public final class Config {
     public static double getDouble(String sysProp, String env, double defVal) {
         String raw = get(sysProp, env, String.valueOf(defVal));
         try { return Double.parseDouble(raw.trim()); } catch (Exception ignore) { return defVal; }
+    }
+
+    /* ===========================
+     * Environment helpers (NEW)
+     * =========================== */
+
+    /**
+     * Logical environment name (e.g. dev, staging, prod).
+     * Looks at common keys: env, ENV, TILT_ENV, ENVIRONMENT.
+     * Defaults to "dev" if nothing is set.
+     */
+    public static String getEnvironmentName() {
+        String env = getAny("env", "ENV", "TILT_ENV", "ENVIRONMENT");
+        return (env == null || env.isBlank()) ? "dev" : env.trim();
+    }
+
+    /**
+     * Parallel mode hint (e.g. classes, methods, none).
+     * Not required but useful for reporting.
+     */
+    public static String getParallelMode() {
+        String v = getAny("parallel", "PARALLEL", "TEST_PARALLEL_MODE");
+        return (v == null || v.isBlank()) ? "methods" : v.trim();
+    }
+
+    /**
+     * Optionally push some config values into System properties so listeners that only read
+     * System.getProperty(...) can pick them up (e.g. Allure env writer).
+     *
+     * Safe to call multiple times.
+     */
+    public static void syncToSystemProperties() {
+        try {
+            String envName = getEnvironmentName();
+            if (System.getProperty("env") == null && envName != null) {
+                System.setProperty("env", envName);
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+
+        try {
+            String base = null;
+            try {
+                base = getBaseUrl();
+            } catch (IllegalStateException ignored) {
+                // BASE_URL may legitimately be missing early on; do not throw from here.
+            }
+            if (base != null && System.getProperty("baseUrl") == null) {
+                System.setProperty("baseUrl", base);
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+
+        try {
+            String parallel = getParallelMode();
+            if (System.getProperty("parallel") == null && parallel != null) {
+                System.setProperty("parallel", parallel);
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
     }
 }

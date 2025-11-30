@@ -8,6 +8,7 @@ import base.BaseTest;
 import com.mailslurp.models.Email;
 import com.mailslurp.models.EmailPreview;
 import com.mailslurp.models.InboxDto;
+import io.qameta.allure.*;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
@@ -42,6 +43,10 @@ import static Utils.Config.joinUrl;
 import static io.qameta.allure.Allure.step;
 import static tests.teams.TeamAssessmentPurchaseAndAssignment.extractSessionIdFromUrl;
 
+
+@Epic("Tilt – Individuals")
+@Feature("IndividualsList Tests")
+@Owner("Emiliano")
 public class IndividualsListTests extends BaseTest {
 
 
@@ -49,6 +54,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(description = "TC-434: Individuals list shows Name, assessment icon(s), Date taken, and a clickable Report link (spot-check first rows).")
+    @Severity(SeverityLevel.NORMAL)
     public void displayIndividualsList_showsRequiredColumns() {
 
         step("Start fresh session (login + land on Dashboard)");
@@ -108,6 +114,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(description = "TC-435: Search filters to only matching entries (name/email substring).")
+    @Severity(SeverityLevel.NORMAL)
     public void searchIndividuals_filtersToMatchingEntries() {
 
         step("Start fresh session (login + land on Dashboard)");
@@ -255,6 +262,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = {"known-bug"}, description = "TC-436: Sort by Name (A→Z, Z→A) and Date (Newest, Oldest) updates ordering correctly.")
+    @Severity(SeverityLevel.NORMAL)
     public void sortIndividuals_ordersUpdateCorrectly() {
 
         step("Start fresh session (login + Dashboard)");
@@ -317,6 +325,7 @@ public class IndividualsListTests extends BaseTest {
 
     // Test 1: Auto reminder toggle persists after refresh (ON then OFF)
     @Test(description = "Individuals: Auto reminder toggle persists after refresh (ON then OFF)")
+    @Severity(SeverityLevel.NORMAL)
     public void autoReminderToggle_persistsAfterRefresh_onThenOff() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -368,6 +377,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = {"known-bug"}, description = "IND-003: Sort by Name (A–Z) orders ascending (case/accents ignored).")
+    @Severity(SeverityLevel.NORMAL)
     public void sortByName_ordersAscending() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -414,6 +424,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(description = "IND-005 & IND-006: Sort by Date (Newest/Oldest) in a single flow with idempotence checks.")
+    @Severity(SeverityLevel.NORMAL)
     public void sortByDate_newest_oldest_inOne() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -460,6 +471,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(description = "IND-007: Pagination: next/prev page updates rows and returning restores page 1 snapshot.")
+    @Severity(SeverityLevel.NORMAL)
     public void pagination_nextPrev_changesRows_andRestores() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -497,6 +509,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = "ui-only", description = "IND-008: Page size selector changes rows per page (10/20).")
+    @Severity(SeverityLevel.NORMAL)
     public void pageSize_changesRowCount() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -586,6 +599,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = "ui-only", description = "IND-009: Report column shows 'Pending' or a clickable link.")
+    @Severity(SeverityLevel.NORMAL)
     public void reportColumn_showsPendingOrLink() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -631,6 +645,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = "ui-only", description = "IND-010: Open Report link navigates to Report page.")
+    @Severity(SeverityLevel.NORMAL)
     public void openReportLink_navigatesToReportPage() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -699,6 +714,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = "ui-only", description = "IND-011: Row actions menu opens and shows expected options.")
+    @Severity(SeverityLevel.NORMAL)
     public void rowActionsMenu_opensAndShowsOptions() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -753,6 +769,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = "ui-only", description = "IND-012: Auto reminder: toggle ON persists after refresh")
+    @Severity(SeverityLevel.NORMAL)
     public void autoReminder_toggleOn_persistsAfterRefresh() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -786,6 +803,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = "ui-only", description = "IND-013: Auto reminder: toggle OFF persists after refresh")
+    @Severity(SeverityLevel.NORMAL)
     public void autoReminder_toggleOff_persistsAfterRefresh() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -819,6 +837,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = "ui-only", description = "IND-014: Send reminder: opens modal with preview")
+    @Severity(SeverityLevel.NORMAL)
     public void sendReminder_opensModal_withPrefilledPreview() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -888,6 +907,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-015: Send reminder: confirm shows success toast")
+    @Severity(SeverityLevel.NORMAL)
     public void sendReminder_confirm_showsSuccessToast() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -932,6 +952,7 @@ public class IndividualsListTests extends BaseTest {
     private String safeLower(String s) { return s == null ? null : s.toLowerCase(); }
 
     @Test(groups = "ui-only", description = "IND-016: Send reminder: backend error shows error toast")
+    @Severity(SeverityLevel.NORMAL)
     public void sendReminder_confirm_showsErrorToast_onBackendFailure(){
         // --- Guard: CDP only on Chromium driver()s ---
         if (!(driver() instanceof HasDevTools)) {
@@ -998,6 +1019,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-017: Send reminder: cancel modal keeps state unchanged")
+    @Severity(SeverityLevel.NORMAL)
     public void sendReminder_cancel_keepsStateUnchanged() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -1044,6 +1066,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-018: Send reminder: close (X) keeps state unchanged")
+    @Severity(SeverityLevel.NORMAL)
     public void sendReminder_closeX_keepsStateUnchanged() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -1088,6 +1111,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-018: Edit info: opens with current values")
+    @Severity(SeverityLevel.NORMAL)
     public void editInfo_opensWithCurrentValues() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -1154,6 +1178,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-019: Edit info: update email persists and shows success")
+    @Severity(SeverityLevel.NORMAL)
     public void editInfo_updateEmail_persistsAndShowsSuccess() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -1200,6 +1225,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-020: Edit info: invalid email blocks save")
+    @Severity(SeverityLevel.NORMAL)
     public void editInfo_invalidEmail_blocksSave() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -1234,6 +1260,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-021: Edit info: duplicate email shows error and does not persist")
+    @Severity(SeverityLevel.NORMAL)
     public void editInfo_duplicateEmail_showsError_andDoesNotPersist() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -1332,6 +1359,7 @@ public class IndividualsListTests extends BaseTest {
 //    }
 
     @Test(groups = "ui-only", description = "IND-023: Remove user: opens confirmation modal")
+    @Severity(SeverityLevel.NORMAL)
     public void removeUser_opensConfirmationModal() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -1365,6 +1393,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-024: Remove user: cancel keeps row")
+    @Severity(SeverityLevel.NORMAL)
     public void removeUser_cancel_keepsRow() {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -1403,6 +1432,7 @@ public class IndividualsListTests extends BaseTest {
     }
 
     @Test(groups = "ui-only", description = "IND-025: Remove user: confirm shows success and row disappears")
+    @Severity(SeverityLevel.NORMAL)
     public void removeUser_confirmShowsToastAndRowDisappears() throws InterruptedException {
         step("Start fresh session (login + Dashboard)");
         DashboardPage dashboard = BaseTest.startFreshSession(driver());
@@ -1451,6 +1481,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM04: Invite New Individual via Shop – happy path, appears in Individuals list.")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_inviteNewIndividual_happyPath() throws Exception {
 
         // ----- config / constants -----
@@ -1535,6 +1566,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM05: Resend invitation (Send reminder) for a pending individual.")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_resendInvitation_forPendingIndividual() throws Exception {
 
         step("Start fresh session (login + Dashboard)");
@@ -1596,6 +1628,7 @@ public class IndividualsListTests extends BaseTest {
      *  - Assert a reminder email arrives to that alias with correct subject/body/CTA
      */
     @Test(groups = {"smoke"}, description = "SM05b: Resend invitation sends reminder email to pending individual (MailSlurp).")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_resendInvitation_sendsReminderEmailToPendingIndividual() throws Exception {
         // ------------------------------------------------------------------
         // Admin config
@@ -1817,6 +1850,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(groups = {"smoke"}, description = "SM06: Cancel pending invitation removes/updates the invite.")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_cancelPendingInvitation() throws Exception {
 
         step("Start fresh session (login + Dashboard)");
@@ -1907,6 +1941,7 @@ public class IndividualsListTests extends BaseTest {
      *  - Navigate to the original CTA link and assert we CANNOT start the assessment.
      */
     @Test(groups = {"smoke", "known-bug"}, description = "SM06-v2: Cancel pending invitation makes the email CTA unusable.")
+    @Severity(SeverityLevel.NORMAL)
     public void smoke_cancelPendingInvitation_emailLinkBecomesInvalid() throws Exception {
 
         // -------------------- CONFIG / ADMIN CREDS --------------------
@@ -2096,6 +2131,7 @@ public class IndividualsListTests extends BaseTest {
 
 
     @Test(description = "[Qase-1179] Search filters by email substring and full email.")
+    @Severity(SeverityLevel.NORMAL)
     public void searchIndividuals_filtersByEmailSubstringAndFullEmail_qase1179() {
 
         step("Start fresh session (login + land on Dashboard)");
@@ -2234,16 +2270,8 @@ public class IndividualsListTests extends BaseTest {
     }
 
 
-
-
-
-
-
-
-
-
-
     @Test(groups = {"known-bug"}, description = "[Qase-1181] Sort by Name (Z–A) orders names in descending order across all pages")
+    @Severity(SeverityLevel.NORMAL)
     public void sortByName_descending_ordersZtoA_qase1181() {
 
         step("Start fresh session (login + land on Dashboard)");

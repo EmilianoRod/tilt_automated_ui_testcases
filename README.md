@@ -1,106 +1,145 @@
 # Tilt Automated UI Test Suite
 
-This repository contains the end‑to‑end UI automation framework for **Tilt365** using Java, Selenium, TestNG, and Maven.  
-It supports local execution, CI/CD (Jenkins & AWS), parallel test runs, MailSlurp email testing, Stripe flows, and advanced reporting with Allure.
+End-to-end UI automation framework for **Tilt365**, built with **Java 17**, **Selenium 4**, **TestNG**, and **Maven**.
+
+The suite supports:
+
+- Local runs and full CI/CD (Jenkins + AWS EC2)
+- Parallel execution
+- MailSlurp-based email flows (invites, signup, reset)
+- Stripe Checkout flows
+- Rich reporting with **Allure** (screenshots, console logs, performance logs, network dumps)
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
-- **Selenium 4 + Java 17** automation framework  
-- **Page Object Model (POM)** + custom utilities  
-- **TestNG** test suites: Smoke, Regression, Parallel, CI  
-- **MailSlurp integration** for invite & signup flows  
-- **Stripe Checkout automation**  
-- **Configurable environments** via `.env` or system properties  
-- **Allure Reports** integration  
-- **Retry logic**, improved waits, and BasePage utilities  
-- **Designed for AWS EC2 + Jenkins pipelines**
+- **Selenium 4 + Java 17** UI automation
+- **Page Object Model (POM)** with a shared `BasePage` and robust wait/click helpers
+- **TestNG** suites: Smoke, Regression, CI/Parallel
+- **MailSlurp integration** for email-driven flows
+- **Stripe Checkout automation** (via Stripe REST API and Stripe CLI)
+- **Configurable environments** via `.env.local`, system properties, or CI env vars
+- **Allure Reports**:
+  - Screenshots, page source, current URL
+  - Browser console + performance logs (CDP)
+  - Environment metadata (`environment.properties`)
+- **Retries & stability**:
+  - Retry transformer for flaky tests
+  - Safer navigation (`robustGet`) and login bootstrap
+- **CI-ready**:
+  - Designed for Jenkins pipeline + AWS EC2 (headless Chrome)
 
 ---
 
 ## 📁 Project Structure
 
-```
-tilt_automated_ui_testcases-main/
+```text
+tilt_automated_ui_testcases/
 │
-├── pom.xml                 # Maven dependencies & plugins
+├── pom.xml                       # Maven dependencies & plugins (Allure, TestNG, Selenium, etc.)
 ├── src/
-│   ├── main/java/          # Page objects, utilities, drivers
-│   └── test/java/          # Test classes
+│   └── test/java/
+│       ├── base/                 # BaseTest, DriverManager
+│       ├── pages/                # Page Objects (POM) + BasePage
+│       ├── tests/                # Test classes (Smoke, Regression, flows)
+│       └── Utils/                # Config, MailSlurp, NetSniffer, DebugDumps, WaitUtils, etc.
 │
-├── testng-smoke.xml        # Smoke suite
-├── testng-regression.xml   # Regression suite
-├── testng-parallel.xml     # Parallel suite (methods-based)
-├── testng-ci.xml           # CI suite for Jenkins/AWS
+├── testng-smoke.xml              # Smoke suite
+├── testng-regression.xml         # Regression suite
+├── testng-parallel.xml           # Parallel suite (methods-based, CI default)
+├── testng-ci.xml                 # CI suite entry point (if needed)
 │
-├── .env.sample             # Environment variable template
-├── ci-local.sh             # Local CI simulation script
-├── JenkinsfileForRepoUnderTest
+├── .env.sample                   # Template for local env configuration
+├── .env.local                    # Local overrides (gitignored) – read by Config
+├── ci-local.sh                   # Local “mini-CI” runner script
+├── JenkinsfileForRepoUnderTest   # Jenkins declarative pipeline
 │
-└── ENDPOINTS_SUMMARY.md    # Backend endpoints documentation
+└── ENDPOINTS_SUMMARY.md          # Backend endpoints documentation (reference)
 ```
 
 ---
 
 ## ⚙️ Setup
 
-### 1. Install dependencies
+### 1. Prerequisites
+
+- Java 17+
+- Maven 3.8+
+- Chrome installed (local runs)
+- (Optional) Stripe CLI
+- (Optional) Allure CLI
+
+### 2. Install dependencies
+
 ```bash
 mvn clean install
 ```
 
-### 2. Configure environment variables  
-Copy the sample file:
+### 3. Configure environment
+
+The framework reads config from:
+
+1. System properties
+2. Environment variables
+3. `.env.local`
+4. Defaults (non-critical flags)
+
+Create your local env:
 
 ```bash
-cp .env.sample .env
+cp .env.sample .env.local
 ```
 
-Edit with your credentials:
+Edit `.env.local`:
 
-```
+```properties
 BASE_URL=https://tilt-dashboard-dev.tilt365.com/
 ADMIN_EMAIL=...
 ADMIN_PASSWORD=...
 MAILSLURP_API_KEY=...
+MAILSLURP_INBOX_ID=...
+MAILSLURP_ALLOW_CREATE=false
+STRIPE_SECRET_KEY=sk_test_...
 ```
 
-Or pass them as system properties:
+Override at runtime:
 
 ```bash
--DbaseUrl=...
--DadminEmail=...
--DadminPassword=...
+mvn test -DbaseUrl=https://tilt-dashboard-dev.tilt365.com/
 ```
 
 ---
 
 ## ▶️ Running Tests
 
-### **Smoke Suite**
+### Smoke Suite
+
 ```bash
 mvn test -Dsurefire.suiteXmlFiles=testng-smoke.xml
 ```
 
-### **Regression Suite**
+### Regression Suite
+
 ```bash
 mvn test -Dsurefire.suiteXmlFiles=testng-regression.xml
 ```
 
-### **Parallel**
+### Parallel Execution
+
 ```bash
 mvn test -Dsurefire.suiteXmlFiles=testng-parallel.xml -Dparallel=methods
 ```
 
-### **CI Execution**
+### CI-like Run
+
 ```bash
 ./ci-local.sh
 ```
 
 ---
 
-## 🧪 Test Environments
+## 🌎 Test Environments
 
 | Environment | URL |
 |------------|-----|
@@ -116,37 +155,60 @@ Switch via:
 
 ---
 
-## 📊 Reporting (Allure)
+## 📊 Reporting with Allure
 
-### Generate Allure Report  
+Allure output lives in:
+
+```
+target/allure-results/
+```
+
+Generate report:
+
 ```bash
 mvn allure:report
 ```
 
-### Serve UI  
+Serve interactive UI:
+
 ```bash
 mvn allure:serve
 ```
+
+Artifacts include:
+
+- Screenshots
+- Page source
+- Browser logs
+- Performance logs
+- environment.properties
 
 ---
 
 ## 🔒 MailSlurp
 
-Used for invite + signup flows.
+Handles email verification, signup, and invite tests.
 
-Settings in `.env`:
+Configuration:
 
-```
+```properties
 MAILSLURP_API_KEY=...
 MAILSLURP_INBOX_ID=...
 MAILSLURP_ALLOW_CREATE=false
 ```
 
+The pipeline validates the key and inbox before tests.
+
 ---
 
-## 💳 Stripe Checkout Support
+## 💳 Stripe Checkout
 
-Some tests require the Stripe CLI or mock Stripe environment:
+Supports both:
+
+- Stripe test secret keys  
+- Stripe CLI during development  
+
+Example:
 
 ```bash
 stripe listen --forward-to localhost:8080/webhook
@@ -157,44 +219,43 @@ stripe trigger payment_intent.succeeded
 
 ## 🧱 CI/CD (Jenkins + AWS)
 
-The project includes:
+Includes a full Jenkins pipeline with:
 
-- `JenkinsfileForRepoUnderTest` (pipeline definition)
-- Headless Chrome execution
-- Parallel test execution
-- Artifact upload (screenshots + logs)
-- Allure publishing
+- Dockerized Maven + headless Chrome
+- MailSlurp fixed inbox guard
+- Parallel execution
+- Screenshot + log archiving
+- Allure report publishing
+- Slack notifications (Allure / JUnit / Console links)
 
-Typical Jenkins command:
+Typical CI run:
 
 ```bash
-mvn -B -Dmaven.test.failure.ignore=false     -Dsurefire.suiteXmlFiles=testng-ci.xml     -Dheadless=true -Dparallel=methods
+mvn -B -Dsurefire.suiteXmlFiles=testng-parallel.xml -Dheadless=true -Dparallel=methods
 ```
 
 ---
 
 ## 🛠 Tech Stack
 
-- **Java 17**
-- **Selenium 4**
-- **TestNG**
-- **Maven**
-- **Allure**
-- **MailSlurp API**
-- **Stripe CLI (optional)**
-- **AWS EC2 (c7i.xlarge / t3.large)**
-- **Jenkins**
+- Java 17  
+- Selenium 4  
+- TestNG  
+- Maven  
+- Allure  
+- MailSlurp  
+- Stripe Java SDK  
+- Jenkins + AWS EC2  
 
 ---
 
 ## 👤 Author
 
-Automation Framework developed and maintained by **Emiliano Rodríguez**.
-
-For support or contribution, please open a PR or create an issue.
+Automation framework developed and maintained by **Emiliano Rodríguez**.  
+For support or contributions, open an issue or create a pull request.
 
 ---
 
 ## ✔️ License
 
-Private project – all rights reserved.
+Private project — all rights reserved.

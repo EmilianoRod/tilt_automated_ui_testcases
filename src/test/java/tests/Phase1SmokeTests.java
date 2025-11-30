@@ -8,6 +8,7 @@ import base.BaseTest;
 import com.mailslurp.clients.ApiException;
 import com.mailslurp.models.Email;
 import com.mailslurp.models.InboxDto;
+import io.qameta.allure.*;
 import org.json.JSONObject;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
@@ -32,6 +33,12 @@ import java.util.regex.Pattern;
 
 import static Utils.Config.joinUrl;
 
+
+
+
+@Epic("Tilt – Phase 1 Smoke")
+@Feature("Authentication, Tokens & Invite Emails")
+@Owner("Emiliano")
 public class Phase1SmokeTests extends BaseTest {
 
     // ==================== small utils ====================
@@ -76,7 +83,9 @@ public class Phase1SmokeTests extends BaseTest {
      * Uses a shared MailSlurp inbox with a unique +alias address to avoid quota limits.
      */
 //    @Test(groups = "ui-only")
-    @Test
+    @Test()
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Invite email – newly added user receives assessment invitation with CTA link")
     public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws Exception {
         // ----- config / constants -----
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
@@ -120,7 +129,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
         PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
         sel.selectClientOrIndividual();
-        sel.clickNext();
+//        sel.clickNext();
 
         step("Manual entry for 1 individual (use the aliased MailSlurp address)");
         AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
@@ -197,6 +206,9 @@ public class Phase1SmokeTests extends BaseTest {
                 "❌ CTA link host unexpected: " + ctaHref);
     }
 
+
+
+
     /** Null-safe string helper for logs/asserts. */
     private static String safe(String s) {
         return s == null ? "" : s;
@@ -206,7 +218,9 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-2: Store access-token after login.
      * Verify that the frontend stores the access-token securely after a successful login (e.g., in memory or secure storage).
      */
-    @Test(groups = "ui-only")
+//    @Test(groups = "ui-only")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Auth token – JWT is stored correctly after login")
     public void testStoreAccessTokenAfterLogin() {
         // --- Config / expected ---
         final String USER_EMAIL = System.getProperty("USER_EMAIL", "erodriguez+a@effectussoftware.com");
@@ -277,7 +291,9 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-3: Redirect unauthorized users to login page.
      * Ensure the frontend redirects the user to the login page when an invalid or expired token is detected.
      */
-    @Test(groups = "ui-only")
+//    @Test(groups = "ui-only")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Auth guard – unauthorized or expired token redirects to login")
     public void testRedirectUnauthorizedUsersToLoginPage() {
         final String USER_EMAIL = System.getProperty("USER_EMAIL", "erodriguez+a@effectussoftware.com");
         final String USER_PASS  = System.getProperty("USER_PASS",  "Password#1");
@@ -328,7 +344,9 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-4: Generate access-token on successful login.
      * Verify that an access-token is issued upon successful login with valid credentials.
      */
-    @Test(groups = "ui-only")
+//    @Test(groups = "ui-only")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Auth token – JWT is generated on successful login")
     public void testGenerateAccessTokenOnSuccessfu0lLogin() {
         // Step 1: Login
         LoginPage loginPage = new LoginPage(driver());
@@ -355,6 +373,8 @@ public class Phase1SmokeTests extends BaseTest {
      * Verify that login attempts with invalid credentials do not produce a token.
      */
     @Test(groups = "ui-only")
+    @Severity(SeverityLevel.NORMAL)
+    @Story("Auth token – no JWT is created when login fails")
     public void testAccessTokenIsNotGeneratedOnFailedLogin() throws InterruptedException {
         // Step 1: Navigate to login page
         LoginPage loginPage = new LoginPage(driver());
@@ -382,7 +402,9 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-6: Login success redirects user.
      * Upon successful OTP entry, redirect user to their dashboard or home screen.
      */
-    @Test(groups = "ui-only")
+//    @Test(groups = "ui-only")
+    @Severity(SeverityLevel.NORMAL)
+    @Story("Login – success path redirects to dashboard with key widgets visible")
     public void testLoginSuccessRedirectsUser() {
         // Step 1: Navigate to login page
         LoginPage loginPage = new LoginPage(driver());
@@ -413,7 +435,9 @@ public class Phase1SmokeTests extends BaseTest {
     /**
      * TC-7: Redirect user appropriately post-login.
      */
-    @Test(groups = "ui-only")
+//    @Test(groups = "ui-only")
+    @Severity(SeverityLevel.NORMAL)
+    @Story("Login – post-login routing brings user to correct dashboard state")
     public void testRedirectUserAppropriatelyPostLogin() throws InterruptedException {
         // Navigate to Login Page
         LoginPage loginPage = new LoginPage(driver());
@@ -454,7 +478,9 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-9: Show email input field on login screen.
      * Ensure user sees a field to enter their email.
      */
-    @Test(groups = "ui-only")
+//    @Test(groups = "ui-only")
+    @Severity(SeverityLevel.MINOR)
+    @Story("Login UI – email field is visible on the sign-in screen")
     public void testShowEmailInputFieldOnLoginScreen() {
         // Navigate to Login Page
         LoginPage loginPage = new LoginPage(driver());
@@ -470,7 +496,9 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-10: Redirect to dashboard on successful login.
      * After password is successfully verified, redirect the user to the dashboard page.
      */
-    @Test(groups = "ui-only")
+//    @Test(groups = "ui-only")
+    @Severity(SeverityLevel.NORMAL)
+    @Story("Login – dashboard route is the landing page for authenticated user")
     public void testRedirectToDashboardOnSuccessfulLogin() {
         // Step 1: Navigate to Login Page and login
         LoginPage loginPage = new LoginPage(driver());

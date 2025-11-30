@@ -17,8 +17,9 @@ export MAILSLURP_EXPECTED_FP="${MAILSLURP_EXPECTED_FP:-579d2267880c}"
 
 # Optional: reproduce Jenkins timeout etc.
 
+
 mvn -B \
-  -Dheadless=true -Dbrowser=chrome -DskipITs=false \
+  -Dheadless=false -Dbrowser=chrome -DskipITs=false \
   -Dsurefire.suiteXmlFiles=testng-parallel.xml \
   -Dmailslurp.forceKey="$MAILSLURP_API_KEY" \
   -Dmailslurp.apiKey="$MAILSLURP_API_KEY" \
@@ -30,4 +31,7 @@ mvn -B \
   -DADMIN_USER="$ADMIN_USER" \
   -DADMIN_PASS="$ADMIN_PASS" \
   -Dtimeout="$CI_EXPLICIT_WAIT_SEC" \
+  -Dretry=1 \
+  -Dvideo.enabled=true \
+  -Dvideo.retryOnly=true \
   clean test

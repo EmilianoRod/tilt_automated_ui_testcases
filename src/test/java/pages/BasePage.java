@@ -2,6 +2,8 @@ package pages;
 
 import Utils.Config;
 import Utils.WaitUtils;
+import io.qameta.allure.Step;
+
 import org.openqa.selenium.*;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.interactions.MoveTargetOutOfBoundsException;
@@ -40,7 +42,6 @@ public abstract class BasePage {
     );
 
     // ---------- ctor ----------
-// ---------- ctor ----------
     public BasePage(WebDriver driver) {
         if (driver == null) {
             throw new IllegalArgumentException("❌ WebDriver is NULL for " + getClass().getSimpleName());
@@ -62,6 +63,7 @@ public abstract class BasePage {
     }
 
     /** Reads only the selected value, e.g., "Myself", "Team", "Client(s)/Individual(s)". */
+    @Step("Read 'Assessment purchase for' selection")
     protected String readPurchaseForSelection() {
         try {
             WebElement el = driver.findElement(
@@ -84,6 +86,7 @@ public abstract class BasePage {
     }
 
     /** Public matcher you can use in tests. */
+    @Step("Verify 'Assessment purchase for' is '{label}'")
     public boolean purchaseForIs(String label) {
         return isVisible(purchaseForBanner(label));
     }
@@ -93,6 +96,7 @@ public abstract class BasePage {
     // ======================================================================
 
     /** Wait for DOM ready + app-specific loaders gone (best-effort). */
+    @Step("Wait for page to be ready")
     protected void pageReady() {
         try {
             wait.waitForDocumentReady();
@@ -118,6 +122,7 @@ public abstract class BasePage {
     }
 
     /** Scroll element into view (center) with Actions fallback. */
+    @Step("Scroll to element")
     protected void scrollToElement(WebElement el) {
         try {
             actions().scrollToElement(el).pause(Duration.ofMillis(40)).perform();
@@ -128,6 +133,7 @@ public abstract class BasePage {
     }
 
     /** Click a locator with retries and JS fallback. */
+    @Step("Click on element located by {locator}")
     protected void click(By locator) {
         int attempts = 0;
         while (attempts++ < 3) {
@@ -153,6 +159,7 @@ public abstract class BasePage {
     }
 
     /** Click an already-found element with realistic fallbacks. */
+    @Step("Click on element")
     protected void safeClick(WebElement el) {
         scrollToElement(el);
         try {
@@ -168,6 +175,7 @@ public abstract class BasePage {
     }
 
     /** Click a locator by first waiting for it, then using {@link #safeClick(WebElement)}. */
+    @Step("Click (safe) on element located by {locator}")
     protected void safeClick(By locator) {
         WebElement el = new WebDriverWait(driver, Duration.ofSeconds(10))
                 .until(ExpectedConditions.elementToBeClickable(locator));
@@ -175,6 +183,7 @@ public abstract class BasePage {
     }
 
     /** Clear + type with cross-platform select-all and input events. */
+    @Step("Type '{text}' into element located by {locator}")
     protected void type(By locator, String text) {
         WebElement el = wait.waitForElementVisible(locator);
         clearWithSelectAll(el);
@@ -185,6 +194,7 @@ public abstract class BasePage {
     }
 
     /** Clear & type with an already-found element. */
+    @Step("Type '{text}' into element")
     protected void type(WebElement el, String text) {
         clearWithSelectAll(el);
         el.sendKeys(text);
@@ -193,6 +203,7 @@ public abstract class BasePage {
     }
 
     /** Idempotent checkbox setter. */
+    @Step("Set checkbox {locator} to {shouldBeChecked}")
     protected void setCheckbox(By locator, boolean shouldBeChecked) {
         WebElement box = wait.waitForElementVisible(locator);
         scrollToElement(box);
@@ -202,6 +213,7 @@ public abstract class BasePage {
     }
 
     /** Select by visible text; falls back to sending keys. */
+    @Step("Select '{visibleText}' from dropdown {selectLocator}")
     protected void selectByVisibleText(By selectLocator, String visibleText) {
         WebElement el = wait.waitForElementVisible(selectLocator);
         try {
@@ -214,12 +226,14 @@ public abstract class BasePage {
     }
 
     /** Send ENTER to an element. */
+    @Step("Press ENTER on element located by {locator}")
     protected void pressEnter(By locator) {
         WebElement el = wait.waitForElementVisible(locator);
         el.sendKeys(Keys.ENTER);
     }
 
     /** Send ESCAPE to the focused element. */
+    @Step("Press ESCAPE")
     protected void pressEscape() {
         try { actions().sendKeys(Keys.ESCAPE).perform(); } catch (Throwable ignored) {}
     }
@@ -228,6 +242,7 @@ public abstract class BasePage {
     // Reads / predicates
     // ======================================================================
 
+    @Step("Read text from element located by {locator}")
     protected String getText(By locator) {
         return wait.waitForElementVisible(locator).getText();
     }
@@ -252,6 +267,7 @@ public abstract class BasePage {
     // ======================================================================
 
     /** Saves a screenshot under ./screenshots/{name}.png (best-effort). */
+    @Step("Take screenshot '{name}'")
     protected void takeScreenshot(String name) {
         File screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
         try {
@@ -278,6 +294,7 @@ public abstract class BasePage {
     }
 
     /** Best-effort “network idle”: waits for document.readyState === 'complete' and no visible loaders. */
+    @Step("Wait for network idle (timeout = {timeout})")
     protected void waitForNetworkIdle(Duration timeout) {
         WebDriverWait w = new WebDriverWait(driver, timeout);
         try {

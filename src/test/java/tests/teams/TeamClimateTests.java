@@ -3,6 +3,7 @@ package tests.teams;
 
 import Utils.Config;
 import base.BaseTest;
+import io.qameta.allure.*;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.NoSuchElementException;
 import org.testng.Assert;
@@ -20,6 +21,9 @@ import java.util.Locale;
 import static io.qameta.allure.Allure.step;
 
 
+@Epic("Tilt – Teams & Climate")
+@Feature("Team Climate Analytics – Kite Graph")
+@Owner("Emiliano")
 public class TeamClimateTests  extends BaseTest{
 
 
@@ -31,6 +35,8 @@ public class TeamClimateTests  extends BaseTest{
 
 
     @Test(groups = {"smoke"}, description = "SM12: Large team Kite graph loads and selecting a member updates side panel.")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Kite graph – large team, member selection updates side panel details")
     public void smoke_kiteGraph_largeTeam_selectionUpdatesDetails() {
 
         // -------------------- ADMIN CREDS --------------------

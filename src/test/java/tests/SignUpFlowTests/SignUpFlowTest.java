@@ -1,11 +1,9 @@
 package tests.SignUpFlowTests;
-
-
-
 import Utils.Config;
 import Utils.MailSlurpUtils;
 import com.mailslurp.models.Email;
 import com.mailslurp.models.InboxDto;
+import io.qameta.allure.*;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
@@ -24,11 +22,18 @@ import java.util.Objects;
 
 import static io.qameta.allure.Allure.step;
 
+
+
+
+@Epic("Tilt – Sign Up & Authentication")
+@Feature("User Registration (2-step Sign Up)")
+@Owner("Emiliano")
 public class SignUpFlowTest extends BaseTest {
 
 
-    @Test(groups = "ui-only",
-            description = "New user can complete 2-step Sign Up and then log in")
+    @Test(groups = "ui-only", description = "New user can complete 2-step Sign Up and then log in")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Real user sign-up using MailSlurp – account can log in")
     public void newUserCanSignUpAndLogin() throws Exception {
 
         UiUser user = TestUsers.newMailSlurpUserForSignup();
@@ -79,6 +84,8 @@ public class SignUpFlowTest extends BaseTest {
      *  - No confirmation email is sent.
      */
     @Test(groups = {"smoke"}, description = "SM05: Dummy sign-up → completes 2-step flow, no email sent.")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Dummy sign-up – completes 2-step flow without sending email")
     public void smoke_dummySignup_noEmailSent() throws Exception {
 
         final Duration EMAIL_TIMEOUT = Duration.ofSeconds(30);
@@ -148,6 +155,8 @@ public class SignUpFlowTest extends BaseTest {
      *  - The same email + password can be used to log in to Dashboard.
      */
     @Test(groups = {"smoke"}, description = "SM06: Dummy sign-up → newly created account can log in.")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Dummy sign-up – account is immediately active and can log in")
     public void smoke_dummySignup_accountCanLogin() throws Exception {
 
         step("Generate a fresh dummy user");

@@ -2,6 +2,7 @@ package tests;
 
 import Utils.Config;
 import base.BaseTest;
+import io.qameta.allure.*;
 import org.openqa.selenium.By;
 import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.support.ui.ExpectedConditions;
@@ -21,6 +22,10 @@ import java.time.Duration;
 
 import static io.qameta.allure.Allure.step;
 
+
+@Epic("Tilt – Smoke")
+@Feature("Core Navigation & Profile")
+@Owner("Emiliano")
 public class TiltSmokeTest extends BaseTest {
 
 
@@ -50,6 +55,8 @@ public class TiltSmokeTest extends BaseTest {
     }*/
 
     @Test(groups = {"smoke"})
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Navigation – Shop page opens from Dashboard")
     public void testShopPageLoads() {
         DashboardPage dashboard = loginAsAdmin("erodriguez+a@effectussoftware.com", "Password#1");
         ShopPage shopPage = dashboard.goToShop();
@@ -66,6 +73,8 @@ public class TiltSmokeTest extends BaseTest {
      *  - Use top-nav to go to Individuals and verify it loads.
      */
     @Test(groups = {"smoke"}, description = "SM01: Dashboard, Shop, and Individuals nav links load.")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Navigation – Dashboard, Shop and Individuals are reachable from main nav")
     public void smoke_dashboardShopIndividualsNav() throws Exception {
 
         // -------------------- CONFIG / ADMIN CREDS --------------------
@@ -122,6 +131,8 @@ public class TiltSmokeTest extends BaseTest {
      *  - Use main nav → Resources and verify Resources page loads.
      */
     @Test(groups = {"smoke"}, description = "SM02: Teams and Resources pages load from main nav.")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Navigation – Teams and Resources are reachable from main nav")
     public void smoke_teamsAndResourcesNav() throws Exception {
 
         // -------------------- CONFIG / ADMIN CREDS --------------------
@@ -174,6 +185,8 @@ public class TiltSmokeTest extends BaseTest {
      *  - Assert we reach the Dashboard normally.
      */
     @Test(groups = {"smoke"}, description = "SM03: Maintenance popup allows user to continue to Dashboard.")
+    @Severity(SeverityLevel.NORMAL)
+    @Story("Maintenance – optional maintenance popup does not block Dashboard access")
     public void smoke_maintenancePopupAllowsContinue() throws Exception {
 
         // -------------------- CONFIG / ADMIN CREDS --------------------
@@ -236,6 +249,8 @@ public class TiltSmokeTest extends BaseTest {
      *  - Save and verify it shows in header.
      */
     @Test(groups = {"smoke"}, description = "SM38: Profile → update display name.")
+    @Severity(SeverityLevel.MINOR)
+    @Story("Profile – updating display name is reflected in header and settings")
     public void smoke_profile_updateDisplayName() throws Exception {
 
         // ---------- CONFIG ----------
@@ -406,6 +421,8 @@ public class TiltSmokeTest extends BaseTest {
 
 
     @Test
+    @Severity(SeverityLevel.TRIVIAL)
+    @Story("Debug – simple admin login for environment inspection")
     public void debug_adminLogin_only() throws InterruptedException {
         final String ADMIN_USER = Config.getAny("admin.email", "ADMIN_EMAIL", "ADMIN_USER");
         final String ADMIN_PASS = Config.getAny("admin.password", "ADMIN_PASSWORD", "ADMIN_PASS");
