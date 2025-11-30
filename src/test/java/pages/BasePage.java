@@ -2,8 +2,8 @@ package pages;
 
 import Utils.Config;
 import Utils.WaitUtils;
+import io.qameta.allure.Allure;
 import io.qameta.allure.Step;
-
 import org.openqa.selenium.*;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.interactions.MoveTargetOutOfBoundsException;
@@ -14,6 +14,7 @@ import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import pages.menuPages.ResourcesPage;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.time.Duration;
@@ -51,6 +52,38 @@ public abstract class BasePage {
         this.wait = new WaitUtils(driver, Config.getTimeout());
     }
 
+    // ======================================================================
+    // Core step wrapper with screenshots
+    // ======================================================================
+
+    /**
+     * Wraps a low-level UI action into an Allure step and:
+     *  - attaches a screenshot AFTER success
+     *  - attaches a screenshot ON FAILURE, then rethrows
+     */
+    protected void doStepWithScreenshot(String description, Runnable action) {
+        Allure.step(description, () -> {
+            try {
+                action.run();
+            } catch (Throwable t) {
+                attachScreenshot("❌ Failure - " + description);
+                throw t;
+            }
+            attachScreenshot("✅ After - " + description);
+        });
+    }
+
+    /**
+     * Attach a screenshot to Allure (best-effort, no exceptions thrown).
+     */
+    protected void attachScreenshot(String name) {
+        try {
+            byte[] bytes = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
+            Allure.addAttachment(name, new ByteArrayInputStream(bytes));
+        } catch (Throwable ignored) {
+            // don't break tests if screenshot fails
+        }
+    }
 
     // ======================================================================
     // Purchase-for banner (used by many pages)
@@ -122,144 +155,174 @@ public abstract class BasePage {
     }
 
     /** Scroll element into view (center) with Actions fallback. */
-    @Step("Scroll to element")
     protected void scrollToElement(WebElement el) {
-        try {
-            actions().scrollToElement(el).pause(Duration.ofMillis(40)).perform();
-        } catch (Throwable ignored) {
-            try { js().executeScript("arguments[0].scrollIntoView({block:'center', inline:'nearest'});", el); }
-            catch (Throwable ignored2) {}
-        }
+        doStepWithScreenshot("Scroll to element", () -> {
+            try {
+                actions().scrollToElement(el).pause(Duration.ofMillis(40)).perform();
+            } catch (Throwable ignored) {
+                try {
+                    js().executeScript("arguments[0].scrollIntoView({block:'center', inline:'nearest'});", el);
+                } catch (Throwable ignored2) {}
+            }
+        });
     }
 
     /** Click a locator with retries and JS fallback. */
-    @Step("Click on element located by {locator}")
     protected void click(By locator) {
-        int attempts = 0;
-        while (attempts++ < 3) {
-            try {
-                WebElement el = wait.waitForElementClickable(locator);
-                scrollToElement(el);
-                el.click();
-                return;
-            } catch (ElementClickInterceptedException | StaleElementReferenceException e) {
-                // try again
-            } catch (Throwable t) {
-                // last-chance JS click
+        doStepWithScreenshot("Click on element located by " + locator, () -> {
+            int attempts = 0;
+            while (attempts++ < 3) {
                 try {
-                    WebElement el = driver.findElement(locator);
-                    js().executeScript("arguments[0].click();", el);
+                    WebElement el = wait.waitForElementClickable(locator);
+                    scrollToElement(el);
+                    el.click();
                     return;
-                } catch (Throwable ignored) { /* keep looping */ }
+                } catch (ElementClickInterceptedException | StaleElementReferenceException e) {
+                    // try again
+                } catch (Throwable t) {
+                    // last-chance JS click
+                    try {
+                        WebElement el = driver.findElement(locator);
+                        js().executeScript("arguments[0].click();", el);
+                        return;
+                    } catch (Throwable ignored) { /* keep looping */ }
+                }
             }
-        }
-        // final fallback
-        WebElement el = driver.findElement(locator);
-        js().executeScript("arguments[0].click();", el);
+            // final fallback
+            WebElement el = driver.findElement(locator);
+            js().executeScript("arguments[0].click();", el);
+        });
     }
 
     /** Click an already-found element with realistic fallbacks. */
-    @Step("Click on element")
     protected void safeClick(WebElement el) {
-        scrollToElement(el);
-        try {
-            el.click();
-            return;
-        } catch (ElementClickInterceptedException | MoveTargetOutOfBoundsException e) {
+        doStepWithScreenshot("Click on element (safe)", () -> {
+            scrollToElement(el);
             try {
-                actions().moveToElement(el, 1, 1).click().perform();
+                el.click();
                 return;
-            } catch (Throwable ignored) { /* fall through */ }
-            js().executeScript("arguments[0].click();", el);
-        }
+            } catch (ElementClickInterceptedException | MoveTargetOutOfBoundsException e) {
+                try {
+                    actions().moveToElement(el, 1, 1).click().perform();
+                    return;
+                } catch (Throwable ignored) { /* fall through */ }
+                js().executeScript("arguments[0].click();", el);
+            }
+        });
     }
 
     /** Click a locator by first waiting for it, then using {@link #safeClick(WebElement)}. */
-    @Step("Click (safe) on element located by {locator}")
     protected void safeClick(By locator) {
-        WebElement el = new WebDriverWait(driver, Duration.ofSeconds(10))
-                .until(ExpectedConditions.elementToBeClickable(locator));
-        safeClick(el);
+        doStepWithScreenshot("Click (safe) on element located by " + locator, () -> {
+            WebElement el = new WebDriverWait(driver, Duration.ofSeconds(10))
+                    .until(ExpectedConditions.elementToBeClickable(locator));
+            safeClick(el);
+        });
     }
 
     /** Clear + type with cross-platform select-all and input events. */
-    @Step("Type '{text}' into element located by {locator}")
     protected void type(By locator, String text) {
-        WebElement el = wait.waitForElementVisible(locator);
-        clearWithSelectAll(el);
-        el.sendKeys(text);
-        // Dispatch input event (some React apps need it)
-        try {js().executeScript("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", el); }
-        catch (Throwable ignored) {}
+        doStepWithScreenshot("Type '" + text + "' into element located by " + locator, () -> {
+            WebElement el = wait.waitForElementVisible(locator);
+            clearWithSelectAll(el);
+            el.sendKeys(text);
+            // Dispatch input event (some React apps need it)
+            try {
+                js().executeScript("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", el);
+            } catch (Throwable ignored) {}
+        });
     }
 
     /** Clear & type with an already-found element. */
-    @Step("Type '{text}' into element")
     protected void type(WebElement el, String text) {
-        clearWithSelectAll(el);
-        el.sendKeys(text);
-        try { js().executeScript("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", el); }
-        catch (Throwable ignored) {}
+        doStepWithScreenshot("Type '" + text + "' into element", () -> {
+            clearWithSelectAll(el);
+            el.sendKeys(text);
+            try {
+                js().executeScript("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", el);
+            } catch (Throwable ignored) {}
+        });
     }
 
     /** Idempotent checkbox setter. */
-    @Step("Set checkbox {locator} to {shouldBeChecked}")
     protected void setCheckbox(By locator, boolean shouldBeChecked) {
-        WebElement box = wait.waitForElementVisible(locator);
-        scrollToElement(box);
-        boolean checked = false;
-        try { checked = box.isSelected(); } catch (Throwable ignored) {}
-        if (checked != shouldBeChecked) safeClick(box);
+        doStepWithScreenshot("Set checkbox " + locator + " to " + shouldBeChecked, () -> {
+            WebElement box = wait.waitForElementVisible(locator);
+            scrollToElement(box);
+            boolean checked = false;
+            try {
+                checked = box.isSelected();
+            } catch (Throwable ignored) {}
+            if (checked != shouldBeChecked) safeClick(box);
+        });
     }
 
     /** Select by visible text; falls back to sending keys. */
-    @Step("Select '{visibleText}' from dropdown {selectLocator}")
     protected void selectByVisibleText(By selectLocator, String visibleText) {
-        WebElement el = wait.waitForElementVisible(selectLocator);
-        try {
-            new Select(el).selectByVisibleText(visibleText);
-        } catch (Throwable ignored) {
-            safeClick(el);
-            el.sendKeys(visibleText);
-            el.sendKeys(Keys.ENTER);
-        }
+        doStepWithScreenshot("Select '" + visibleText + "' from dropdown " + selectLocator, () -> {
+            WebElement el = wait.waitForElementVisible(selectLocator);
+            try {
+                new Select(el).selectByVisibleText(visibleText);
+            } catch (Throwable ignored) {
+                safeClick(el);
+                el.sendKeys(visibleText);
+                el.sendKeys(Keys.ENTER);
+            }
+        });
     }
 
     /** Send ENTER to an element. */
-    @Step("Press ENTER on element located by {locator}")
     protected void pressEnter(By locator) {
-        WebElement el = wait.waitForElementVisible(locator);
-        el.sendKeys(Keys.ENTER);
+        doStepWithScreenshot("Press ENTER on element located by " + locator, () -> {
+            WebElement el = wait.waitForElementVisible(locator);
+            el.sendKeys(Keys.ENTER);
+        });
     }
 
     /** Send ESCAPE to the focused element. */
-    @Step("Press ESCAPE")
     protected void pressEscape() {
-        try { actions().sendKeys(Keys.ESCAPE).perform(); } catch (Throwable ignored) {}
+        doStepWithScreenshot("Press ESCAPE", () -> {
+            try {
+                actions().sendKeys(Keys.ESCAPE).perform();
+            } catch (Throwable ignored) {}
+        });
     }
 
     // ======================================================================
     // Reads / predicates
     // ======================================================================
 
-    @Step("Read text from element located by {locator}")
     protected String getText(By locator) {
-        return wait.waitForElementVisible(locator).getText();
+        final String[] value = {""};
+        doStepWithScreenshot("Read text from element located by " + locator, () -> {
+            value[0] = wait.waitForElementVisible(locator).getText();
+        });
+        return value[0];
     }
 
     protected boolean isVisible(By locator) {
-        try { return wait.waitForElementVisible(locator).isDisplayed(); }
-        catch (TimeoutException e) { return false; }
+        try {
+            return wait.waitForElementVisible(locator).isDisplayed();
+        } catch (TimeoutException e) {
+            return false;
+        }
     }
 
     protected boolean isPresent(By locator) {
-        try { return !driver.findElements(locator).isEmpty(); }
-        catch (Throwable t) { return false; }
+        try {
+            return !driver.findElements(locator).isEmpty();
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     protected boolean isClickable(By locator) {
-        try { wait.waitForElementClickable(locator); return true; }
-        catch (TimeoutException e) { return false; }
+        try {
+            wait.waitForElementClickable(locator);
+            return true;
+        } catch (TimeoutException e) {
+            return false;
+        }
     }
 
     // ======================================================================
@@ -296,15 +359,17 @@ public abstract class BasePage {
     /** Best-effort “network idle”: waits for document.readyState === 'complete' and no visible loaders. */
     @Step("Wait for network idle (timeout = {timeout})")
     protected void waitForNetworkIdle(Duration timeout) {
-        WebDriverWait w = new WebDriverWait(driver, timeout);
-        try {
-            w.until((ExpectedCondition<Boolean>) d ->
-                    "complete".equals(js().executeScript("return document.readyState"))
-            );
-        } catch (Throwable ignored) {}
-        try {
-            w.until(ExpectedConditions.invisibilityOfElementLocated(POSSIBLE_LOADER));
-        } catch (Throwable ignored) {}
+        doStepWithScreenshot("Wait for network idle (" + timeout.toSeconds() + "s)", () -> {
+            WebDriverWait w = new WebDriverWait(driver, timeout);
+            try {
+                w.until((ExpectedCondition<Boolean>) d ->
+                        "complete".equals(js().executeScript("return document.readyState"))
+                );
+            } catch (Throwable ignored) {}
+            try {
+                w.until(ExpectedConditions.invisibilityOfElementLocated(POSSIBLE_LOADER));
+            } catch (Throwable ignored) {}
+        });
     }
 
     // ======================================================================
@@ -374,8 +439,6 @@ public abstract class BasePage {
         return m.find() ? m.group() : "";
     }
 
-
-
     /**
      * Each concrete page must implement its own "wait until loaded" behavior.
      * Returning `this` enables fluent chaining in page classes.
@@ -394,6 +457,4 @@ public abstract class BasePage {
             return false;
         }
     }
-
-
 }

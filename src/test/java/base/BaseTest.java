@@ -2,6 +2,7 @@ package base;
 
 import Utils.Config;
 import Utils.MailSlurpUtils;
+
 import com.mailslurp.models.InboxDto;
 
 import io.qameta.allure.Allure;
@@ -11,7 +12,9 @@ import org.apache.logging.log4j.Logger;
 
 import org.openqa.selenium.*;
 import org.openqa.selenium.remote.CapabilityType;
-import org.openqa.selenium.support.ui.WebDriverWait;
+import org.openqa.selenium.logging.LogEntries;
+import org.openqa.selenium.logging.LogEntry;
+import org.openqa.selenium.logging.LogType;
 
 import org.testng.ITestResult;
 import org.testng.SkipException;
@@ -38,7 +41,7 @@ public class BaseTest {
     private static final ThreadLocal<Long> START = new ThreadLocal<>();
 
     // =====================================================================
-    // ALLURE SUITE HIERARCHY — ADDED (SAFE, DOES NOT BREAK ANYTHING)
+    // ALLURE SUITE HIERARCHY
     // =====================================================================
     @BeforeMethod(alwaysRun = true)
     public void applyAllureSuiteHierarchy(Method method) {
@@ -63,6 +66,7 @@ public class BaseTest {
     // =====================================================================
     @BeforeSuite(alwaysRun = true)
     public void mailSlurpSuiteInit() {
+
         String msDebug = Config.getAny("mailslurp.debug", "MAILSLURP_DEBUG");
         System.setProperty("mailslurp.debug", msDebug == null ? "true" : msDebug);
 
@@ -183,9 +187,13 @@ public class BaseTest {
             if (DriverManager.isInitialized()) {
                 WebDriver d = DriverManager.get();
 
+                // Screenshot only on failure
                 if (result.getStatus() == ITestResult.FAILURE) {
                     takeScreenshot(d, result.getMethod().getMethodName());
                 }
+
+                // Always attach browser console logs (for all tests)
+                attachBrowserConsoleLogs(d, result);
 
                 DriverManager.quit();
             }
@@ -195,19 +203,90 @@ public class BaseTest {
     }
 
     // =====================================================================
-    // START FRESH SESSION (unchanged logic)
+    // START FRESH SESSION
     // =====================================================================
+
     public static DashboardPage startFreshSession(WebDriver driver) {
-        return startFreshSession(driver, 3);
+        return startFreshSession(driver, 3); // default: 3 attempts for transient issues
     }
+
     public static DashboardPage startFreshSession(WebDriver driver, int maxAttempts) {
-        // *** ORIGINAL LOGIC PRESERVED ***
-        // (Your entire method untouched)
-        // (Only cosmetic improvements possible if requested)
+        if (maxAttempts < 1) {
+            maxAttempts = 1;
+        }
 
-        // ... your full startFreshSession logic here unchanged ...
+        // Ensure we have a driver
+        if (driver == null) {
+            try {
+                logger.info("[BaseTest] startFreshSession received null driver; initializing via DriverManager.");
+                DriverManager.init();
+                driver = DriverManager.get();
+            } catch (Throwable t) {
+                throw new SkipException(
+                        "[BaseTest] Unable to initialize WebDriver in startFreshSession: " + t.getMessage(), t
+                );
+            }
+        }
 
-        return null; // replaced by your method body
+        final String baseUrl   = Config.getBaseUrl();
+        final String adminUser = Config.getAdminEmail();
+        final String adminPass = Config.getAdminPassword();
+
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new SkipException("[Config] BASE_URL missing.");
+        }
+        if (adminUser == null || adminUser.isBlank()) {
+            throw new SkipException("[Config] ADMIN_EMAIL missing.");
+        }
+        if (adminPass == null || adminPass.isBlank()) {
+            throw new SkipException("[Config] ADMIN_PASSWORD missing.");
+        }
+
+        Throwable lastError = null;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                logger.info("[startFreshSession] attempt {}/{} → clean browser & login as admin", attempt, maxAttempts);
+
+                // Clean state each attempt
+                clearCookiesAndStorage(driver);
+
+                // Navigate to base URL (app will redirect to sign-in)
+                driver.get(baseUrl);
+
+                // Do the login via LoginPage POM
+                LoginPage loginPage = new LoginPage(driver);
+                DashboardPage dashboard = loginPage.safeLoginAsAdmin(adminUser, adminPass, Duration.ofSeconds(30));
+
+                if (dashboard == null) {
+                    throw new IllegalStateException("DashboardPage was null after loginAsAdmin().");
+                }
+
+                logger.info("[startFreshSession] Logged in as admin and obtained DashboardPage.");
+                return dashboard;
+            } catch (Throwable t) {
+                lastError = t;
+                logger.warn("[startFreshSession] attempt {}/{} failed: {}", attempt, maxAttempts, t.toString());
+
+                // For next attempt, re-init a clean driver
+                if (attempt < maxAttempts) {
+                    try {
+                        DriverManager.reinit();
+                        driver = DriverManager.get();
+                    } catch (Throwable re) {
+                        logger.warn("[startFreshSession] Failed to reinitialize WebDriver: {}", re.toString());
+                        lastError = re;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // If we reach here, all attempts failed
+        String msg = "[startFreshSession] Could not open Dashboard after "
+                + maxAttempts + " attempt(s). Last error: "
+                + (lastError != null ? lastError.getMessage() : "(none)");
+        throw new SkipException(msg, lastError);
     }
 
     public static DashboardPage startFreshSession() {
@@ -215,6 +294,7 @@ public class BaseTest {
     }
 
     public static InboxDto getSuiteInbox() { return fixedInbox; }
+
     public static InboxDto requireInboxOrSkip() {
         if (fixedInbox == null) {
             throw new SkipException("[MailSlurp] Suite inbox not available.");
@@ -261,6 +341,10 @@ public class BaseTest {
             Path file = dir.resolve(methodName + ".png");
             byte[] data = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
             Files.write(file, data);
+
+            // Also attach to Allure
+            Allure.addAttachment("Screenshot - " + methodName, "image/png",
+                    Files.newInputStream(file), ".png");
         } catch (Exception e) {
             logger.warn("[Screenshot] Failed: {}", e.getMessage());
         }
@@ -291,14 +375,16 @@ public class BaseTest {
     }
 
     // =====================================================================
-    // PDF/PNG WAITER (unchanged)
+    // PDF/PNG WAITER
     // =====================================================================
     protected Path waitForNewPdf(Path dir, Instant start, Duration timeout) throws Exception {
         return waitForNewFile(dir, start, timeout, ".pdf");
     }
+
     protected Path waitForNewPng(Path dir, Instant start, Duration timeout) throws Exception {
         return waitForNewFile(dir, start, timeout, ".png");
     }
+
     protected Path waitForNewFile(Path dir, Instant start, Duration timeout, String ext) throws Exception {
         long end = System.currentTimeMillis() + timeout.toMillis();
 
@@ -369,4 +455,61 @@ public class BaseTest {
         return user.charAt(0) + "****" + user.charAt(user.length() - 1) + dom;
     }
 
+    // =====================================================================
+    // BROWSER CONSOLE LOGS → ALLURE ATTACHMENT
+    // =====================================================================
+    private void attachBrowserConsoleLogs(WebDriver driver, ITestResult result) {
+        if (driver == null) return;
+
+        try {
+            LogEntries logs = driver.manage().logs().get(LogType.BROWSER);
+            if (logs == null || logs.getAll().isEmpty()) {
+                logger.debug("[BrowserLogs] No BROWSER console entries for test {}",
+                        result.getMethod().getMethodName());
+                return;
+            }
+
+            String status = statusToString(result.getStatus());
+
+            StringBuilder builder = new StringBuilder();
+            builder.append("Test: ").append(result.getMethod().getMethodName()).append('\n');
+            builder.append("Status: ").append(status).append('\n');
+            builder.append("Thread: ")
+                    .append(Thread.currentThread().getName())
+                    .append("\n\n");
+
+
+            for (LogEntry entry : logs) {
+                builder.append('[')
+                        .append(java.time.Instant.ofEpochMilli(entry.getTimestamp()))
+                        .append("] ")
+                        .append(entry.getLevel())
+                        .append(" - ")
+                        .append(entry.getMessage())
+                        .append('\n');
+            }
+
+            Allure.addAttachment(
+                    "Browser Console – " + status,
+                    "text/plain",
+                    builder.toString()
+            );
+
+        } catch (Throwable t) {
+            logger.warn("[BrowserLogs] Failed to capture browser console logs: {}", t.getMessage());
+        }
+    }
+
+    private static String statusToString(int status) {
+        switch (status) {
+            case ITestResult.SUCCESS:
+                return "PASS";
+            case ITestResult.FAILURE:
+                return "FAIL";
+            case ITestResult.SKIP:
+                return "SKIP";
+            default:
+                return "UNKNOWN(" + status + ")";
+        }
+    }
 }

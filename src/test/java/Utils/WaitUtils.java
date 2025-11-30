@@ -1,8 +1,10 @@
 package Utils;
 
+import io.qameta.allure.Allure;
 import org.openqa.selenium.*;
 import org.openqa.selenium.support.ui.*;
 
+import java.io.ByteArrayInputStream;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
@@ -25,10 +27,12 @@ public class WaitUtils {
                     ".ant-spin,.ant-spin-spinning," +
                     ".overlay,.spinner,.backdrop,[aria-busy='true']";
 
-    // ✅ FIXED: use Duration.max instead of Math.max
+    // ✅ FIXED: use Duration.max instead of Math.max (implemented via compareTo)
     public WaitUtils(WebDriver driver, Duration timeout) {
         this.driver = driver;
-        this.defaultTimeout = Duration.ofSeconds(3).compareTo(timeout) > 0 ? Duration.ofSeconds(3) : timeout;
+        this.defaultTimeout = Duration.ofSeconds(3).compareTo(timeout) > 0
+                ? Duration.ofSeconds(3)
+                : timeout;
         this.wait = baseWait(defaultTimeout);
     }
 
@@ -42,11 +46,22 @@ public class WaitUtils {
         return w;
     }
 
+    // ---------- Allure helper for wait failures ----------
+    private void attachWaitScreenshot(String description) {
+        try {
+            byte[] bytes = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
+            Allure.addAttachment("❌ Wait timeout - " + description, new ByteArrayInputStream(bytes));
+        } catch (Throwable ignored) {
+            // Never break the test if screenshot capture fails
+        }
+    }
+
     // ---------- Core pass-through ----------
     public <T> T until(ExpectedCondition<T> condition) {
         try {
             return wait.until(condition);
         } catch (TimeoutException e) {
+            attachWaitScreenshot("condition: " + condition);
             throw new RuntimeException("❌ Timeout waiting for condition: " + condition, e);
         }
     }
@@ -55,7 +70,9 @@ public class WaitUtils {
         try {
             return baseWait(timeout).until(condition);
         } catch (TimeoutException e) {
-            throw new RuntimeException("❌ Timeout (" + timeout.toSeconds() + "s) waiting for condition: " + condition, e);
+            attachWaitScreenshot("condition (timeout " + timeout.toSeconds() + "s): " + condition);
+            throw new RuntimeException("❌ Timeout (" + timeout.toSeconds() +
+                    "s) waiting for condition: " + condition, e);
         }
     }
 
@@ -64,7 +81,9 @@ public class WaitUtils {
         try {
             return baseWait(timeout).until(condition);
         } catch (TimeoutException e) {
-            throw new RuntimeException("❌ Timeout (" + timeout.toSeconds() + "s) waiting for custom condition", e);
+            attachWaitScreenshot("custom condition (timeout " + timeout.toSeconds() + "s)");
+            throw new RuntimeException("❌ Timeout (" + timeout.toSeconds() +
+                    "s) waiting for custom condition", e);
         }
     }
 
@@ -81,6 +100,7 @@ public class WaitUtils {
         try {
             return wait.until(visibilityOfAllElementsLocatedBy(locator));
         } catch (TimeoutException e) {
+            attachWaitScreenshot("all visible: " + locator);
             throw new RuntimeException("❌ Timeout: Elements not all visible: " + locator, e);
         }
     }
@@ -91,7 +111,11 @@ public class WaitUtils {
             for (By by : locators) {
                 for (WebElement el : d.findElements(by)) {
                     try {
-                        if (el.isDisplayed() && el.getSize().height > 0 && el.getSize().width > 0) return el;
+                        if (el.isDisplayed()
+                                && el.getSize().height > 0
+                                && el.getSize().width > 0) {
+                            return el;
+                        }
                     } catch (StaleElementReferenceException ignored) {}
                 }
             }
@@ -101,17 +125,34 @@ public class WaitUtils {
 
     /** True/false wait (predicate style). */
     public boolean waitForTrue(Supplier<Boolean> condition) {
-        return wait.until(dr -> Boolean.TRUE.equals(condition.get()));
+        try {
+            return wait.until(dr -> Boolean.TRUE.equals(condition.get()));
+        } catch (TimeoutException e) {
+            attachWaitScreenshot("predicate waitForTrue");
+            throw new RuntimeException("❌ Timeout waiting for true predicate", e);
+        }
     }
 
-    public WebElement waitForElementClickable(By locator) { return until(elementToBeClickable(locator)); }
-    public WebElement waitForElementClickable(WebElement element) { return until(elementToBeClickable(element)); }
+    public WebElement waitForElementClickable(By locator) {
+        return until(elementToBeClickable(locator));
+    }
 
-    public boolean waitForElementInvisible(By locator) { return until(invisibilityOfElementLocated(locator)); }
-    public boolean waitForElementInvisible(WebElement element) { return until(invisibilityOf(element)); }
+    public WebElement waitForElementClickable(WebElement element) {
+        return until(elementToBeClickable(element));
+    }
+
+    public boolean waitForElementInvisible(By locator) {
+        return until(invisibilityOfElementLocated(locator));
+    }
+
+    public boolean waitForElementInvisible(WebElement element) {
+        return until(invisibilityOf(element));
+    }
 
     // ---------- Presence / Text / Attributes ----------
-    public WebElement waitForPresence(By locator) { return until(presenceOfElementLocated(locator)); }
+    public WebElement waitForPresence(By locator) {
+        return until(presenceOfElementLocated(locator));
+    }
 
     public boolean waitForTextPresent(By locator, String text) {
         return until(textToBePresentInElementLocated(locator, text));
@@ -123,23 +164,40 @@ public class WaitUtils {
 
     public boolean waitForValueNotEmpty(WebElement el) {
         return until(d -> {
-            try { String v = el.getAttribute("value"); return v != null && !v.isEmpty(); }
-            catch (StaleElementReferenceException ignored) { return false; }
-        });
+            try {
+                String v = el.getAttribute("value");
+                return v != null && !v.isEmpty();
+            } catch (StaleElementReferenceException ignored) {
+                return false;
+            }
+        }, defaultTimeout);
     }
 
     // ---------- URL / Title ----------
-    public boolean waitForUrlContains(String partialUrl) { return until(ExpectedConditions.urlContains(partialUrl)); }
-    public boolean waitForTitleContains(String partialTitle) { return until(ExpectedConditions.titleContains(partialTitle)); }
+    public boolean waitForUrlContains(String partialUrl) {
+        return until(ExpectedConditions.urlContains(partialUrl));
+    }
+
+    public boolean waitForTitleContains(String partialTitle) {
+        return until(ExpectedConditions.titleContains(partialTitle));
+    }
+
     public boolean waitForUrlContains(String partialUrl, long timeoutSec) {
-        return baseWait(Duration.ofSeconds(timeoutSec)).until(ExpectedConditions.urlContains(partialUrl));
+        try {
+            return baseWait(Duration.ofSeconds(timeoutSec))
+                    .until(ExpectedConditions.urlContains(partialUrl));
+        } catch (TimeoutException e) {
+            attachWaitScreenshot("urlContains('" + partialUrl + "')");
+            throw new RuntimeException("❌ Timeout waiting for URL to contain: " + partialUrl, e);
+        }
     }
 
     // ---------- Page / DOM readiness ----------
     public void waitForDocumentReady() {
         try {
             baseWait(defaultTimeout).until(d ->
-                    "complete".equals(((JavascriptExecutor) d).executeScript("return document.readyState"))
+                    "complete".equals(((JavascriptExecutor) d)
+                            .executeScript("return document.readyState"))
             );
         } catch (Exception ignored) {}
     }
@@ -150,7 +208,11 @@ public class WaitUtils {
                 List<WebElement> overlays = d.findElements(By.cssSelector(LOADER_UNION_CSS));
                 for (WebElement e : overlays) {
                     try {
-                        if (e.isDisplayed() && e.getSize().height > 0 && e.getSize().width > 0) return false;
+                        if (e.isDisplayed()
+                                && e.getSize().height > 0
+                                && e.getSize().width > 0) {
+                            return false;
+                        }
                     } catch (StaleElementReferenceException ignored) {}
                 }
                 return true;
@@ -182,13 +244,17 @@ public class WaitUtils {
                 if (!"complete".equals(rs)) return false;
 
                 for (WebElement e : d.findElements(By.cssSelector(LOADER_UNION_CSS))) {
-                    try { if (e.isDisplayed()) return false; } catch (StaleElementReferenceException ignored) {}
+                    try {
+                        if (e.isDisplayed()) return false;
+                    } catch (StaleElementReferenceException ignored) {}
                 }
 
                 Object anim = js.executeScript(
                         "try { var a=(document.getAnimations?document.getAnimations():[]);" +
                                 "      return a.filter(x=>x.playState==='running').length; } catch(e){ return 0; }");
-                long running = (anim instanceof Number) ? ((Number) anim).longValue() : 0L;
+                long running = (anim instanceof Number)
+                        ? ((Number) anim).longValue()
+                        : 0L;
                 if (running > 0) return false;
 
                 Object inflight = js.executeScript("return window.__pendingRequests || 0;");
@@ -219,31 +285,55 @@ public class WaitUtils {
     }
 
     public void pause(long millis) {
-        try { Thread.sleep(millis); }
-        catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     public <T> T withTimeout(Duration timeout, Supplier<T> action) {
         WebDriverWait temp = baseWait(timeout);
-        try { return action.get(); }
-        finally { }
+        try {
+            return action.get();
+        } finally {
+            // nothing to reset; baseWait creates a separate instance
+        }
     }
 
     public WebDriver waitForFrameAndSwitch(By frameLocator) {
-        return wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(frameLocator));
+        try {
+            return wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(frameLocator));
+        } catch (TimeoutException e) {
+            attachWaitScreenshot("frameToBeAvailableAndSwitchToIt(" + frameLocator + ")");
+            throw new RuntimeException("❌ Timeout waiting for frame: " + frameLocator, e);
+        }
     }
+
     public void waitForFrameAndSwitch(WebElement frame) {
-        baseWait(defaultTimeout).until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(frame));
+        try {
+            baseWait(defaultTimeout).until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(frame));
+        } catch (TimeoutException e) {
+            attachWaitScreenshot("frameToBeAvailableAndSwitchToIt(WebElement)");
+            throw new RuntimeException("❌ Timeout waiting for frame(WebElement)", e);
+        }
     }
+
     public WebDriver waitForFrameAndSwitch(int index) {
-        return wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(index));
+        try {
+            return wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(index));
+        } catch (TimeoutException e) {
+            attachWaitScreenshot("frameToBeAvailableAndSwitchToIt(index=" + index + ")");
+            throw new RuntimeException("❌ Timeout waiting for frame index: " + index, e);
+        }
     }
 
     public static boolean isVisible(WebDriver driver, By by, Duration max) {
         try {
             WebDriverWait w = new WebDriverWait(driver, max);
             w.pollingEvery(Duration.ofMillis(200));
-            w.ignoring(StaleElementReferenceException.class).ignoring(NoSuchElementException.class);
+            w.ignoring(StaleElementReferenceException.class)
+                    .ignoring(NoSuchElementException.class);
             w.until(ExpectedConditions.visibilityOfElementLocated(by));
             return true;
         } catch (TimeoutException e) {
@@ -252,56 +342,23 @@ public class WaitUtils {
     }
 
     public static void idle(WebDriver driver, Duration d) {
-        try { Thread.sleep(d.toMillis()); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
-    }
-
-    public static WebElement waitForStripePaymentFrame(WebDriver driver, Duration timeout) {
-        Wait<WebDriver> w = new FluentWait<>(driver)
-                .withTimeout(timeout)
-                .pollingEvery(Duration.ofMillis(200))
-                .ignoring(NoSuchElementException.class)
-                .ignoring(StaleElementReferenceException.class);
-
-        return w.until(d -> {
-            List<WebElement> frames = d.findElements(By.cssSelector("iframe"));
-            for (WebElement f : frames) {
-                String src = safeAttr(f, "src");
-                if (src == null) continue;
-                boolean looksLikePayment =
-                        (src.contains("elements-inner-payment") || src.contains("elements-inner-card"))
-                                && !src.contains("express-checkout");
-                if (!looksLikePayment) continue;
-                try {
-                    Long h = (Long) ((JavascriptExecutor) d)
-                            .executeScript("return Math.max(arguments[0].clientHeight, arguments[0].offsetHeight);", f);
-                    if (h != null && h > 10) return f;
-                } catch (Exception ignored) {}
-            }
-            ((JavascriptExecutor) d).executeScript("window.scrollBy(0, 300);");
-            return null;
-        });
-    }
-
-    private static String safeAttr(WebElement el, String name) {
-        try { return el.getAttribute(name); } catch (Exception e) { return null; }
-    }
-
-    public static void waitForDocumentReady(WebDriver driver) {
-        new WebDriverWait(driver, Duration.ofSeconds(15))
-                .until(d -> "complete".equals(((JavascriptExecutor) d).executeScript("return document.readyState")));
-    }
-
-    @Deprecated
-    public void tinyUiSettled(Duration max) {
-        waitForAnimationsToFinish(max);
-    }
-
-    public boolean waitForInvisibility(By locator) {
         try {
-            return baseWait(defaultTimeout).until(ExpectedConditions.invisibilityOfElementLocated(locator));
-        } catch (TimeoutException e) {
-            return false;
+            Thread.sleep(d.toMillis());
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
         }
+    }
+
+    public static WebElement waitExactText(WebDriver d, By scope, String text, Duration t) {
+        String xp = ".//*[self::p or self::span or self::div or self::label or self::strong]"
+                + "[normalize-space(.)=" +
+                org.openqa.selenium.By.xpath("'" + text + "'").toString().replace("By.xpath: ", "") +
+                "]";
+        return new WebDriverWait(d, t).until(w -> w.findElement(scope).findElement(By.xpath(xp)));
+    }
+
+    public static void waitForLoadersToDisappear(WebDriver driver) {
+        waitForLoadersToDisappear(driver, Duration.ofSeconds(10));
     }
 
     // Common loader/selectors you’ll likely see across pages.
@@ -311,10 +368,6 @@ public class WaitUtils {
             By.cssSelector("[role='progressbar']"),
             By.cssSelector(".overlay, .backdrop, .rdp-overlay, .ant-spin, .chakra-progress__indicator")
     );
-
-    public static void waitForLoadersToDisappear(WebDriver driver) {
-        waitForLoadersToDisappear(driver, Duration.ofSeconds(10));
-    }
 
     public static void waitForLoadersToDisappear(WebDriver driver, Duration timeout) {
         WebDriverWait wait = new WebDriverWait(driver, timeout);
@@ -336,9 +389,24 @@ public class WaitUtils {
         };
     }
 
-    public static WebElement waitExactText(WebDriver d, By scope, String text, Duration t) {
-        String xp = ".//*[self::p or self::span or self::div or self::label or self::strong]"
-                + "[normalize-space(.)=" + org.openqa.selenium.By.xpath("'" + text + "'").toString().replace("By.xpath: ", "") + "]";
-        return new WebDriverWait(d, t).until(w -> w.findElement(scope).findElement(By.xpath(xp)));
+    public static void waitForDocumentReady(WebDriver driver) {
+        new WebDriverWait(driver, Duration.ofSeconds(15))
+                .until(d -> "complete".equals(((JavascriptExecutor) d)
+                        .executeScript("return document.readyState")));
+    }
+
+    @Deprecated
+    public void tinyUiSettled(Duration max) {
+        waitForAnimationsToFinish(max);
+    }
+
+    public boolean waitForInvisibility(By locator) {
+        try {
+            return baseWait(defaultTimeout)
+                    .until(ExpectedConditions.invisibilityOfElementLocated(locator));
+        } catch (TimeoutException e) {
+            attachWaitScreenshot("invisibilityOfElementLocated(" + locator + ")");
+            return false;
+        }
     }
 }

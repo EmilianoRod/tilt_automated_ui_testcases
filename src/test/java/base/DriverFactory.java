@@ -22,13 +22,18 @@ import java.util.regex.Pattern;
 
 public final class DriverFactory {
 
-    private DriverFactory() {}
+    private DriverFactory() {
+        // utility
+    }
 
     private static final boolean IS_CI =
             Optional.ofNullable(System.getenv("CI"))
                     .map(v -> !v.isBlank() && !"false".equalsIgnoreCase(v))
                     .orElse(false);
 
+    /**
+     * Main entry point – returns a fully configured WebDriver.
+     */
     public static WebDriver createDriver() {
         final String browser = String.valueOf(Config.getBrowser()).toLowerCase(Locale.ROOT);
 
@@ -36,11 +41,7 @@ public final class DriverFactory {
             case "chrome":
             default:
                 ChromeOptions options = buildChromeOptions();
-
-                // Build service with your existing verbosity knob
-                ChromeDriverService service = new ChromeDriverService.Builder()
-                        .withVerbose(Boolean.parseBoolean(Config.getAny("chromedriver.verbose", "CHROMEDRIVER_VERBOSE")))
-                        .build();
+                ChromeDriverService service = buildChromeService();
 
                 // ---- Stage 1: try Chrome-managed driver (best path on Chrome >=115) ----
                 try {
@@ -53,27 +54,52 @@ public final class DriverFactory {
                     // ---- Stage 2: fall back to WebDriverManager with the parsed major (or your override) ----
                     try {
                         if (Config.useWebDriverManager()) {
-                            io.github.bonigarcia.wdm.WebDriverManager wdm = io.github.bonigarcia.wdm.WebDriverManager.chromedriver();
+                            io.github.bonigarcia.wdm.WebDriverManager wdm =
+                                    io.github.bonigarcia.wdm.WebDriverManager.chromedriver();
+
                             if (major != null && !major.isBlank()) {
                                 wdm.browserVersion(major + ".0");
                             } else if (pinFromEnv != null && !pinFromEnv.isBlank()) {
                                 wdm.browserVersion(pinFromEnv.trim() + ".0");
                             } // else: let WDM decide latest suitable
+
                             wdm.setup();
                         }
                         return bootChrome(service, options);
                     } catch (SessionNotCreatedException retryFail) {
-                        throw retryFail; // bubble up if even the fallback cannot start
+                        // Bubble up if even the fallback cannot start
+                        throw retryFail;
                     }
                 }
         }
     }
 
-    // Build ChromeOptions exactly like you had, with all existing knobs preserved.
+    /**
+     * Build ChromeDriverService.
+     */
+    private static ChromeDriverService buildChromeService() {
+        Map<String, String> env = new HashMap<>(System.getenv());
+
+        // If Xvfb is started externally, it will usually set DISPLAY in the environment already.
+        // We no longer depend on any video-specific DISPLAY wiring.
+
+        return new ChromeDriverService.Builder()
+                .withVerbose(Boolean.parseBoolean(
+                        Config.getAny("chromedriver.verbose", "CHROMEDRIVER_VERBOSE")
+                ))
+                .withEnvironment(env)
+                .build();
+    }
+
+    /**
+     * Build ChromeOptions with all your existing knobs + always-on browser console logging.
+     */
     private static ChromeOptions buildChromeOptions() {
         ChromeOptions options = new ChromeOptions();
         options.setAcceptInsecureCerts(true);
         options.setPageLoadStrategy(parsePageLoad(Config.getPageLoadStrategyName()));
+
+        boolean headlessEnv = Config.isHeadless();
 
         // Locale & timezone for deterministic formats
         options.addArguments(
@@ -90,17 +116,17 @@ public final class DriverFactory {
                 "--disable-pdf-viewer",
                 "--pdfjs-disable",
                 "--no-sandbox",
-               "--remote-allow-origins=*"
-
+                "--remote-allow-origins=*"
         );
 
         // Window size applied once; headless also needs an explicit size
         String windowSizeArg = "--window-size=" + Config.getWindowSize();
         options.addArguments(windowSizeArg);
 
-        if (Config.isHeadless()) {
+        // Headless mode is now controlled ONLY by Config.isHeadless()
+        if (headlessEnv) {
             // Use modern headless
-            options.addArguments("--headless=new", windowSizeArg);
+            options.addArguments("--headless=new");
         }
 
         // Gate sandbox for CI/root-in-container
@@ -149,26 +175,42 @@ public final class DriverFactory {
         options.setExperimentalOption("prefs", prefs);
         // ---------- end prefs ----------
 
-// Logging (opt-in)
-        if (Config.isPerfLoggingEnabled() || Config.isBrowserLoggingEnabled()) {
-            LoggingPreferences logs = new LoggingPreferences();
-            if (Config.isPerfLoggingEnabled())   logs.enable(LogType.PERFORMANCE, Level.ALL);
-            if (Config.isBrowserLoggingEnabled()) logs.enable(LogType.BROWSER, Level.ALL);
-            options.setCapability("goog:loggingPrefs", logs);
-            options.setCapability("app:perfLoggingEnabled", Config.isPerfLoggingEnabled());
+        // ---------- ALWAYS ENABLE BROWSER CONSOLE LOGGING ----------
+        LoggingPreferences logs = new LoggingPreferences();
+
+        // Always capture browser console logs so we can attach them to Allure
+        logs.enable(LogType.BROWSER, Level.ALL);
+
+        // Perf logging remains opt-in (can be noisy)
+        if (Config.isPerfLoggingEnabled()) {
+            logs.enable(LogType.PERFORMANCE, Level.ALL);
+            options.setCapability("app:perfLoggingEnabled", true);
         }
+
+        options.setCapability("goog:loggingPrefs", logs);
+        // ---------- end logging ----------
 
         return options;
     }
 
-    // Actually start ChromeDriver and apply your timeouts the same way you already do
+    /**
+     * Actually start ChromeDriver and apply your timeouts.
+     */
     private static WebDriver bootChrome(ChromeDriverService service, ChromeOptions options) {
         WebDriver driver = new ChromeDriver(service, options);
 
         // Timeouts: prefer explicit waits in parallel runs; keep your knobs
-        long imp = Long.parseLong(Optional.ofNullable(Config.getAny("wd.implicitSec", "WD_IMPLICIT_SEC")).orElse("0"));
-        long pl  = Long.parseLong(Optional.ofNullable(Config.getAny("wd.pageLoadSec", "WD_PAGELOAD_SEC")).orElse("30"));
-        long js  = Long.parseLong(Optional.ofNullable(Config.getAny("wd.scriptSec", "WD_SCRIPT_SEC")).orElse("30"));
+        long imp = Long.parseLong(Optional.ofNullable(
+                Config.getAny("wd.implicitSec", "WD_IMPLICIT_SEC")
+        ).orElse("0"));
+
+        long pl = Long.parseLong(Optional.ofNullable(
+                Config.getAny("wd.pageLoadSec", "WD_PAGELOAD_SEC")
+        ).orElse("30"));
+
+        long js = Long.parseLong(Optional.ofNullable(
+                Config.getAny("wd.scriptSec", "WD_SCRIPT_SEC")
+        ).orElse("30"));
 
         driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(imp)); // ideally 0
         driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(pl));
@@ -176,28 +218,46 @@ public final class DriverFactory {
 
         // Best-effort cleanup if JVM is torn down
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try { driver.quit(); } catch (Throwable ignored) {}
+            try {
+                driver.quit();
+            } catch (Throwable ignored) {
+            }
         }));
 
         return driver;
     }
 
+    /**
+     * Extract Chrome major version from a typical SessionNotCreatedException message.
+     */
     private static String extractChromeMajor(String errorMsg) {
         if (errorMsg == null) return null;
-        // look for "Current browser version is 142.0.7444.60"
-        Matcher m = Pattern.compile("Current browser version is ([0-9]+)\\.", Pattern.CASE_INSENSITIVE).matcher(errorMsg);
+
+        // Look for "Current browser version is 142.0.7444.60"
+        Matcher m = Pattern.compile(
+                "Current browser version is ([0-9]+)\\.",
+                Pattern.CASE_INSENSITIVE
+        ).matcher(errorMsg);
         if (m.find()) return m.group(1);
-        // fallback: look for "... is 142" (rare)
-        m = Pattern.compile("version is\\s+([0-9]+)\\b", Pattern.CASE_INSENSITIVE).matcher(errorMsg);
+
+        // Fallback: look for "... version is 142" (rare)
+        m = Pattern.compile(
+                "version is\\s+([0-9]+)\\b",
+                Pattern.CASE_INSENSITIVE
+        ).matcher(errorMsg);
+
         return m.find() ? m.group(1) : null;
     }
 
     private static PageLoadStrategy parsePageLoad(String s) {
         switch (String.valueOf(s).toLowerCase(Locale.ROOT)) {
-            case "eager":  return PageLoadStrategy.EAGER;
-            case "none":   return PageLoadStrategy.NONE;
+            case "eager":
+                return PageLoadStrategy.EAGER;
+            case "none":
+                return PageLoadStrategy.NONE;
             case "normal":
-            default:       return PageLoadStrategy.NORMAL;
+            default:
+                return PageLoadStrategy.NORMAL;
         }
     }
 }

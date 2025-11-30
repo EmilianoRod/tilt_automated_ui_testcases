@@ -1,6 +1,5 @@
 package listeners;
 
-import Utils.VideoRecorder;
 import base.DriverManager;
 import io.qameta.allure.Allure;
 import io.qameta.allure.Attachment;
@@ -11,6 +10,7 @@ import org.testng.ITestContext;
 import org.testng.ITestListener;
 import org.testng.ITestResult;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -25,7 +25,10 @@ import java.util.stream.Collectors;
 public class TestListener implements ITestListener {
 
     private static final SimpleDateFormat TS = new SimpleDateFormat("yyyyMMdd_HHmmss");
-    private static final String VIDEO_ATTR = "videoRecorder";
+
+    // Enable/disable final failure screenshots (in addition to step-level ones)
+    private static final boolean FINAL_SCREENSHOT_ENABLED =
+            Boolean.parseBoolean(System.getProperty("final.screenshot.enabled", "true"));
 
     // =========================================================
     // RETRY LABELING
@@ -85,35 +88,13 @@ public class TestListener implements ITestListener {
     public void onTestStart(ITestResult result) {
         annotateRetryLabels(result);
 
-        // ---- Decide if we record this run or not (Solution A) ----
-        boolean videoEnabled    = VideoRecorder.isEnabled();
-        boolean retryOnlyMode   = Boolean.parseBoolean(System.getProperty("video.retryOnly", "true"));
-        int invocation          = result.getMethod().getCurrentInvocationCount(); // 0 = first run, 1 = first retry, etc.
-        String qName            = qualifiedName(result);
+        String qName    = qualifiedName(result);
+        int invocation  = result.getMethod().getCurrentInvocationCount(); // 0 = first run
 
         System.out.printf(
-                "[Video] onTestStart for %s | invocation=%d | videoEnabled=%s | retryOnly=%s%n",
-                qName, invocation, videoEnabled, retryOnlyMode
+                "[TEST START] %s | invocation=%d%n",
+                qName, invocation
         );
-
-        if (!videoEnabled) {
-            System.out.println("[Video] Video disabled via property → not starting recording.");
-            return;
-        }
-
-        // In retry-only mode, we *only* record if this is a retry (invocation > 0).
-        if (retryOnlyMode && invocation == 0) {
-            System.out.println("[Video] First attempt (invocation=0) in retry-only mode → no recording for " + qName);
-            return;
-        }
-
-        System.out.println("[Video] Starting video recording for " + qName + " (invocation=" + invocation + ")");
-
-        VideoRecorder recorder = new VideoRecorder(qName);
-        recorder.start();
-
-        // store per-test instance (safe for parallel runs)
-        result.setAttribute(VIDEO_ATTR, recorder);
     }
 
     @Override
@@ -124,37 +105,19 @@ public class TestListener implements ITestListener {
 
         annotateRetryLabels(result);
 
-        // 🎥 Stop & attach video for ANY failure (failed or broken)
-        try {
-            Object attr = result.getAttribute(VIDEO_ATTR);
-            if (attr instanceof VideoRecorder recorder) {
-                Path videoPath = recorder.stop();
-                if (videoPath != null && Files.exists(videoPath)) {
-                    System.out.println("[Video] Attaching failure video: " + videoPath.toAbsolutePath());
-                    try (InputStream in = Files.newInputStream(videoPath)) {
-                        Allure.addAttachment("Video recording", "video/mp4", in, "mp4");
-                    }
-                } else {
-                    System.out.println("[Video] No video file to attach on failure.");
-                }
-            } else {
-                System.out.println("[Video] No recorder instance found on failure.");
-            }
-        } catch (Throwable t) {
-            System.out.println("[Video] Failed to stop/attach recording: " + t.getMessage());
-        }
-
         if (driver == null) {
-            System.out.println("[FAIL] No WebDriver instance; skipping screenshot.");
+            System.out.println("[FAIL] No WebDriver instance; skipping screenshot and artifacts.");
             return;
         }
 
-        // Local screenshot
-        saveScreenshotToFile(driver, result);
+        // Local screenshot + final-state Allure screenshot (optional toggle)
+        if (FINAL_SCREENSHOT_ENABLED) {
+            saveScreenshotToFile(driver, result);
+            attachScreenshot(driver);
+        }
 
-        // Allure artifacts
+        // Always attach supporting artifacts
         attachUrl(driver);
-        attachScreenshot(driver);
         attachPageSource(driver);
         attachBrowserConsole(driver);
         attachPerformanceLogIfAvailable(driver);
@@ -162,21 +125,8 @@ public class TestListener implements ITestListener {
 
     @Override
     public void onTestSuccess(ITestResult result) {
-        // 🎥 Test passed → stop & delete video
-        try {
-            Object attr = result.getAttribute(VIDEO_ATTR);
-            if (attr instanceof VideoRecorder recorder) {
-                System.out.println("[Video] Test passed → stopping & deleting recording. " +
-                        "(invocation=" + result.getMethod().getCurrentInvocationCount() + ")");
-                Path videoPath = recorder.stop();
-                if (videoPath != null && Files.exists(videoPath)) {
-                    Files.deleteIfExists(videoPath);
-                    System.out.println("[VideoRecorder] Deleted video (test passed).");
-                }
-            }
-        } catch (Throwable t) {
-            System.out.println("[Video] Failed to stop/delete recording: " + t.getMessage());
-        }
+        System.out.println("[PASS] " + qualifiedName(result) +
+                " (invocation=" + result.getMethod().getCurrentInvocationCount() + ")");
     }
 
     @Override
@@ -188,27 +138,14 @@ public class TestListener implements ITestListener {
         System.out.println("[SKIP] " + qualifiedName(result) +
                 " (invocation=" + result.getMethod().getCurrentInvocationCount() + ") — " + reason);
 
-        // 🎥 Skipped → stop & delete (no attachment)
-        try {
-            Object attr = result.getAttribute(VIDEO_ATTR);
-            if (attr instanceof VideoRecorder recorder) {
-                System.out.println("[Video] Test skipped → stopping & deleting recording.");
-                Path videoPath = recorder.stop();
-                if (videoPath != null && Files.exists(videoPath)) {
-                    Files.deleteIfExists(videoPath);
-                    System.out.println("[VideoRecorder] Deleted video (test skipped).");
-                }
-            }
-        } catch (Throwable ex) {
-            System.out.println("[Video] Failed to stop/delete recording on skip: " + ex.getMessage());
-        }
-
         try {
             Allure.addAttachment("Skip Reason", "text/plain", reason);
         } catch (Throwable ignored) {}
 
         WebDriver driver = currentDriver();
-        if (driver != null) attachUrl(driver);
+        if (driver != null) {
+            attachUrl(driver);
+        }
     }
 
     // =========================================================
@@ -224,12 +161,22 @@ public class TestListener implements ITestListener {
         }
     }
 
-    @Attachment(value = "Screenshot", type = "image/png")
-    private byte[] attachScreenshot(WebDriver driver) {
+    // Explicit Allure attachment for final-state screenshot
+    private void attachScreenshot(WebDriver driver) {
         try {
-            return ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
+            byte[] bytes = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
+            Allure.addAttachment(
+                    "Final state screenshot (onTestFailure)",
+                    "image/png",
+                    new ByteArrayInputStream(bytes),
+                    "png"
+            );
         } catch (Throwable ignored) {
-            return new byte[0];
+            Allure.addAttachment(
+                    "Final state screenshot (onTestFailure)",
+                    "text/plain",
+                    "screenshot capture failed"
+            );
         }
     }
 
@@ -246,8 +193,9 @@ public class TestListener implements ITestListener {
     private byte[] attachBrowserConsole(WebDriver driver) {
         try {
             Set<String> available = driver.manage().logs().getAvailableLogTypes();
-            if (!available.contains(LogType.BROWSER))
+            if (!available.contains(LogType.BROWSER)) {
                 return "browser log type not available".getBytes(StandardCharsets.UTF_8);
+            }
 
             String logs = driver.manage().logs().get(LogType.BROWSER).getAll()
                     .stream().map(this::fmt)
@@ -262,8 +210,9 @@ public class TestListener implements ITestListener {
     @Attachment(value = "Performance Log (CDP)", type = "application/json")
     private byte[] attachPerformanceLogIfAvailable(WebDriver driver) {
         try {
-            if (!driver.manage().logs().getAvailableLogTypes().contains(LogType.PERFORMANCE))
+            if (!driver.manage().logs().getAvailableLogTypes().contains(LogType.PERFORMANCE)) {
                 return "performance log not available".getBytes(StandardCharsets.UTF_8);
+            }
 
             String perf = driver.manage().logs().get(LogType.PERFORMANCE).getAll()
                     .stream().map(LogEntry::getMessage)
@@ -322,7 +271,9 @@ public class TestListener implements ITestListener {
     // =========================================================
 
     @Override
-    public void onStart(ITestContext context) { writeEnv(); }
+    public void onStart(ITestContext context) {
+        writeEnv();
+    }
 
     private void writeEnv() {
         try {

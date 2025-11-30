@@ -32,6 +32,4 @@ mvn -B \
   -DADMIN_PASS="$ADMIN_PASS" \
   -Dtimeout="$CI_EXPLICIT_WAIT_SEC" \
   -Dretry=1 \
-  -Dvideo.enabled=true \
-  -Dvideo.retryOnly=true \
   clean test
