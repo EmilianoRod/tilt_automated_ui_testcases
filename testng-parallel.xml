@@ -21,8 +21,8 @@
             </run>
         </groups>
         <classes>
-            <class name="tests.Phase1SmokeTests"/>
-<!--            <class name="tests.individuals.IndividualsListTests"/>-->
+<!--            <class name="tests.Phase1SmokeTests"/>-->
+            <class name="tests.individuals.IndividualsListTests"/>
 <!--            <class name="tests.teams.TeamAssessmentPurchaseAndAssignment"/>-->
 <!--            <class name="tests.ManualEntryValidationTests"/>-->
 <!--            <class name="tests.TiltSmokeTest"/>-->
