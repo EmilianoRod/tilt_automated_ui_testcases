@@ -3,7 +3,7 @@
        verbose="1"
        preserve-order="true"
        parallel="methods"
-       thread-count="8">
+       thread-count="4">
 
     <listeners>
         <!-- Your custom listeners -->
@@ -22,7 +22,7 @@
         </groups>
         <classes>
             <class name="tests.Phase1SmokeTests"/>
-<!--            <class name="tests.individuals.IndividualsListTests"/>-->
+            <class name="tests.individuals.IndividualsListTests"/>
 <!--            <class name="tests.teams.TeamAssessmentPurchaseAndAssignment"/>-->
 <!--            <class name="tests.ManualEntryValidationTests"/>-->
 <!--            <class name="tests.TiltSmokeTest"/>-->

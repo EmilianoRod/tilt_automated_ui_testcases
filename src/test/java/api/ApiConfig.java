@@ -1,5 +1,8 @@
 package api;
 
+import Utils.AuthTokenUtils;
+import org.openqa.selenium.WebDriver;
+
 import java.time.Duration;
 import java.util.Objects;
 
@@ -18,15 +21,50 @@ public final class ApiConfig {
 
     public static Builder builder() { return new Builder(); }
 
+    // -------------------------------------------------------------------------
+    // ENV-BASED CONFIG (used for non-browser tests or CI)
+    // -------------------------------------------------------------------------
     public static ApiConfig fromEnv() {
+        String base = System.getProperty(
+                "API_BASE_URL",
+                System.getenv().getOrDefault("API_BASE_URL", "https://tilt-api-dev.tilt365.com")
+        );
+
+        String bearer = System.getProperty("API_BEARER", System.getenv("API_BEARER"));
+        String apiKey = System.getProperty("API_KEY", System.getenv("API_KEY"));
+        int timeout = Integer.getInteger("API_TIMEOUT_SEC", 30);
+
         return builder()
-            .baseUrl(System.getProperty("API_BASE_URL", System.getenv().getOrDefault("API_BASE_URL", "https://tilt-dashboard-dev.tilt365.com")))
-            .bearerToken(System.getProperty("API_BEARER", System.getenv("API_BEARER")))
-            .apiKey(System.getProperty("API_KEY", System.getenv("API_KEY")))
-            .callTimeoutSeconds(Integer.getInteger("API_TIMEOUT_SEC", 30))
-            .build();
+                .baseUrl(base)
+                .bearerToken(bearer)
+                .apiKey(apiKey)
+                .callTimeoutSeconds(timeout)
+                .build();
     }
 
+    // -------------------------------------------------------------------------
+    // BROWSER-BASED CONFIG (extracts JWT dynamically from Selenium session)
+    // -------------------------------------------------------------------------
+    public static ApiConfig fromBrowser(WebDriver driver) {
+        String base = System.getProperty(
+                "API_BASE_URL",
+                System.getenv().getOrDefault("API_BASE_URL", "https://tilt-api-dev.tilt365.com")
+        );
+
+        // Extract JWT from localStorage/sessionStorage/cookies
+        String jwt = AuthTokenUtils.extractJwt(driver);
+
+        return builder()
+                .baseUrl(base)
+                .bearerToken(jwt)
+                // API-key may not be needed for Tilt backend — leave null
+                .callTimeoutSeconds(30)
+                .build();
+    }
+
+    // -------------------------------------------------------------------------
+    // BUILDER
+    // -------------------------------------------------------------------------
     public static final class Builder {
         private String baseUrl;
         private String bearerToken;
@@ -39,6 +77,8 @@ public final class ApiConfig {
         public Builder callTimeout(Duration v) { this.callTimeout = v; return this; }
         public Builder callTimeoutSeconds(int secs) { this.callTimeout = Duration.ofSeconds(secs); return this; }
 
-        public ApiConfig build() { return new ApiConfig(baseUrl, bearerToken, apiKey, callTimeout); }
+        public ApiConfig build() {
+            return new ApiConfig(baseUrl, bearerToken, apiKey, callTimeout);
+        }
     }
 }

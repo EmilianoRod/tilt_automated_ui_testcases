@@ -4,14 +4,18 @@ import Utils.Config;
 import Utils.MailSlurpUtils;
 import Utils.StripeCheckoutHelper;
 import Utils.WaitUtils;
+import api.ApiClient;
+import api.ApiConfig;
+import api.BackendApi;
 import base.BaseTest;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mailslurp.models.Email;
-import com.mailslurp.models.EmailPreview;
 import com.mailslurp.models.InboxDto;
 import io.qameta.allure.*;
+import okhttp3.ResponseBody;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
-import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.devtools.DevTools;
 import org.openqa.selenium.devtools.HasDevTools;
@@ -22,7 +26,6 @@ import org.testng.Assert;
 import org.testng.SkipException;
 import org.testng.annotations.Test;
 import org.testng.asserts.SoftAssert;
-import pages.BasePage;
 import pages.LoginPage;
 import pages.Shop.AssessmentEntryPage;
 import pages.Shop.OrderPreviewPage;
@@ -33,10 +36,17 @@ import pages.menuPages.DashboardPage;
 import pages.Individuals.IndividualsPage;
 import pages.menuPages.ShopPage;
 import pages.reports.ReportSummaryPage;
+import retrofit2.Response;
 
+import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 
 import static Utils.Config.joinUrl;
@@ -2347,6 +2357,312 @@ public class IndividualsListTests extends BaseTest {
     }
 
 
+    @Test(groups = {"smoke"}, description = "[Qase-1182] Sort by Date (Newest) orders ALL Individuals by added_at (Newest→Oldest) across pages")
+    @Severity(SeverityLevel.NORMAL)
+    public void sortByDate_newest_ordersByAddedAt_qase1182() {
+
+        step("Start fresh session (login + land on Dashboard)");
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
+
+        // 1) Open Individuals
+        step("Open Individuals page from Dashboard nav");
+        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+
+        step("Ensure there is at least one row (or skip)");
+        if (!individuals.hasAnyRows()) {
+            throw new SkipException("No Individuals present; cannot verify sort.");
+        }
+
+        // 2) Sort by Date (Newest)
+        step("Select sort option: Newest");
+        individuals.chooseSortOption("newest");
+
+        // 3) Backend source of truth: email -> added_at
+        step("Fetch Individuals added_at map from backend (email → added_at)");
+        Map<String, Instant> addedAtByEmail = fetchIndividualsAddedAtByEmail();
+        System.out.println("[DEBUG] added_at map size from backend: " + addedAtByEmail.size());
+
+        // 4) Collect emails from ALL pages in UI order after applying sort
+        step("Collect ALL Individuals emails from ALL pages in UI order (after Newest sort)");
+        individuals.goToFirstPageIfPossible(); // same pattern as Qase-1181
+
+        int maxPage = Math.max(1, individuals.getMaxPageNumber());
+        maxPage = Math.min(maxPage, 100); // safety cap
+
+        List<Instant> uiAddedAt = new ArrayList<>();
+
+        for (int page = 1; page <= maxPage; page++) {
+            step("Collect emails on sorted page " + page);
+            List<String> pageEmails = individuals.getEmailsOnCurrentPageInOrder();
+            System.out.println("[DEBUG] Page " + page + " emails: " + pageEmails);
+
+            for (String email : pageEmails) {
+                Instant ts = addedAtByEmail.get(email);
+                if (ts == null) {
+                    System.out.println("[WARN] No added_at found in backend for email: " + email);
+                    continue;
+                }
+                uiAddedAt.add(ts);
+            }
+
+            if (page < maxPage) {
+                individuals.goToPage(page + 1);
+                individuals.waitUntilLoaded(); // same pattern as the Name (Z–A) test
+            }
+        }
+
+        if (uiAddedAt.size() < 2) {
+            throw new SkipException("Not enough mapped added_at values across pages to verify sorting. Values: " + uiAddedAt);
+        }
+
+        System.out.println("[DEBUG] UI added_at list (ALL pages, Newest→Oldest expected): " + uiAddedAt);
+
+        // 5) Assert global Newest → Oldest by added_at
+        step("Verify UI added_at list is in descending order (Newest → Oldest) across ALL pages");
+        SoftAssert softly = new SoftAssert();
+
+        for (int i = 1; i < uiAddedAt.size(); i++) {
+            Instant prev = uiAddedAt.get(i - 1);
+            Instant curr = uiAddedAt.get(i);
+            boolean inOrder = !prev.isBefore(curr); // prev >= curr
+
+            softly.assertTrue(
+                    inOrder,
+                    "Expected global Newest→Oldest (by added_at) but found " + prev + " before " + curr +
+                            ". Full UI added_at list: " + uiAddedAt
+            );
+        }
+
+        softly.assertAll();
+
+        step("Reload Individuals to clear state for subsequent tests");
+        individuals.reloadWithBuster(Config.getBaseUrl());
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals failed to reload after sort test");
+    }
+
+
+    @Test(groups = {"smoke"}, description = "[Qase-1183] Sort by Date (Oldest) orders ALL Individuals by added_at (Oldest→Newest) across pages")
+    @Severity(SeverityLevel.NORMAL)
+    public void sortByDate_oldest_ordersByAddedAt_qase1183() {
+
+        step("Start fresh session (login + land on Dashboard)");
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
+
+        // 1) Open Individuals
+        step("Open Individuals page from Dashboard nav");
+        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+
+        step("Ensure there is at least one row (or skip)");
+        if (!individuals.hasAnyRows()) {
+            throw new SkipException("No Individuals present; cannot verify sort.");
+        }
+
+        // 2) Sort by Date (Oldest)
+        step("Select sort option: Oldest");
+        individuals.chooseSortOption("oldest"); // same helper as for 'newest'
+
+        // 3) Backend source of truth: email -> added_at
+        step("Fetch Individuals added_at map from backend (email → added_at)");
+        Map<String, Instant> addedAtByEmail = fetchIndividualsAddedAtByEmail();
+        System.out.println("[DEBUG] added_at map size from backend: " + addedAtByEmail.size());
+
+        // 4) Collect emails from ALL pages in UI order after applying sort (Oldest)
+        step("Collect ALL Individuals emails from ALL pages in UI order (after Oldest sort)");
+        individuals.goToFirstPageIfPossible(); // same helper used in other sort tests
+
+        int maxPage = Math.max(1, individuals.getMaxPageNumber());
+        maxPage = Math.min(maxPage, 100); // safety cap
+
+        List<Instant> uiAddedAt = new ArrayList<>();
+
+        for (int page = 1; page <= maxPage; page++) {
+            step("Collect emails on sorted page " + page);
+            List<String> pageEmails = individuals.getEmailsOnCurrentPageInOrder();
+            System.out.println("[DEBUG] Page " + page + " emails: " + pageEmails);
+
+            for (String email : pageEmails) {
+                Instant ts = addedAtByEmail.get(email);
+                if (ts == null) {
+                    System.out.println("[WARN] No added_at found in backend for email: " + email);
+                    continue;
+                }
+                uiAddedAt.add(ts);
+            }
+
+            if (page < maxPage) {
+                individuals.goToPage(page + 1);
+                individuals.waitUntilLoaded();
+            }
+        }
+
+        if (uiAddedAt.size() < 2) {
+            throw new SkipException("Not enough mapped added_at values across pages to verify sorting. Values: " + uiAddedAt);
+        }
+
+        System.out.println("[DEBUG] UI added_at list (ALL pages, Oldest→Newest expected): " + uiAddedAt);
+
+        // 5) Assert global Oldest → Newest by added_at
+        step("Verify UI added_at list is in ascending order (Oldest → Newest) across ALL pages");
+        SoftAssert softly = new SoftAssert();
+
+        for (int i = 1; i < uiAddedAt.size(); i++) {
+            Instant prev = uiAddedAt.get(i - 1);
+            Instant curr = uiAddedAt.get(i);
+            boolean inOrder = !prev.isAfter(curr); // prev <= curr
+
+            softly.assertTrue(
+                    inOrder,
+                    "Expected global Oldest→Newest (by added_at) but found " + prev + " before " + curr +
+                            ". Full UI added_at list: " + uiAddedAt
+            );
+        }
+
+        softly.assertAll();
+
+        step("Reload Individuals to clear state for subsequent tests");
+        individuals.reloadWithBuster(Config.getBaseUrl());
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals failed to reload after sort test");
+    }
+
+
+    @Test(groups = {"smoke"}, description = "[Qase-1186] Report column shows either 'Pending' text OR clickable report link for each row")
+    @Severity(SeverityLevel.NORMAL)
+    public void reportColumn_showsPendingOrClickableLink_qase1186() {
+
+        step("Start fresh session (login + land on Dashboard)");
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
+
+        // 1) Open Individuals
+        step("Open Individuals page from Dashboard nav");
+        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+
+        step("Ensure there is at least one row (or skip)");
+        if (!individuals.hasAnyRows()) {
+            throw new SkipException("No Individuals present; cannot verify Report column.");
+        }
+
+        // We’ll walk all pages, same pattern as sort tests
+        individuals.goToFirstPageIfPossible();
+
+        int maxPage = Math.max(1, individuals.getMaxPageNumber());
+        maxPage = Math.min(maxPage, 100); // safety cap
+
+        SoftAssert softly = new SoftAssert();
+        int totalChecked = 0;
+        int pendingCount = 0;
+        int linkCount = 0;
+
+        for (int page = 1; page <= maxPage; page++) {
+            final int currentPage = page;
+
+            step("Validate Report column on page " + currentPage);
+            List<String> emailsOnPage = individuals.getEmailsOnCurrentPageInOrder();
+            System.out.println("[DEBUG] Page " + currentPage + " emails: " + emailsOnPage);
+
+            for (String email : emailsOnPage) {
+                totalChecked++;
+
+                String status = individuals.getReportStatusByEmailOnCurrentPage(email);
+                String context = String.format(
+                        "[Page=%d, email=%s, status=%s]",
+                        currentPage, email, status
+                );
+
+                // Must not be NotFound
+                softly.assertNotEquals(
+                        status,
+                        "NotFound",
+                        "❌ Report status could not be resolved (NotFound) for row. " + context
+                );
+
+                // Must be Pending OR some form of Link (Link / Link:<href>)
+                boolean isPending = status != null && "Pending".equalsIgnoreCase(status);
+                boolean isLink = status != null && status.startsWith("Link");
+
+                softly.assertTrue(
+                        isPending || isLink,
+                        "❌ Report column is neither 'Pending' nor a clickable link for row. " + context
+                );
+
+                if (isPending) pendingCount++;
+                if (isLink) linkCount++;
+            }
+
+            if (page < maxPage) {
+                individuals.goToPage(page + 1);
+                individuals.waitUntilLoaded();
+            }
+        }
+
+        softly.assertTrue(
+                totalChecked > 0,
+                "❌ No rows were checked in Report column validation."
+        );
+
+        System.out.printf("[DEBUG] Report column summary: checked=%d, pending=%d, link=%d%n",
+                totalChecked, pendingCount, linkCount);
+
+        softly.assertAll();
+
+        step("Reload Individuals to clear state for subsequent tests");
+        individuals.reloadWithBuster(Config.getBaseUrl());
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals failed to reload after report column test");
+    }
+
+
+    @Test(groups = {"smoke"}, description = "[Qase-1188] Row actions menu opens when clicking the Actions (kebab) icon")
+    @Severity(SeverityLevel.NORMAL)
+    public void openRowActionsMenu_qase1188() {
+
+        step("Start fresh session (login + land on Dashboard)");
+        DashboardPage dashboard = BaseTest.startFreshSession(driver());
+
+        step("Open Individuals page from Dashboard nav");
+        IndividualsPage individuals = dashboard.goToIndividuals().waitUntilLoaded();
+        Assert.assertTrue(individuals.isLoaded(), "❌ Individuals page did not load");
+
+        step("Ensure there is at least one row (or skip)");
+        if (!individuals.hasAnyRows()) {
+            throw new SkipException("No Individuals present; cannot verify actions menu.");
+        }
+
+        step("Get first-row email on current page");
+        List<String> emails = individuals.getEmailsOnCurrentPageInOrder();
+        Assert.assertFalse(emails.isEmpty(), "❌ No emails found on first page.");
+        String targetEmail = emails.get(0);
+        System.out.println("[DEBUG][Qase-1188] Using email: " + targetEmail);
+
+        step("Open actions menu via IndividualsPage.openActionsMenuFor(email)");
+        boolean opened = individuals.openActionsMenuFor(targetEmail);
+        Assert.assertTrue(opened, "❌ openActionsMenuFor(" + targetEmail + ") returned false.");
+
+        step("Verify actions dropdown is visible (not hidden)");
+        By openMenu = By.cssSelector(".ant-dropdown:not(.ant-dropdown-hidden)");
+
+        WebDriverWait wait = new WebDriverWait(driver(), Duration.ofSeconds(10));
+        WebElement menuRoot = wait.until(ExpectedConditions.visibilityOfElementLocated(openMenu));
+
+        Assert.assertTrue(
+                menuRoot.isDisplayed(),
+                "❌ Actions dropdown is not visible after opening for email=" + targetEmail
+        );
+
+        step("Verify each expected option appears inside the open menu");
+        SoftAssert softly = new SoftAssert();
+
+        softly.assertTrue( individuals.isMenuItemVisible(menuRoot, "Edit info"), "❌ 'Edit info' option is not visible in actions menu for " + targetEmail);
+        softly.assertTrue(individuals.isMenuItemVisible(menuRoot, "Send reminder"), "❌ 'Send reminder' option is not visible in actions menu for " + targetEmail);
+        softly.assertTrue(individuals.isMenuItemVisible(menuRoot, "Remove user"), "❌ 'Remove user' option is not visible in actions menu for " + targetEmail);
+        softly.assertTrue(individuals.isMenuItemVisible(menuRoot, "Auto reminder"), "❌ 'Auto reminder' option is not visible in actions menu for " + targetEmail);
+
+        softly.assertAll();
+
+        // Leave DOM clean for the rest of the suite
+        individuals.closeAnyOpenMenu();
+    }
 
 
 
@@ -2365,6 +2681,177 @@ public class IndividualsListTests extends BaseTest {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    /**
+     * Calls /api/v2/individuals via BackendApi, and extracts only the top-level added_at
+     * fields (the ones that belong to each individual, not the nested user_assessments).
+     *
+     * IMPORTANT:
+     * - This method returns the Instants sorted in ASCENDING order (oldest → newest),
+     *   regardless of the order returned by the backend.
+     */
+    private List<Instant> fetchIndividualsAddedAtFromBackendNormalizedAsc() {
+        try {
+            // 1) Extract API config using real JWT from browser session
+            ApiConfig cfg = ApiConfig.fromBrowser(driver());
+
+            // 2) Build backend API (never use retrofit.create() on BackendApi)
+            BackendApi api = BackendApi.create(cfg);
+
+            // 3) Call Individuals API
+            Response<ResponseBody> resp =
+                    api.individualsApiV2()
+                            .index(Collections.emptyMap())
+                            .execute();
+
+            if (!resp.isSuccessful()) {
+                throw new AssertionError("❌ /api/v2/individuals HTTP " + resp.code());
+            }
+
+            String json;
+            try (ResponseBody body = resp.body()) {
+                json = (body != null) ? body.string() : "";
+            }
+
+            if (json.isBlank()) {
+                throw new AssertionError("❌ Backend returned empty body.");
+            }
+
+            // 4) Extract ONLY top-level added_at (role = individual, not nested user_assessments)
+            Pattern p = Pattern.compile(
+                    "\"added_at\"\\s*:\\s*\"([^\"]+)\"(?:(?!user_assessments).)*?\"role\"\\s*:\\s*\"individual\"",
+                    Pattern.DOTALL
+            );
+
+            Matcher m = p.matcher(json);
+            List<Instant> out = new ArrayList<>();
+
+            while (m.find()) {
+                String addedAt = m.group(1);
+                try {
+                    out.add(Instant.parse(addedAt));
+                } catch (DateTimeParseException ignore) {
+                    // skip bad entries
+                }
+            }
+
+            // 5) Normalize: always sort oldest → newest
+            out.sort(Comparator.naturalOrder());
+
+            return out;
+
+        } catch (Exception e) {
+            throw new RuntimeException("❌ Backend fetch failed.", e);
+        }
+    }
+
+
+    /**
+     * Calls /api/v2/individuals via BackendApi, and builds a map email -> added_at (Instant)
+     * for top-level Individuals (role = "individual").
+     */
+    private Map<String, Instant> fetchIndividualsAddedAtByEmail() {
+        try {
+            // 1) Extract API config using real JWT from browser session
+            ApiConfig cfg = ApiConfig.fromBrowser(driver());
+
+            // 2) Build backend API (never use retrofit.create() on BackendApi)
+            BackendApi api = BackendApi.create(cfg);
+
+            // 3) Call Individuals API
+            Response<ResponseBody> resp =
+                    api.individualsApiV2()
+                            .index(Collections.emptyMap())
+                            .execute();
+
+            if (!resp.isSuccessful()) {
+                throw new AssertionError("❌ /api/v2/individuals HTTP " + resp.code());
+            }
+
+            String json;
+            try (ResponseBody body = resp.body()) {
+                json = (body != null) ? body.string() : "";
+            }
+
+            if (json.isBlank()) {
+                throw new AssertionError("❌ Backend returned empty body.");
+            }
+
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(json);
+
+            // Handle both array root and { "individuals": [...] }
+            JsonNode arr;
+            if (root.isArray()) {
+                arr = root;
+            } else if (root.has("individuals") && root.get("individuals").isArray()) {
+                arr = root.get("individuals");
+            } else {
+                throw new AssertionError("❌ Unexpected JSON shape for /api/v2/individuals");
+            }
+
+            Map<String, Instant> result = new HashMap<>();
+
+            for (JsonNode node : arr) {
+                String role = node.path("role").asText(null);
+                if (!"individual".equals(role)) {
+                    continue; // ignore non-individual roles
+                }
+
+                String email = node.path("email").asText(null);
+                String addedAtStr = node.path("added_at").asText(null);
+
+                if (email == null || email.isBlank() || addedAtStr == null || addedAtStr.isBlank()) {
+                    continue;
+                }
+
+                try {
+                    Instant addedAt = Instant.parse(addedAtStr);
+                    result.put(email, addedAt);
+                } catch (DateTimeParseException ex) {
+                    System.out.println("[WARN] Unable to parse added_at for email=" + email +
+                            " value=" + addedAtStr);
+                }
+            }
+
+            return result;
+
+        } catch (Exception e) {
+            throw new RuntimeException("❌ Backend fetch failed.", e);
+        }
+    }
 
 
     /* ===================== local helpers (test-only) ===================== */

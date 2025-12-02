@@ -917,7 +917,7 @@ public class IndividualsPage extends BasePage {
     }
 
     private void waitForMenuOpen() {
-        By openMenu = By.cssSelector(".ant-dropdown.ant-dropdown-open, .ant-dropdown:not([hidden])");
+        By openMenu = By.cssSelector(".ant-dropdown:not(.ant-dropdown-hidden)");
         try { new WebDriverWait(driver, Duration.ofSeconds(20)).until(ExpectedConditions.presenceOfElementLocated(openMenu)); }
         catch (Exception ignored) { }
     }
@@ -1123,6 +1123,29 @@ public class IndividualsPage extends BasePage {
     }
 
     // ======= Added general-purpose helpers for TC-434 and beyond =======
+
+
+    /**
+     * Returns the emails shown in the Individuals table on the CURRENT page,
+     * in visual order (top → bottom).
+     */
+    public List<String> getEmailsOnCurrentPageInOrder() {
+        List<String> emails = new ArrayList<>();
+
+        List<WebElement> rows = driver.findElements(tableRows);
+        for (WebElement row : rows) {
+            try {
+                String email = emailCellInRow(row).getText().trim();
+                if (!email.isEmpty()) {
+                    emails.add(email);
+                }
+            } catch (NoSuchElementException ignored) {
+                // skip rows without an email cell
+            }
+        }
+
+        return emails;
+    }
 
     /** @return true if at least one row exists in the current table page */
     public boolean hasAnyRows() {
@@ -2989,6 +3012,23 @@ public class IndividualsPage extends BasePage {
 
         return completed;
     }
+
+
+
+
+    public boolean isMenuItemVisible(WebElement menuRoot, String label) {
+        List<WebElement> items = menuRoot.findElements(
+                By.xpath(".//span[normalize-space()='" + label + "']")
+        );
+        for (WebElement el : items) {
+            if (el.isDisplayed()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
 
 
 

@@ -1554,6 +1554,45 @@ public class AssessmentEntryPage extends BasePage {
         return "";
     }
 
+    // ====== Row field getters (TILT-956) ======
+
+    /** Returns the First Name currently shown in row index1 (1-based). */
+    public String getFirstNameAtRow(int index1) {
+        if (index1 < 1) index1 = 1;
+        int idx = index1 - 1;
+
+        List<WebElement> inputs = driver.findElements(firstNameInputs());
+        int seen = 0;
+        for (WebElement el : inputs) {
+            try {
+                if (!el.isDisplayed()) continue;
+                if (seen++ == idx) {
+                    return Objects.toString(el.getAttribute("value"), "").trim();
+                }
+            } catch (StaleElementReferenceException ignored) { /* try next */ }
+        }
+        return "";
+    }
+
+    /** Returns the Last Name currently shown in row index1 (1-based). */
+    public String getLastNameAtRow(int index1) {
+        if (index1 < 1) index1 = 1;
+        int idx = index1 - 1;
+
+        List<WebElement> inputs = driver.findElements(lastNameInputs());
+        int seen = 0;
+        for (WebElement el : inputs) {
+            try {
+                if (!el.isDisplayed()) continue;
+                if (seen++ == idx) {
+                    return Objects.toString(el.getAttribute("value"), "").trim();
+                }
+            } catch (StaleElementReferenceException ignored) { /* try next */ }
+        }
+        return "";
+    }
+
+
 
 
     /** Collect all emails in the manual-entry area, lowercased & distinct.
@@ -1655,6 +1694,20 @@ public class AssessmentEntryPage extends BasePage {
                 return false;
             }
         });
+    }
+
+
+
+    // ====== TEAM radio state helpers (TILT-956) ======
+
+    /** True if 'Add members to existing team' is selected. */
+    public boolean isAddMembersExistingSelected() {
+        return isVisible(radioCheckedBadgeByText("Add members to existing team"));
+    }
+
+    /** True if 'Manually enter' is selected. */
+    public boolean isManuallyEnterSelected() {
+        return isVisible(radioCheckedBadgeByText("Manually enter"));
     }
 
 

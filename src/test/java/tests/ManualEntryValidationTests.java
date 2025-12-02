@@ -18,13 +18,25 @@ import pages.menuPages.ShopPage;
 
 import java.util.UUID;
 
-
+import static org.testng.Assert.*;
 
 
 @Epic("Tilt – Purchases")
 @Feature("Recipient Selection & Manual Entry Validation")
 @Owner("Emiliano")
 public class ManualEntryValidationTests extends BaseTest {
+
+
+
+    private AssessmentEntryPage openTeamManualEntryPage() {
+        DashboardPage dashboard = startFreshSession(null);
+        ShopPage shopPage = dashboard.goToShop();
+        PurchaseRecipientSelectionPage recipients = shopPage.clickBuyNowForTrueTilt();
+        recipients.waitUntilLoaded().selectTeam();
+        return recipients.clickNext();   // deprecated but perfect for tests
+    }
+
+
 
 
     @Test(groups = {"shop","preview","validation","smoke"})
@@ -35,7 +47,7 @@ public class ManualEntryValidationTests extends BaseTest {
         LoginPage login = new LoginPage(driver());
         login.navigateTo();
         DashboardPage dashboard = login.login(Config.getAdminEmail(), Config.getAdminPassword());
-        Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
+        assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
 
         // Start purchase
         ShopPage shop = dashboard.goToShop();
@@ -52,22 +64,75 @@ public class ManualEntryValidationTests extends BaseTest {
         entry.fillUserDetailsAtIndex(0, "Emi", "Rod", "not-an-email");
 
         // Assert: proceed disabled + inline validation message visible
-        Assert.assertFalse(entry.isProceedToPaymentEnabled(),
+        assertFalse(entry.isProceedToPaymentEnabled(),
                 "'Proceed to payment' must be disabled for invalid email.");
 
         String err = entry.getEmailErrorAtRow(0);
-        Assert.assertTrue(err == null || err.toLowerCase().contains("email"),
+        assertTrue(err == null || err.toLowerCase().contains("email"),
                 "Expected an inline email validation message; got: " + err);
 
         // Fix the email → button should enable → proceed to preview
         String goodEmail = "qa+" + java.util.UUID.randomUUID().toString().substring(0,8) + "@example.com";
         entry.setEmailAtRow(0, goodEmail);
 
-        Assert.assertTrue(entry.isProceedToPaymentEnabled(),
+        assertTrue(entry.isProceedToPaymentEnabled(),
                 "'Proceed to payment' should enable after valid email.");
 
         OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
-        Assert.assertTrue(preview.isLoaded(), "Order Preview did not load after fixing email.");
+        assertTrue(preview.isLoaded(), "Order Preview did not load after fixing email.");
+    }
+
+
+
+
+
+
+    @Test(description = "TILT-956: Default state when TEAM is selected")
+    @TmsLink("TILT-956")
+    @Severity(SeverityLevel.NORMAL)
+    public void teamManualEntry_defaultState_requiredFields() {
+        AssessmentEntryPage entryPage = openTeamManualEntryPage();
+
+        // Radios all deselected
+        assertFalse(entryPage.isAddMembersExistingSelected(),
+                "'Add members to existing team' should NOT be selected by default");
+        assertFalse(entryPage.isCreateNewTeamSelected(),
+                "'Create new team' should NOT be selected by default");
+        assertFalse(entryPage.isManuallyEnterSelected(),
+                "'Manually enter' should NOT be selected by default");
+        assertFalse(entryPage.isDownloadTemplateSelected(),
+                "'Download template' should NOT be selected by default");
+
+        // Quantity = 0, fields empty, payment disabled
+        assertEquals(entryPage.getNumberOfIndividuals(), 0,
+                "Quantity should default to 0 for TEAM flow");
+        assertEquals(entryPage.getGroupName(), "",
+                "Team name (group name) should be empty by default");
+        assertFalse(entryPage.isProceedToPaymentEnabled(),
+                "Proceed to payment must be disabled when fields are empty");
+
+        // Select Create new team + Manually enter + set quantity = 1
+        entryPage
+                .selectCreateNewTeam()
+                .selectManualEntry()
+                .enterNumberOfIndividuals("1");
+
+        assertTrue(entryPage.renderedEmailRows() >= 1,
+                "At least one member row should be rendered for quantity = 1");
+
+        // All row-1 fields empty
+        assertEquals(entryPage.getFirstNameAtRow(1), "",
+                "First Name in row 1 should be empty");
+        assertEquals(entryPage.getLastNameAtRow(1), "",
+                "Last Name in row 1 should be empty");
+        assertEquals(entryPage.getEmailAtRow(1), "",
+                "Email in row 1 should be empty");
+
+        // Team name still empty & payment disabled
+        assertEquals(entryPage.getGroupName(), "",
+                "Team name should still be empty at this point");
+        assertFalse(entryPage.isProceedToPaymentEnabled(),
+                "Proceed to payment must remain disabled while required fields are empty");
     }
 
 }
