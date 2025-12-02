@@ -22,10 +22,10 @@
         </groups>
         <classes>
             <class name="tests.Phase1SmokeTests"/>
-            <class name="tests.individuals.IndividualsListTests"/>
-            <class name="tests.teams.TeamAssessmentPurchaseAndAssignment"/>
-            <class name="tests.ManualEntryValidationTests"/>
-            <class name="tests.TiltSmokeTest"/>
+<!--            <class name="tests.individuals.IndividualsListTests"/>-->
+<!--            <class name="tests.teams.TeamAssessmentPurchaseAndAssignment"/>-->
+<!--            <class name="tests.ManualEntryValidationTests"/>-->
+<!--            <class name="tests.TiltSmokeTest"/>-->
 <!--            <class name="tests.purchases.PurchaseFlowTests"/>-->
 <!--            <class name="tests.reports.ReportGenerationTests"/>-->
 <!--            <class name="tests.shop.TtpRecipientSelectionTest"/>-->

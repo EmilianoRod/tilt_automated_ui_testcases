@@ -82,8 +82,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-1: Verify that newly added users receive an email notification with login instructions.
      * Uses a shared MailSlurp inbox with a unique +alias address to avoid quota limits.
      */
-//    @Test(groups = "ui-only")
-    @Test()
+    @Test(groups = "ui-only")
     @Severity(SeverityLevel.CRITICAL)
     @Story("Invite email – newly added user receives assessment invitation with CTA link")
     public void testVerifyThatNewlyAddedUsersReceiveAnEmailNotificationWithLoginInstructions() throws Exception {
@@ -129,7 +128,7 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
         PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
         sel.selectClientOrIndividual();
-//        sel.clickNext();
+        sel.clickNext();
 
         step("Manual entry for 1 individual (use the aliased MailSlurp address)");
         AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
@@ -218,7 +217,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-2: Store access-token after login.
      * Verify that the frontend stores the access-token securely after a successful login (e.g., in memory or secure storage).
      */
-//    @Test(groups = "ui-only")
+    @Test(groups = "ui-only")
     @Severity(SeverityLevel.CRITICAL)
     @Story("Auth token – JWT is stored correctly after login")
     public void testStoreAccessTokenAfterLogin() {
@@ -291,7 +290,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-3: Redirect unauthorized users to login page.
      * Ensure the frontend redirects the user to the login page when an invalid or expired token is detected.
      */
-//    @Test(groups = "ui-only")
+    @Test(groups = "ui-only")
     @Severity(SeverityLevel.CRITICAL)
     @Story("Auth guard – unauthorized or expired token redirects to login")
     public void testRedirectUnauthorizedUsersToLoginPage() {
@@ -344,7 +343,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-4: Generate access-token on successful login.
      * Verify that an access-token is issued upon successful login with valid credentials.
      */
-//    @Test(groups = "ui-only")
+    @Test(groups = "ui-only")
     @Severity(SeverityLevel.CRITICAL)
     @Story("Auth token – JWT is generated on successful login")
     public void testGenerateAccessTokenOnSuccessfu0lLogin() {
@@ -402,7 +401,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-6: Login success redirects user.
      * Upon successful OTP entry, redirect user to their dashboard or home screen.
      */
-//    @Test(groups = "ui-only")
+    @Test(groups = "ui-only")
     @Severity(SeverityLevel.NORMAL)
     @Story("Login – success path redirects to dashboard with key widgets visible")
     public void testLoginSuccessRedirectsUser() {
@@ -435,7 +434,7 @@ public class Phase1SmokeTests extends BaseTest {
     /**
      * TC-7: Redirect user appropriately post-login.
      */
-//    @Test(groups = "ui-only")
+    @Test(groups = "ui-only")
     @Severity(SeverityLevel.NORMAL)
     @Story("Login – post-login routing brings user to correct dashboard state")
     public void testRedirectUserAppropriatelyPostLogin() throws InterruptedException {
@@ -478,7 +477,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-9: Show email input field on login screen.
      * Ensure user sees a field to enter their email.
      */
-//    @Test(groups = "ui-only")
+    @Test(groups = "ui-only")
     @Severity(SeverityLevel.MINOR)
     @Story("Login UI – email field is visible on the sign-in screen")
     public void testShowEmailInputFieldOnLoginScreen() {
@@ -496,7 +495,7 @@ public class Phase1SmokeTests extends BaseTest {
      * TC-10: Redirect to dashboard on successful login.
      * After password is successfully verified, redirect the user to the dashboard page.
      */
-//    @Test(groups = "ui-only")
+    @Test(groups = "ui-only")
     @Severity(SeverityLevel.NORMAL)
     @Story("Login – dashboard route is the landing page for authenticated user")
     public void testRedirectToDashboardOnSuccessfulLogin() {
