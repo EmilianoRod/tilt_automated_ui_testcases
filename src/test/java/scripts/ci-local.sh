@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Move to project root (4 levels up from src/test/java/scripts)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+cd "$REPO_ROOT"
+echo "[ci-local] Running from project root: $REPO_ROOT"
+
+
+# Copy envs from your .env or export manually before running:
+#export MAILSLURP_API_KEY=sk_SGpxMjUdwbPpRDLs_4qruIteMSY2lfYorLHb2paRWmsoM0GLaHcMyY0vaOCKMQXAGJANOBcIYqrGPgvpt
+#export MAILSLURP_INBOX_ID=91072010-c653-408e-884b-48d435345bec
+export ADMIN_USER=erodriguez+a@effectussoftware.com
+export ADMIN_PASS=Password#1
+export BASE_URL=https://tilt-dashboard-dev.tilt365.com/
+export STRIPE_TEST_SECRET_KEY=rk_test_40W8vi2ajcXnxpjHnMcNtfePyfHiIfhP8K7DTGUcMwfbVrMqky5BTlaWDzoDhorIHlFTaM5rV0F1rh8P9fW9UliXx00lfDit7Pq
+export STRIPE_PUBLISHABLE_KEY=pk_test_40W8vi2ajcXnxpjHnMcNtdof2NpVc0vlzdpaDvaCEC4McUeiSO6AGItrEOdI8hnOYACqHUyYVyYbInMapgUHoDOgi008dvELtA5
+
+export CI=true
+export CHROME_MAJOR_PIN="${CHROME_MAJOR_PIN:-142}"
+export CI_EXPLICIT_WAIT_SEC="${CI_EXPLICIT_WAIT_SEC:-60}"
+#export MAILSLURP_EXPECTED_FP="${MAILSLURP_EXPECTED_FP:-579d2267880c}"
+
+# Account 1
+export MAILSLURP_API_KEY_1="sk_ysgWqy3VNqLRNRAU_ruK3xjb7BCqshKWwCGdLQh1N9Lf7AnECZOloLx1YeuiKX1tEzdI0uETJsgkhKeeh"
+export MAILSLURP_INBOX_ID_1="0292a132-e3b7-4484-aa11-96ef15cd8017"
+
+# Account 2
+export MAILSLURP_API_KEY_2="sk_HWurAFqz5qurzdTq_fsafW36lfdz0S9UBAP3d748IQ4MgwW1QsyXwtQbXOgCWPsAO5w97POdCYN3N11MY"
+export MAILSLURP_INBOX_ID_2="a51e71dd-1bcf-48d7-84f6-35e0c5501b6e"
+
+# Account 3
+export MAILSLURP_API_KEY_3="sk_rN2Bg1TjUjKJ6NwB_afRs0G6lmBUlM49U1Rp9rDKlnTH88t8Ba4bTr0yExSPdBcDgt7H3TId0YVaxOpSX"
+export MAILSLURP_INBOX_ID_3="e61a5065-3c0c-4b48-a459-1310b19962a5"
+
+# Account 4
+export MAILSLURP_API_KEY_4="sk_f3wLPNiQfpLwi7tD_a5KTx0DroeQmXq5RBEdMtLhqOtKrlzTIfCjOfnYXCftUdtl4KhVsRdP4CKWHa1is"
+export MAILSLURP_INBOX_ID_4="d64b58d7-3a8e-4577-9bf7-53351a2f75a1"
+
+# Account 5
+export MAILSLURP_API_KEY_5="sk_eEbnOkOpnhA7Ewgm_BlFkTXlVkVa5R5eAS3zPE1sZXGHGC6ou3OhKk5jmWBK5cLhu6RNQOMJX5VBfxYLi"
+export MAILSLURP_INBOX_ID_5="96aac200-0f6a-4a48-926d-dc69c2aa7337"
+
+# Account 6
+export MAILSLURP_API_KEY_6="sk_hqiObOHJG6ZZZMzB_Q3JyQ92nFugUSbsG6x7xKHeXEDO9SyJ06i1t6i7THq5mX7U0g3ExdNk3iIlaMNJh"
+export MAILSLURP_INBOX_ID_6="a3c129d8-3701-4a7e-9a95-4f724969afaf"
+
+# Account 7
+export MAILSLURP_API_KEY_7="sk_vjym7qonAZ9qWcyj_iMkFtd4RFP2yoh1Qyavz9Yw4O9xbsdzS6Ygg9KFx4zWmeoQ0agAyxYuMnlE7gKKH"
+export MAILSLURP_INBOX_ID_7="b7c66fd8-a087-40f2-9622-18fe933a1875"
+
+# Account 8
+export MAILSLURP_API_KEY_8="sk_fD2xZTQCoZOjNVAj_dPeZ2VB6lQe8Tl4zQYKvH0sT6eNoBNsDRkKjyyc89EnAmWoSmnkmn0nDOTzHF1Ht"
+export MAILSLURP_INBOX_ID_8="8bf4e707-f790-4488-aeea-4da98d32a205"
+
+# Account 9
+export MAILSLURP_API_KEY_9="sk_w4YAT9CKIHyCHcSa_akKS3I5sQaGRqy933MhFr1Uk0USpI4iixYGL2CbcJyeRBZ8MEGGxXmSD7l5gWDgO"
+export MAILSLURP_INBOX_ID_9="ded4f397-edd3-4dbe-a481-0985f19cdd41"
+
+# Account 10
+export MAILSLURP_API_KEY_10="sk_AKWf1iUqeCkJvEwy_cxxzpMQT8ovNHGn4bDFap8Nx2T5hjBYmk0MV85GWBRWKMAO8OWJCxVrL9ntKLPGQ"
+export MAILSLURP_INBOX_ID_10="f78743ac-534e-4f83-b036-98df7c54a285"
+
+
+
+
+# Optional: reproduce Jenkins timeout etc.
+
+
+mvn -B \
+  -Dheadless=false -Dbrowser=chrome -DskipITs=false \
+  -Dsurefire.suiteXmlFiles=testng-parallel.xml \
+  -Dmailslurp.debug=true \
+  -DdisableLocalConfig=true \
+  -DbaseUrl="$BASE_URL" \
+  -DADMIN_USER="$ADMIN_USER" \
+  -DADMIN_PASS="$ADMIN_PASS" \
+  -Dtimeout="$CI_EXPLICIT_WAIT_SEC" \
+  -Dretry=1 \
+  clean test
+
+
+
+
+#  -Dmailslurp.forceKey="$MAILSLURP_API_KEY" \
+#  -Dmailslurp.apiKey="$MAILSLURP_API_KEY" \
+#  -DMAILSLURP_INBOX_ID="$MAILSLURP_INBOX_ID" \
+#  -Dmailslurp.expectedFingerprint="$MAILSLURP_EXPECTED_FP" \
+
+
+
+
+
+
+
+# Account 1 - emilianorod14@op.xn--yaho-sqa.com, Password#1
+# Account 2 - emilianorod15@op.xn--yaho-sqa.com, Password#1
+# Account 3 - emilianorod16@op.xn--yaho-sqa.com, Password#1
+# Account 4 - emilianorod17@op.xn--yaho-sqa.com, Password#1
+# Account 5 - emilianorod18@op.xn--yaho-sqa.com, Password#1
+# Account 6 - emilianorod19@op.xn--yaho-sqa.com, Password#1
+# Account 7 - emilianorod20@op.xn--yaho-sqa.com, Password#1
+# Account 8 - emilianorod21@op.xn--yaho-sqa.com, Password#1
+# Account 9 - emilianorod22@op.xn--yaho-sqa.com, Password#1
+# Account 10 - emilianorod23@op.xn--yaho-sqa.com, Password#1
