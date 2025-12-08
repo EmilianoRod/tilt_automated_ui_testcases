@@ -1,15 +1,15 @@
 package pages.menuPages;
 
-import org.openqa.selenium.By;
-import org.openqa.selenium.TimeoutException;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
+import org.openqa.selenium.*;
 import pages.BasePage;
 import pages.Individuals.IndividualsPage;
 import pages.LoginPage;
 import pages.teams.TeamClimatePage;
 import pages.teams.TeamDetailsPage;
 import pages.teams.TeamsPage;
+
+import java.time.Duration;
+import java.time.Instant;
 
 public class DashboardPage extends BasePage{
 
@@ -78,32 +78,45 @@ public class DashboardPage extends BasePage{
 
     @Override
     public DashboardPage waitUntilLoaded() {
+        // Hard cap for the entire method
+        final Duration MAX_WAIT = Duration.ofSeconds(180);
+        final Instant deadline = Instant.now().plus(MAX_WAIT);
+
         wait.waitForDocumentReady();
         wait.waitForLoadersToDisappear();
 
-        // We need to allow multiple possible dashboard layouts.
-        // Try several “identity” elements and wait for ANY OF THEM to appear.
-
         By[] possibleDashboardMarkers = new By[] {
-                userName,                // ALWAYS present for any logged-in user
-                newAssessmentBtn,        // Appears for new OR existing users
-                myjourneyTitle,          // Appears when at least 1 assessment exists
-                welcomeText,             // Appears for brand new users
-                startTrueTiltProfile     // CTA for brand new users
+                userName,           // ALWAYS present for any logged-in user
+                newAssessmentBtn,   // Appears for new OR existing users
+                myjourneyTitle,     // Appears when at least 1 assessment exists
+                welcomeText,        // Appears for brand new users
+                startTrueTiltProfile// CTA for brand new users
         };
 
         boolean anyVisible = false;
 
         for (By locator : possibleDashboardMarkers) {
+            // How much time we still have before hitting the 180s cap?
+            Duration remaining = Duration.between(Instant.now(), deadline);
+
+            if (remaining.isZero() || remaining.isNegative()) {
+                break; // hard cap reached
+            }
+
             try {
-                wait.waitForElementVisible(locator);
+                // Use the remaining time for this particular locator
+                wait.waitForElementVisible(locator, remaining);
                 anyVisible = true;
-                break;  // if any element is visible → dashboard is considered loaded
-            } catch (Exception ignored) { }
+                break; // any marker visible → dashboard loaded
+            } catch (TimeoutException | NoSuchElementException ignored) {
+                // Try next locator within whatever time is still left
+            }
         }
 
         if (!anyVisible) {
-            throw new TimeoutException("❌ Dashboard did not load — no known markers became visible.");
+            throw new TimeoutException(
+                    "❌ Dashboard did not load within 180 seconds — no known markers became visible."
+            );
         }
 
         return this;
@@ -152,6 +165,13 @@ public class DashboardPage extends BasePage{
 
         TeamsPage teamsPage = new TeamsPage(driver).waitUntilLoaded();
         return teamsPage.openTeamClimateDetails(teamPath);
+    }
+
+
+    public DashboardPage open(String baseUrl) {
+        driver.navigate().to(baseUrl + "/dashboard");
+        waitUntilLoaded();
+        return this;
     }
 
 

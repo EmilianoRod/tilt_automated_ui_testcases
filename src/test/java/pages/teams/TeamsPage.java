@@ -399,33 +399,85 @@ public class TeamsPage extends BasePage {
         click(item);
     } // pattern mirrors your Individuals clickers
 
-    // ===== Row actions (shortcuts you’ll likely need) =====
-    /** Opens the team detail by clicking on the team name cell. */
-    /** Opens the team detail by clicking the real "View all" / team link in the row. */
+
+    /**
+     * Opens Team Details by clicking the team link in the row at 1-based index rowNumber.
+     * Example: openTeamAtRow(1) → first team in the table.
+     */
+    public TeamDetailsPage openTeamAtRow(int rowNumber) {
+        // normalize
+        if (rowNumber < 1) {
+            throw new IllegalArgumentException("Row number must be >= 1, received: " + rowNumber);
+        }
+
+        // Always start from first page for deterministic behavior
+        goToFirstPageIfPossible();
+        waitForTableSettled();
+
+        List<WebElement> rows = driver.findElements(tableRows);
+        if (rows.isEmpty()) {
+            throw new SkipException("No rows found in Teams table.");
+        }
+        if (rowNumber > rows.size()) {
+            throw new SkipException("Row " + rowNumber + " does not exist. Only " + rows.size() + " rows found.");
+        }
+
+        WebElement row = rows.get(rowNumber - 1);
+        WebElement link = teamLinkInRow(row);   // existing helper: a[href*='/dashboard/teams/']
+
+        try { scrollToElement(link); } catch (Throwable ignored) {}
+
+        try {
+            ((JavascriptExecutor) driver)
+                    .executeScript("arguments[0].scrollIntoView({block:'center'});", link);
+        } catch (Exception ignored) {}
+
+        // force same tab
+        try {
+            ((JavascriptExecutor) driver)
+                    .executeScript("arguments[0].setAttribute('target','_self');", link);
+        } catch (Exception ignored) {}
+
+        try {
+            link.click();
+        } catch (Exception e) {
+            ((JavascriptExecutor) driver)
+                    .executeScript("arguments[0].click();", link);
+        }
+
+        return new TeamDetailsPage(driver).waitUntilLoaded();
+    }
+
+
+
+   // ===== Row actions (shortcuts you’ll likely need) =====
+  /** Opens the team detail by clicking the real "View all" / team link in the row. */
     public void openTeamDetails(String teamName) {
-        Optional<WebElement> row;
+        Duration timeout = Duration.ofSeconds(45); // adjust if needed
+        WebDriverWait wait = new WebDriverWait(driver, timeout);
 
-        // If search is on the page, assume caller already filtered and try current page first
-        if (isPresent(searchInput)) {
-            row = findRowByTeamNameOnCurrentPage(teamName);
+        // Wait until the row for this team actually exists
+        WebElement row = wait.until(d -> {
+            Optional<WebElement> candidate;
 
-            // Fallback: if not found on current page (or caller didn't search), do the full scan
-            if (row.isEmpty()) {
-                row = findRowByTeamName(teamName);
+            if (isPresent(searchInput)) {
+                // If search is on the page, try current page first
+                candidate = findRowByTeamNameOnCurrentPage(teamName);
+                if (!candidate.isPresent()) {
+                    candidate = findRowByTeamName(teamName); // full scan (pagination, etc.)
+                }
+            } else {
+                candidate = findRowByTeamName(teamName);
             }
-        } else {
-            row = findRowByTeamName(teamName);
+
+            return candidate.orElse(null);  // null → WebDriverWait keeps polling
+        });
+
+        if (row == null) {
+            throw new TimeoutException("Timed out waiting for team row: " + teamName);
         }
 
-        if (row.isEmpty()) {
-            System.out.println("[TeamsPage] openTeamDetails – row NOT found for team='" + teamName + "'. Visible rows:");
-            for (String sig : getTeamNamesOnCurrentPage()) {
-                System.out.println("  - " + sig);
-            }
-            throw new NoSuchElementException("Row not found for team: " + teamName);
-        }
-
-        WebElement link = teamLinkInRow(row.get()); // <-- the "View all" / team link
+        WebElement link = teamLinkInRow(row); // <-- the "View all" / team link
 
         try {
             scrollToElement(link);

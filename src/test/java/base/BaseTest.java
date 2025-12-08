@@ -3,6 +3,7 @@ package base;
 import Utils.Config;
 import Utils.MailSlurpUtils;
 
+import Utils.StripeCheckoutHelper;
 import com.mailslurp.models.InboxDto;
 
 import io.qameta.allure.Allure;
@@ -16,12 +17,21 @@ import org.openqa.selenium.logging.LogEntries;
 import org.openqa.selenium.logging.LogEntry;
 import org.openqa.selenium.logging.LogType;
 
+import org.testng.Assert;
 import org.testng.ITestResult;
 import org.testng.SkipException;
 import org.testng.annotations.*;
 
+import pages.Individuals.IndividualsPage;
 import pages.LoginPage;
+import pages.Shop.AssessmentEntryPage;
+import pages.Shop.OrderPreviewPage;
+import pages.Shop.PurchaseRecipientSelectionPage;
+import pages.Shop.Stripe.StripeCheckoutPage;
 import pages.menuPages.DashboardPage;
+import pages.menuPages.ShopPage;
+import pages.teams.TeamDetailsPage;
+import pages.teams.TeamsPage;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -30,6 +40,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+
+import static Utils.Config.joinUrl;
+import static io.qameta.allure.Allure.step;
+import static org.testng.Assert.assertTrue;
+import static tests.teams.TeamAssessmentPurchaseAndAssignment.extractSessionIdFromUrl;
 
 public class BaseTest {
 
@@ -512,4 +527,83 @@ public class BaseTest {
                 return "UNKNOWN(" + status + ")";
         }
     }
+
+
+
+
+    /**
+     * Creates a team via the Shop flow using Stripe CLI (no UI payment).
+     * - Goes through TTP Team purchase
+     * - Creates a new team with teamName
+     * - Adds a single base user
+     * - Triggers checkout.session.completed via Stripe CLI
+     * - Lands back in app, opens the newly created team details page.
+     */
+    protected TeamDetailsPage createTeamViaShopFlow(String teamName, String baseFirst, String baseLast, String baseEmail) throws InterruptedException {
+        // 1) Login as admin
+        LoginPage login = new LoginPage(driver());
+        login.navigateTo();
+        DashboardPage dashboard = login.login(
+                Config.getAdminEmail(),
+                Config.getAdminPassword()
+        );
+        Assert.assertTrue(dashboard.isLoaded(), "Dashboard did not load after login");
+
+        // 2) Go to Shop → Buy TTP for Team
+        ShopPage shopPage = dashboard.goToShop();
+        Assert.assertTrue(shopPage.isLoaded(), "Shop page did not load");
+
+        PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
+        sel.waitUntilLoaded().selectTeam();
+        AssessmentEntryPage entry = sel.clickNext().waitUntilLoaded();
+
+        // 3) Create new team
+        entry.selectCreateNewTeam();
+        entry.setOrganizationName("Auto Org " + System.currentTimeMillis());
+        entry.setGroupName(teamName);
+
+        // 4) Add base member
+        entry.selectManualEntry();
+        entry.enterNumberOfIndividuals("1");
+        entry.fillUserDetailsAtIndex(1, baseFirst, baseLast, baseEmail);
+        Assert.assertTrue(entry.isProceedToPaymentEnabled(),
+                "'Proceed to payment' must be enabled after filling base user.");
+
+        // 5) Order preview
+        OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
+        Assert.assertTrue(preview.isLoaded(), "Order Preview did not load");
+
+        // 6) Stripe – get Checkout URL + Session ID
+        String stripeUrl = preview.proceedToStripeAndGetCheckoutUrl();
+        String sessionId = extractSessionIdFromUrl(stripeUrl); // reuse your existing helper
+        Assert.assertNotNull(sessionId, "Could not parse Stripe session id from URL");
+        System.out.println("[Stripe] checkoutUrl=" + stripeUrl + " | sessionId=" + sessionId);
+
+        // 7) Stripe – fetch metadata.body + trigger checkout.session.completed via CLI
+        String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
+        Assert.assertNotNull(bodyJson, "metadata.body not found in Checkout Session");
+        System.out.println("[Stripe] metadata.body length=" + bodyJson.length());
+
+        var trig = StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
+        System.out.println("[Stripe] Triggered eventId=" + trig.eventId +
+                (trig.requestLogUrl != null ? " | requestLog=" + trig.requestLogUrl : ""));
+
+        // 8) Back to app – order confirmation
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+
+        // 9) Open the newly created team from Teams page
+        DashboardPage dashboardPage = new DashboardPage(driver()).open(Config.getBaseUrl());
+        TeamsPage teams = dashboardPage.goToTeams().waitUntilLoaded();
+        teams.openTeamDetails(teamName);
+
+        return new TeamDetailsPage(driver()).waitUntilLoaded();
+    }
+
+
+
+
+
+
+
+
 }

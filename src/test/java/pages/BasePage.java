@@ -22,6 +22,8 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.openqa.selenium.support.ui.ExpectedConditions.visibilityOfElementLocated;
+
 /**
  * Base class for all page objects.
  * - Centralizes robust UI interactions (safe click/type/scroll).
@@ -302,11 +304,26 @@ public abstract class BasePage {
 
     protected boolean isVisible(By locator) {
         try {
-            return wait.waitForElementVisible(locator).isDisplayed();
+            new WebDriverWait(driver, Duration.ofSeconds(6))
+                    .until(ExpectedConditions.visibilityOfElementLocated(locator));
+            return true;
         } catch (TimeoutException e) {
             return false;
         }
     }
+
+
+    protected boolean isDisplayedNow(By locator) {
+        try {
+            return driver.findElements(locator)
+                    .stream()
+                    .anyMatch(WebElement::isDisplayed);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+
 
     protected boolean isPresent(By locator) {
         try {
@@ -399,7 +416,7 @@ public abstract class BasePage {
             WebDriverWait w = new WebDriverWait(driver, timeout);
             for (By locator : mustHaveLocators) {
                 try {
-                    WebElement el = w.until(ExpectedConditions.visibilityOfElementLocated(locator));
+                    WebElement el = w.until(visibilityOfElementLocated(locator));
                     if (el != null && el.isDisplayed()) return true;
                 } catch (TimeoutException ignored) { /* try next */ }
             }

@@ -2878,7 +2878,6 @@ public class IndividualsPage extends BasePage {
     }
 
 
-
     /** Always jump to page 1 explicitly */
     private void hardGoToPageOne() {
         if (!isPresent(pagination)) return;
@@ -2897,7 +2896,6 @@ public class IndividualsPage extends BasePage {
         a.click();
         waitForTableRefreshed();
     }
-
 
     private WebElement chooseBestReportLink(WebElement cell) {
         java.util.List<WebElement> links =
@@ -2966,8 +2964,6 @@ public class IndividualsPage extends BasePage {
     }
 
 
-
-
     /**
      * In the "Report Link" cell, returns the *completed* report link
      * (e.g. "TTP - 7/21/2025", "AGT - 7/21/2025"), or null if the row
@@ -3013,9 +3009,6 @@ public class IndividualsPage extends BasePage {
         return completed;
     }
 
-
-
-
     public boolean isMenuItemVisible(WebElement menuRoot, String label) {
         List<WebElement> items = menuRoot.findElements(
                 By.xpath(".//span[normalize-space()='" + label + "']")
@@ -3027,12 +3020,6 @@ public class IndividualsPage extends BasePage {
         }
         return false;
     }
-
-
-
-
-
-
 
     private int debugCurrentPage() {
         try {
@@ -3052,6 +3039,37 @@ public class IndividualsPage extends BasePage {
 
 
 
+
+    /**
+     * Counts how many rows exist for a given email in Individuals table.
+     * Useful to ensure we don't create duplicate TTP/AGT ("ghost" records).
+     */
+    public int countRowsByEmail(String email, Duration timeout) {
+        String safe = email.replace("'", "\\'");
+        By rowLocator = By.xpath(
+                "//tbody[contains(@class,'ant-table-tbody')]" +
+                        "//tr[" +
+                        " .//td[contains(normalize-space(),'" + safe + "')]" +
+                        " or .//a[contains(normalize-space(),'" + safe + "')]" +
+                        " or .//*[contains(normalize-space(),'" + safe + "')]" +
+                        "]"
+        );
+
+        WebDriverWait w = new WebDriverWait(driver, timeout);
+        // Wait until at least one row appears or timeout
+        try {
+            w.until(d -> !d.findElements(rowLocator).isEmpty());
+        } catch (TimeoutException e) {
+            // zero rows is a valid outcome, we just return 0 below
+        }
+
+        return driver.findElements(rowLocator).size();
+    }
+
+    /** Convenience overload with a default timeout. */
+    public int countRowsByEmail(String email) {
+        return countRowsByEmail(email, Duration.ofSeconds(10));
+    }
 
 
 }

@@ -11,6 +11,7 @@ import pages.Shop.PurchaseRecipientSelectionPage.Recipient;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 
@@ -31,6 +32,8 @@ public class AssessmentEntryPage extends BasePage {
     private static String lowerAlphabet = "abcdefghijklmnopqrstuvwxyz";
     private static String upperAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+    private static final Pattern ERROR_WORDS =
+            Pattern.compile("(?i)\\b(required|invalid|email|duplicate|duplicated|already\\s+exists?|already\\s+in\\s+use|in\\s+use|must|enter|missing|empty)\\b");
 
     /** Container → the radio’s wrapper lives in the same block as the visible option text. */
     private String optionContainerXp(String text) {
@@ -43,9 +46,17 @@ public class AssessmentEntryPage extends BasePage {
         );
     }
 
-
-
-
+    private static final By WHO_IS_THIS_PURCHASE_FOR_TITLE = By.xpath("//h2[normalize-space()='Who is the purchase for?']");
+    @Step("Check 'Who is the purchase for?' title is visible")
+    public boolean isWhoIsThisPurchaseForTitleVisible() {
+        try {
+            new WebDriverWait(driver, Duration.ofSeconds(8))
+                    .until(ExpectedConditions.visibilityOfElementLocated(WHO_IS_THIS_PURCHASE_FOR_TITLE));
+            return true;
+        } catch (TimeoutException e) {
+            return false;
+        }
+    }
 
 
     /** Finds the <label.ant-radio-wrapper> for a radio with the given visible text.
@@ -168,32 +179,22 @@ public class AssessmentEntryPage extends BasePage {
     }
 
 
-
-    /** Checked badge/span under that label. */
-    private By radioCheckedBadgeByText(String text) {
-        String t = text.toLowerCase();
-        return By.xpath(
-                "(" +
-                        "//label[contains(@class,'ant-radio-wrapper')" +
-                        "  and contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'" + t + "')" +
-                        "]" +
-                        " | " +
-                        "//p[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'" + t + "')]" +
-                        "/parent::div/preceding-sibling::label[contains(@class,'ant-radio-wrapper')][1]" +
-                        ")" +
-                        "//span[contains(@class,'ant-radio') and contains(@class,'ant-radio-checked')]"
-        );
+    private By radioByText(String text) {
+        String xpath =
+                "//p[normalize-space()='" + text + "']" +
+                        "/preceding-sibling::label[1]" +
+                        "//span[contains(@class,'ant-radio-inner')]";
+        return By.xpath(xpath);
     }
 
-
-
-
-
-
-
-
-
-
+    /** Checked badge/span for the radio with this label text. */
+    private By radioCheckedBadgeByText(String text) {
+        String xpath =
+                "//p[normalize-space()='" + text + "']" +
+                        "/preceding-sibling::label[1]" +
+                        "//span[contains(@class,'ant-radio') and contains(@class,'ant-radio-checked')]";
+        return By.xpath(xpath);
+    }
 
 
 
@@ -407,17 +408,6 @@ public class AssessmentEntryPage extends BasePage {
         return this;
     }
 
-
-
-
-
-
-
-
-
-
-
-
     @Step("Select 'Create new team'")
     public AssessmentEntryPage selectCreateNewTeam() {
         waitForOverlayGone(Duration.ofSeconds(2));
@@ -489,13 +479,6 @@ public class AssessmentEntryPage extends BasePage {
         waitForOverlayGone(Duration.ofSeconds(1));
         return this;
     }
-
-
-
-
-
-
-
 
 
     @Step("Enter number of individuals: {count}")
@@ -576,7 +559,6 @@ public class AssessmentEntryPage extends BasePage {
         } catch (Throwable t) { return false; }
     }
 
-
     /** Set email in a specific row by id pattern (emails.N.email). */
     @Step("Set email at row {row}: {email}")
     public AssessmentEntryPage setEmailAtRow(int row, String email) {
@@ -595,6 +577,30 @@ public class AssessmentEntryPage extends BasePage {
         return this;
     }
 
+
+    /** Clear email in a specific row by id pattern (users.N.email). */
+    @Step("Clear email at row {row}")
+    public AssessmentEntryPage clearEmailAtRow(int row) {
+        WebElement input = findEmailInput(row, Duration.ofSeconds(8));
+        if (input == null) {
+            int visible = visibleCount(emailInputs());
+            throw new NoSuchElementException("Email input not found for row " + row +
+                    " (visible email inputs: " + visible + ")");
+        }
+
+        scrollToElement(input);
+
+        // Click once to ensure focus (same as in setEmailAtRow)
+        try { input.click(); } catch (Throwable ignored) {}
+
+        // Use the same robust helper, but with empty string
+        clearAndTypeCross(input, "");  // effectively “erase” the email field
+        jsBlur(input);                 // trigger validations
+
+        return this;
+    }
+
+
     @Step("Set multiple emails quickly")
     public AssessmentEntryPage setEmailsFast(List<String> emails) {
         ensureAtLeastNRows(emails.size());
@@ -610,16 +616,43 @@ public class AssessmentEntryPage extends BasePage {
     }
 
 
-
-
     /** Get inline error text near the email input of a given row. */
     public String getEmailErrorAtRow(int row) {
         try {
             WebElement input = findEmailInput(row, Duration.ofSeconds(6));
-            return input == null ? null : nearestErrorText(input);
+            return input == null ? null : nearestErrorText2(input);
         } catch (Throwable t) {
             return null;
         }
+    }
+
+
+    /** Inline error for First Name at the given row (1-based). */
+    public String errorTextForFirstName(int row) {
+        try {
+            if (row < 1) row = 1;
+            WebElement input = nthVisible(firstNameInputs(), row);
+            return (input == null) ? null : nearestErrorText2(input);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Inline error for Last Name at the given row (1-based). */
+    public String errorTextForLastName(int row) {
+        try {
+            if (row < 1) row = 1;
+            WebElement input = nthVisible(lastNameInputs(), row);
+            return (input == null) ? null : nearestErrorText2(input);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Inline error for Email at the given row (1-based). */
+    public String errorTextForEmail(int row) {
+        // Reuse your dedicated helper so everything stays in sync
+        return getEmailErrorAtRow(row);
     }
 
 
@@ -796,10 +829,6 @@ public class AssessmentEntryPage extends BasePage {
     }
 
 
-
-
-
-
     public AssessmentEntryPage ensureAtLeastNRows(int n) {
         int have = visibleCount(emailInputs());
         if (have >= n) return this;
@@ -824,8 +853,6 @@ public class AssessmentEntryPage extends BasePage {
                 .until(d -> visibleCount(emailInputs()) >= n);
         return this;
     }
-
-
 
 
     private WebElement nthVisible(By selector, int oneBasedIndex) {
@@ -900,6 +927,110 @@ public class AssessmentEntryPage extends BasePage {
 
 
 
+
+
+
+
+
+    /** Heuristic: only treat text as an inline error if it "sounds" like one. */
+    private boolean isLikelyErrorText(String txt) {
+        if (txt == null) return false;
+        txt = txt.trim();
+        if (txt.isEmpty()) return false;
+
+        // Ignore obvious URL/path noise
+        if (txt.startsWith("/") && !txt.contains(" ")) return false;
+        if (txt.startsWith("http://") || txt.startsWith("https://")) return false;
+
+        // Ignore very short junk
+        if (txt.length() < 5) return false;
+
+        return true; // don't require magic keywords
+    }
+
+
+
+    private String nearestErrorText2(WebElement input) {
+        // 1) Tight scope: the field wrapper around this input
+        try {
+            // This matches your DOM: <div class="sc-5cac91a4-0 hiZNBv"> ... </div>
+            WebElement container = input.findElement(
+                    By.xpath("./ancestor::div[contains(@class,'hiZNBv') or contains(@class,'sc-5cac91a4-0')][1]")
+            );
+
+            WebElement err = container.findElement(
+                    By.xpath(".//span[@type='error' or contains(@class,'-error') or contains(translate(@class,'ERROR','error'),'error')]")
+            );
+
+            String txt = err.getText();
+            if (txt == null || txt.isBlank()) {
+                txt = err.getAttribute("textContent");
+            }
+            if (txt != null) {
+                txt = txt.trim();
+                if (isLikelyErrorText(txt)) {
+                    return txt;
+                }
+            }
+        } catch (NoSuchElementException ignored) {
+            // fall through to broader heuristics
+        }
+
+        // 2) Fallback: your previous “ancestor container” heuristic (kept but filtered)
+        try {
+            WebElement el = input.findElement(By.xpath(
+                    "ancestor::*[self::div or self::td][1]" +
+                            "//*[self::div or self::span or self::p]" +
+                            "[(@role='alert') or (@type='error') or " +
+                            " contains(@class,'-error') or " +
+                            " contains(translate(@class,'ERROR','error'),'error')][1]"
+            ));
+            if (el.isDisplayed()) {
+                String txt = el.getText();
+                if (txt == null || txt.isBlank()) {
+                    txt = el.getAttribute("textContent");
+                }
+                if (txt != null) {
+                    txt = txt.trim();
+                    if (isLikelyErrorText(txt)) {
+                        return txt;
+                    }
+                }
+            }
+        } catch (NoSuchElementException ignored) {}
+
+        // 3) Fallback: next-sibling-ish (still filtered)
+        try {
+            WebElement el = input.findElement(By.xpath(
+                    "following::*[self::div or self::p or self::span]" +
+                            "[(@role='alert') or (@type='error') or " +
+                            " contains(@class,'-error') or " +
+                            " contains(translate(@class,'ERROR','error'),'error')][1]"
+            ));
+            if (el.isDisplayed()) {
+                String txt = el.getText();
+                if (txt == null || txt.isBlank()) {
+                    txt = el.getAttribute("textContent");
+                }
+                if (txt != null) {
+                    txt = txt.trim();
+                    if (isLikelyErrorText(txt)) {
+                        return txt;
+                    }
+                }
+            }
+        } catch (NoSuchElementException ignored) {}
+
+        return null;
+    }
+
+
+
+
+
+
+
+
     private int safeParseInt(String s, int def) {
         try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
     }
@@ -918,7 +1049,7 @@ public class AssessmentEntryPage extends BasePage {
         try { safeClick(radioAddMembersExisting()); }
         catch (Throwable ignored) { safeClick(radioInnerByText("Add members to existing team")); }
         new WebDriverWait(driver, Duration.ofSeconds(6))
-                .until(ExpectedConditions.visibilityOfElementLocated(radioCheckedBadgeByText("Add members to existing team")));
+                .until(ExpectedConditions.visibilityOfElementLocated(radioByText("Add members to existing team")));
         waitForOverlayGone(Duration.ofSeconds(1));
         return this;
     }
@@ -963,7 +1094,7 @@ public class AssessmentEntryPage extends BasePage {
 
     /** True if 'Create new team' radio is currently selected. */
     public boolean isCreateNewTeamSelected() {
-        return isVisible(radioCheckedBadgeByText("Create new team"));
+        return isDisplayedNow(radioCheckedBadgeByText("Create new team"));
     }
 
     /** Generic blur helper to trigger validations. */
@@ -1222,15 +1353,7 @@ public class AssessmentEntryPage extends BasePage {
 
 
     public boolean isDownloadTemplateSelected() {
-        List<WebElement> radios = driver.findElements(By.xpath(
-                "//label[contains(@class,'ant-radio-wrapper')]" +
-                        "[.//span[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'download template')]]" +
-                        "//input[@type='radio']"
-        ));
-        if (radios.isEmpty()) return false; // grid mode: radio not in DOM
-        WebElement input = radios.get(0);
-        return Boolean.TRUE.equals(((JavascriptExecutor) driver).executeScript(
-                "return arguments[0].checked === true;", input));
+        return isDisplayedNow(radioCheckedBadgeByText("Download template"));
     }
 
 
@@ -1702,13 +1825,28 @@ public class AssessmentEntryPage extends BasePage {
 
     /** True if 'Add members to existing team' is selected. */
     public boolean isAddMembersExistingSelected() {
-        return isVisible(radioCheckedBadgeByText("Add members to existing team"));
+        return isDisplayedNow(radioCheckedBadgeByText("Add members to existing team"));
     }
 
     /** True if 'Manually enter' is selected. */
     public boolean isManuallyEnterSelected() {
-        return isVisible(radioCheckedBadgeByText("Manually enter"));
+        return isDisplayedNow(radioCheckedBadgeByText("Manually enter"));
     }
+
+
+    @Step("Click Cancel")
+    public void clickCancel() {
+        safeClick(By.xpath("//button[normalize-space()='Cancel' or .//span[normalize-space()='Cancel']]"));
+        wait.waitForDocumentReady();
+        wait.waitForLoadersToDisappear();
+    }
+
+
+
+
+
+
+
 
 
 

@@ -11,13 +11,14 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import static base.BaseTest.driver;
 import static org.openqa.selenium.support.ui.ExpectedConditions.*;
 
 public class WaitUtils {
 
-    private final WebDriver driver;
+    private static WebDriver driver = driver();
     private final WebDriverWait wait;
-    private final Duration defaultTimeout;
+    private static Duration defaultTimeout = Duration.ofSeconds(30);
 
     /** Single union selector for overlays/spinners/backdrops (faster than N separate waits). */
     private static final String LOADER_UNION_CSS =
@@ -30,14 +31,14 @@ public class WaitUtils {
     // ✅ FIXED: use Duration.max instead of Math.max (implemented via compareTo)
     public WaitUtils(WebDriver driver, Duration timeout) {
         this.driver = driver;
-        this.defaultTimeout = Duration.ofSeconds(3).compareTo(timeout) > 0
+        defaultTimeout = Duration.ofSeconds(3).compareTo(timeout) > 0
                 ? Duration.ofSeconds(3)
                 : timeout;
         this.wait = baseWait(defaultTimeout);
     }
 
-    private WebDriverWait baseWait(Duration timeout) {
-        WebDriverWait w = new WebDriverWait(driver, timeout);
+    private static WebDriverWait baseWait(Duration timeout) {
+        WebDriverWait w = new WebDriverWait(driver(), timeout);
         w.pollingEvery(Duration.ofMillis(200));
         w.ignoring(StaleElementReferenceException.class)
                 .ignoring(NoSuchElementException.class)
@@ -87,6 +88,8 @@ public class WaitUtils {
         }
     }
 
+
+
     // ---------- Visibility / Clickability ----------
     public WebElement waitForElementVisible(By locator) {
         return until(visibilityOfElementLocated(locator));
@@ -134,15 +137,15 @@ public class WaitUtils {
     }
 
     public WebElement waitForElementClickable(By locator) {
-        return until(elementToBeClickable(locator));
+        return until(elementToBeClickable(locator), Duration.ofSeconds(180));
     }
 
     public WebElement waitForElementClickable(WebElement element) {
-        return until(elementToBeClickable(element));
+        return until(elementToBeClickable(element),Duration.ofSeconds(180));
     }
 
     public boolean waitForElementInvisible(By locator) {
-        return until(invisibilityOfElementLocated(locator));
+        return until(invisibilityOfElementLocated(locator), Duration.ofSeconds(180));
     }
 
     public boolean waitForElementInvisible(WebElement element) {
@@ -175,17 +178,17 @@ public class WaitUtils {
 
     // ---------- URL / Title ----------
     public boolean waitForUrlContains(String partialUrl) {
-        return until(ExpectedConditions.urlContains(partialUrl));
+        return until(urlContains(partialUrl), Duration.ofSeconds(180));
     }
 
     public boolean waitForTitleContains(String partialTitle) {
-        return until(ExpectedConditions.titleContains(partialTitle));
+        return until(titleContains(partialTitle), Duration.ofSeconds(180));
     }
 
     public boolean waitForUrlContains(String partialUrl, long timeoutSec) {
         try {
             return baseWait(Duration.ofSeconds(timeoutSec))
-                    .until(ExpectedConditions.urlContains(partialUrl));
+                    .until(urlContains(partialUrl));
         } catch (TimeoutException e) {
             attachWaitScreenshot("urlContains('" + partialUrl + "')");
             throw new RuntimeException("❌ Timeout waiting for URL to contain: " + partialUrl, e);
@@ -202,7 +205,7 @@ public class WaitUtils {
         } catch (Exception ignored) {}
     }
 
-    public void waitForLoadersToDisappear() {
+    public static void waitForLoadersToDisappear() {
         try {
             baseWait(defaultTimeout).until(d -> {
                 List<WebElement> overlays = d.findElements(By.cssSelector(LOADER_UNION_CSS));
@@ -303,7 +306,7 @@ public class WaitUtils {
 
     public WebDriver waitForFrameAndSwitch(By frameLocator) {
         try {
-            return wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(frameLocator));
+            return wait.until(frameToBeAvailableAndSwitchToIt(frameLocator));
         } catch (TimeoutException e) {
             attachWaitScreenshot("frameToBeAvailableAndSwitchToIt(" + frameLocator + ")");
             throw new RuntimeException("❌ Timeout waiting for frame: " + frameLocator, e);
@@ -312,7 +315,7 @@ public class WaitUtils {
 
     public void waitForFrameAndSwitch(WebElement frame) {
         try {
-            baseWait(defaultTimeout).until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(frame));
+            baseWait(defaultTimeout).until(frameToBeAvailableAndSwitchToIt(frame));
         } catch (TimeoutException e) {
             attachWaitScreenshot("frameToBeAvailableAndSwitchToIt(WebElement)");
             throw new RuntimeException("❌ Timeout waiting for frame(WebElement)", e);
@@ -321,7 +324,7 @@ public class WaitUtils {
 
     public WebDriver waitForFrameAndSwitch(int index) {
         try {
-            return wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(index));
+            return wait.until(frameToBeAvailableAndSwitchToIt(index));
         } catch (TimeoutException e) {
             attachWaitScreenshot("frameToBeAvailableAndSwitchToIt(index=" + index + ")");
             throw new RuntimeException("❌ Timeout waiting for frame index: " + index, e);
@@ -334,7 +337,7 @@ public class WaitUtils {
             w.pollingEvery(Duration.ofMillis(200));
             w.ignoring(StaleElementReferenceException.class)
                     .ignoring(NoSuchElementException.class);
-            w.until(ExpectedConditions.visibilityOfElementLocated(by));
+            w.until(visibilityOfElementLocated(by));
             return true;
         } catch (TimeoutException e) {
             return false;
@@ -352,7 +355,7 @@ public class WaitUtils {
     public static WebElement waitExactText(WebDriver d, By scope, String text, Duration t) {
         String xp = ".//*[self::p or self::span or self::div or self::label or self::strong]"
                 + "[normalize-space(.)=" +
-                org.openqa.selenium.By.xpath("'" + text + "'").toString().replace("By.xpath: ", "") +
+                By.xpath("'" + text + "'").toString().replace("By.xpath: ", "") +
                 "]";
         return new WebDriverWait(d, t).until(w -> w.findElement(scope).findElement(By.xpath(xp)));
     }
@@ -403,10 +406,21 @@ public class WaitUtils {
     public boolean waitForInvisibility(By locator) {
         try {
             return baseWait(defaultTimeout)
-                    .until(ExpectedConditions.invisibilityOfElementLocated(locator));
+                    .until(invisibilityOfElementLocated(locator));
         } catch (TimeoutException e) {
             attachWaitScreenshot("invisibilityOfElementLocated(" + locator + ")");
             return false;
         }
     }
+
+
+    // ---------- Visibility / Clickability ----------
+
+    public WebElement waitForElementVisible(By locator, Duration timeout) {
+        return until(visibilityOfElementLocated(locator), timeout);
+    }
+
+
+
+
 }

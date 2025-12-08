@@ -109,6 +109,19 @@ public class OrderPreviewPage extends BasePage {
     );
 
 
+    // ===== Inline error helpers (TEAM purchase submit failure) =====
+
+    // Primary: standard alert / error containers used in the app
+    private static final By INLINE_ERROR_PRIMARY = By.cssSelector(
+            ".ant-alert, [role='alert'], [data-test='error'], [data-testid='error']"
+    );
+
+    // Fallback: any visible text mentioning failure / error / try again
+    private static final By INLINE_ERROR_FALLBACK = By.xpath(
+            "//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'failed') " +
+                    "   or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'error') " +
+                    "   or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'try again')]"
+    );
 
     // Any row that has a checkbox-ish control (native or ARIA)
 
@@ -1132,7 +1145,48 @@ public class OrderPreviewPage extends BasePage {
 
 
 
+    @Step("Read inline error text on Order Preview (if any)")
+    public String readInlineErrorText() {
+        // 1) Try primary containers
+        String text = readFirstVisibleText(INLINE_ERROR_PRIMARY);
+        if (!text.isBlank()) return text;
 
+        // 2) Fallback to generic 'failed/error/try again' texts
+        text = readFirstVisibleText(INLINE_ERROR_FALLBACK);
+        return text.trim();
+    }
+
+    @Step("Check if any inline error is visible on Order Preview")
+    public boolean hasInlineError() {
+        return !readInlineErrorText().isBlank();
+    }
+
+    // Small helper: first visible element's text for a locator (no hardcoding in tests)
+    private String readFirstVisibleText(By locator) {
+        try {
+            for (WebElement el : driver.findElements(locator)) {
+                try {
+                    if (!el.isDisplayed()) continue;
+                    String txt = String.valueOf(el.getText()).trim();
+                    if (!txt.isEmpty()) return txt;
+                } catch (StaleElementReferenceException ignored) {
+                    // try next
+                }
+            }
+        } catch (Exception ignored) {
+            // best-effort
+        }
+        return "";
+    }
+
+
+
+
+    /** Is the 'Pay With Stripe' button visible on the Order Preview? */
+    public boolean isPayWithStripeVisible() {
+        waitForOverlayGone(Duration.ofSeconds(3));
+        return isElementVisible(BTN_PAY_WITH_STRIPE);
+    }
 
 
 

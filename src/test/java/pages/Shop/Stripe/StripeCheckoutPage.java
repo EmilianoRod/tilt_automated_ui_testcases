@@ -15,8 +15,13 @@ public class StripeCheckoutPage extends BasePage {
     public StripeCheckoutPage(WebDriver driver) { super(driver); }
 
     @Override
-    public BasePage waitUntilLoaded() {
-        return null;
+    public StripeCheckoutPage waitUntilLoaded() {
+        WaitUtils.waitForDocumentReady(driver);
+        // wait until the email field (Stripe checkout) is visible
+        By emailBox = By.cssSelector("input[type='email'], input[name='email'], input[autocomplete='email']");
+        new WebDriverWait(driver, Duration.ofSeconds(20))
+                .until(ExpectedConditions.visibilityOfElementLocated(emailBox));
+        return this;
     }
 
     // Local wait just for Stripe flows

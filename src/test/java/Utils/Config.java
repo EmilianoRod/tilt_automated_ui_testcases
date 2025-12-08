@@ -353,4 +353,9 @@ public final class Config {
             // best-effort
         }
     }
+
+    public static String getExistingTeamUserEmail() {
+        return "erodriguez@effectussoftware.com";
+    }
+
 }
