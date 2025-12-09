@@ -3,7 +3,7 @@
        verbose="1"
        preserve-order="true"
        parallel="methods"
-       thread-count="12">
+       thread-count="16">
 
     <listeners>
         <!-- Your custom listeners -->
@@ -36,6 +36,8 @@
             <class name="tests.OrderPreviewCouponFlowTests"/>
             <class name="tests.OrderPreviewSmokeTests"/>
             <class name="tests.ManualEntryValidationTests"/>
+
+
 
 
             <!-- add more classes as needed -->

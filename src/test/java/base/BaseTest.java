@@ -40,6 +40,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;   // ✅ NEW
 
 import static Utils.Config.joinUrl;
 import static io.qameta.allure.Allure.step;
@@ -54,6 +55,10 @@ public class BaseTest {
     protected static volatile InboxDto fixedInbox;
 
     private static final ThreadLocal<Long> START = new ThreadLocal<>();
+
+    // ✅ NEW: simple concurrency counters to see how many tests really run in parallel
+    private static final AtomicInteger CURRENT_CONCURRENCY = new AtomicInteger(0);
+    private static final AtomicInteger MAX_CONCURRENCY = new AtomicInteger(0);
 
     // =====================================================================
     // ALLURE SUITE HIERARCHY
@@ -221,6 +226,22 @@ public class BaseTest {
         normalizeViewport(d);
 
         START.set(System.currentTimeMillis());
+
+        // ✅ NEW: log thread + concurrency on test start
+        int current = CURRENT_CONCURRENCY.incrementAndGet();
+        MAX_CONCURRENCY.updateAndGet(prev -> Math.max(prev, current));
+
+        long threadId = Thread.currentThread().getId();
+        String threadName = Thread.currentThread().getName();
+        logger.info("▶▶ [THREAD {} | {}] START test: {}.{} | concurrent={} (max={})",
+                threadId,
+                threadName,
+                method.getDeclaringClass().getSimpleName(),
+                method.getName(),
+                current,
+                MAX_CONCURRENCY.get()
+        );
+
         logger.info("========== STARTING TEST: {} ==========", method.getName());
     }
 
@@ -231,6 +252,17 @@ public class BaseTest {
     public void tearDown(ITestResult result) {
         Long st = START.get();
         double secs = st == null ? 0.0 : (System.currentTimeMillis() - st) / 1000.0;
+
+        long threadId = Thread.currentThread().getId();
+        String threadName = Thread.currentThread().getName();
+
+        logger.info("◀◀ [THREAD {} | {}] END test: {} → {} ({}s)",
+                threadId,
+                threadName,
+                result.getMethod().getMethodName(),
+                statusToString(result.getStatus()),
+                secs
+        );
 
         logger.info("========== FINISHED TEST: {} ({}s) ==========",
                 result.getMethod().getMethodName(), secs);
@@ -251,7 +283,17 @@ public class BaseTest {
             }
         } catch (Throwable t) {
             logger.warn("[Teardown] Cleanup suppressed: {}", t.getMessage());
+        } finally {
+            // ✅ NEW: decrement concurrency counter
+            int current = CURRENT_CONCURRENCY.decrementAndGet();
+            logger.debug("[Concurrency] After {} → current={}", result.getMethod().getMethodName(), current);
         }
+    }
+
+    // ✅ NEW: at the end of the suite, log the max concurrency actually reached
+    @AfterSuite(alwaysRun = true)
+    public void logMaxConcurrency() {
+        logger.info("🌐 Max concurrent tests during this run: {}", MAX_CONCURRENCY.get());
     }
 
     // =====================================================================
