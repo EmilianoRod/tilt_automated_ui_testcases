@@ -3,7 +3,7 @@
        verbose="1"
        preserve-order="true"
        parallel="methods"
-       thread-count="26">
+       thread-count="14">
 
     <listeners>
         <!-- Your custom listeners -->
