@@ -272,6 +272,87 @@ public final class Config {
         return getAny("MAILSLURP_INBOX_ID", "mailslurp.inboxId");
     }
 
+
+
+
+
+
+
+
+    /**
+     * Optional: pool of MailSlurp API keys for quota rotation.
+     * Reads env/props like:
+     *   MAILSLURP_API_KEY_1, mailslurp.apiKey.1
+     *   MAILSLURP_API_KEY_2, mailslurp.apiKey.2
+     *   ...
+     */
+    public static List<String> getMailSlurpApiKeyPool() {
+        List<String> result = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            String key = getAny(
+                    "MAILSLURP_API_KEY_" + i,
+                    "mailslurp.apiKey." + i
+            );
+            if (key != null && !key.isBlank()) {
+                result.add(key.trim());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Optional: pool of fixed inbox IDs matching the API key pool by index.
+     * Example:
+     *   MAILSLURP_INBOX_ID_1 / mailslurp.inboxId.1
+     *   MAILSLURP_INBOX_ID_2 / mailslurp.inboxId.2
+     */
+    public static List<String> getMailSlurpFixedInboxPool() {
+        List<String> result = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            String id = getAny(
+                    "MAILSLURP_INBOX_ID_" + i,
+                    "mailslurp.inboxId." + i
+            );
+            if (id != null && !id.isBlank()) {
+                result.add(id.trim());
+            }
+        }
+        return result;
+    }
+
+
+    // --- MailSlurp numbered helpers (for pool rotation) ---
+
+    /**
+     * Get a specific MailSlurp API key by index:
+     *  MAILSLURP_API_KEY_1 / mailslurp.apiKey.1
+     *  MAILSLURP_API_KEY_2 / mailslurp.apiKey.2
+     *  ...
+     */
+    public static String getMailSlurpApiKeyByNumber(int n) {
+        return getAny(
+                "MAILSLURP_API_KEY_" + n,
+                "mailslurp.apiKey." + n
+        );
+    }
+
+    /**
+     * Get a specific fixed MailSlurp inbox id by index:
+     *  MAILSLURP_INBOX_ID_1 / mailslurp.inboxId.1
+     *  MAILSLURP_INBOX_ID_2 / mailslurp.inboxId.2
+     *  ...
+     */
+    public static String getMailSlurpInboxIdByNumber(int n) {
+        return getAny(
+                "MAILSLURP_INBOX_ID_" + n,
+                "mailslurp.inboxId." + n
+        );
+    }
+
+
+
+
+
     /* ===========================
      * Misc quick getters
      * =========================== */

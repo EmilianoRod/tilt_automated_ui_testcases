@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <!-- ========================================================= -->
-    <!-- 🔧 PROJECT PROPERTIES -->
+    <!--  PROJECT PROPERTIES -->
     <!-- ========================================================= -->
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -24,8 +24,8 @@
         <surefire.version>3.2.5</surefire.version>
 
         <!-- Allure -->
-        <allure.version>2.27.0</allure.version> <!-- ✅ centralize Allure version -->
-        <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory> <!-- ✅ match TestListener -->
+        <allure.version>2.27.0</allure.version> <!--  centralize Allure version -->
+        <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory> <!--  match TestListener -->
 
         <!-- Default knobs (override via CLI or Jenkins env) -->
         <timeout>20000</timeout>
@@ -35,7 +35,7 @@
     </properties>
 
     <!-- ========================================================= -->
-    <!-- ⚙️ BUILD -->
+    <!--  BUILD -->
     <!-- ========================================================= -->
     <build>
         <plugins>
@@ -79,7 +79,7 @@
                         <suiteXmlFile>testng-smoke.xml</suiteXmlFile>
                     </suiteXmlFiles>
 
-                    <!-- 🔗 Pass-through for local + Jenkins -->
+                    <!-- Pass-through for local + Jenkins -->
                     <systemPropertyVariables>
                         <mailslurp.apiKey>${mailslurp.apiKey}</mailslurp.apiKey>
                         <MAILSLURP_INBOX_ID>${MAILSLURP_INBOX_ID}</MAILSLURP_INBOX_ID>
@@ -99,7 +99,7 @@
                         <chrome.binary>${chrome.binary}</chrome.binary>
                         <wdm.browserVersion>${wdm.browserVersion}</wdm.browserVersion>
 
-                        <!-- ✅ Allure: make adapter + listeners agree on the same folder -->
+                        <!--  Allure: make adapter + listeners agree on the same folder -->
                         <allure.results.directory>${allure.results.directory}</allure.results.directory>
                     </systemPropertyVariables>
 
@@ -116,7 +116,7 @@
                 <artifactId>allure-maven</artifactId>
                 <version>2.12.0</version>
                 <configuration>
-                    <!-- ✅ Use the same directory as the adapter & TestListener -->
+                    <!--  Use the same directory as the adapter & TestListener -->
                     <resultsDirectory>${allure.results.directory}</resultsDirectory>
                 </configuration>
             </plugin>
@@ -124,7 +124,7 @@
     </build>
 
     <!-- ========================================================= -->
-    <!-- 📦 DEPENDENCIES -->
+    <!-- DEPENDENCIES -->
     <!-- ========================================================= -->
     <dependencies>
         <!-- Selenium -->

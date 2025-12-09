@@ -1161,36 +1161,7 @@ public class AddTeamMemberFlows extends BaseTest {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    @Test(groups = {"teams", "add-member", "ux-fix-aug-2025"})
+    @Test(groups = {"teams", "add-member"})
     @Severity(SeverityLevel.CRITICAL)
     @Story("TC12 – Already in team (duplicate add)")
     public void testDuplicateAdd_AlreadyInTeamBlocked() throws Exception {
@@ -1228,7 +1199,10 @@ public class AddTeamMemberFlows extends BaseTest {
 
         teamDetails
                 .clickModalCreateNewUser()
-                .fillModalNewUser(duplicateFirst, duplicateLast, duplicateEmail);
+                .fillModalNewUser(duplicateFirst, duplicateLast, duplicateEmail)
+                .clickModalContinue();
+
+
 
         // Expect inline validation
         Assert.assertTrue(
@@ -1269,6 +1243,322 @@ public class AddTeamMemberFlows extends BaseTest {
                 "Original base member should still be present."
         );
     }
+
+
+    @Test(groups = {"teams", "add-member"})
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("TC13 – Exists in org but in different team")
+    public void testExistingEntitledUserFromOtherTeam_NoPurchase() throws Exception {
+
+        String uuid = String.valueOf(System.currentTimeMillis());
+
+        // -------------------------------------
+        // 1) Test data
+        // -------------------------------------
+        // Existing user in the org, already entitled and already in some other team.
+        final String entitledName  = "Emiliano Rodriguez Tejera";
+        final String entitledEmail = "erodriguez@effectussoftware.com";
+
+        // Fresh team where we will add that existing user
+        final String teamName  = "UXFixOtherTeam-" + uuid;
+        final String baseEmail = "base+" + uuid + "@example.com";
+
+        // -------------------------------------
+        // 2) Precondition – create a fresh team via Shop
+        // -------------------------------------
+        TeamDetailsPage teamDetails = createTeamViaShopFlow(
+                teamName,
+                "Base",
+                "User",
+                baseEmail
+        ).waitUntilLoaded();
+
+        Assert.assertTrue(teamDetails.isLoaded(), "Team Details page did not load for newly created team.");
+
+        final int initialMemberCount = teamDetails.getMemberCount();
+        System.out.println("[Team] Initial member count for " + teamName + " = " + initialMemberCount);
+
+        // Base member is present
+        Assert.assertTrue(
+                teamDetails.isMemberListedByEmail(baseEmail),
+                "Precondition failed: base member email not present in team."
+        );
+
+        // Entitled user must NOT yet be in this team
+        Assert.assertFalse(
+                teamDetails.isMemberListedByEmail(entitledEmail),
+                "Precondition failed: entitled user already present in this team."
+        );
+
+        // -------------------------------------
+        // 3) Open Add Team Member for this team
+        // -------------------------------------
+        teamDetails.openAddTeamMemberModal();
+        Assert.assertTrue(teamDetails.isAddTeamMemberModalOpen(),
+                "Add Team Member modal should be open.");
+
+        // -------------------------------------
+        // 4) Search and select the existing entitled user
+        // -------------------------------------
+        teamDetails
+                .typeInExistingUserSearch(entitledName)
+                .selectFirstExistingUserFromResults();
+
+        // After selecting an existing user, we should see the product cards view
+        Assert.assertTrue(
+                teamDetails.isProductSelectionStepVisible(),
+                "Expected product cards (TTP/AGT) to be visible for existing entitled user."
+        );
+
+        // At least one of the products should show "Retake available" / similar entitlement chip
+        Assert.assertTrue(
+                teamDetails.hasAnyRetakeAvailableProduct(),
+                "Expected at least one product card to show 'Retake available' for entitled user."
+        );
+
+        // No purchase path: there must NOT be a 'Continue to purchase' CTA
+        Assert.assertFalse(
+                teamDetails.isContinueToPurchaseVisible(),
+                "'Continue to purchase' must NOT be visible for an entitled existing user."
+        );
+
+        // Bottom CTA should let us add the user directly (no shop/Stripe)
+        Assert.assertTrue(
+                teamDetails.isAddMemberButtonEnabled(),
+                "'Add user' / 'Add Member' button should be enabled after selecting existing entitled user."
+        );
+
+        // -------------------------------------
+        // 5) Add the existing user to this team (no purchase)
+        // -------------------------------------
+        teamDetails
+                .clickModalAddMemberOrUser()
+                .waitForAddMemberModalToClose();
+
+        Assert.assertTrue(
+                teamDetails.isLoaded(),
+                "Team Details page should still be loaded after closing Add Team Member modal."
+        );
+
+        // -------------------------------------
+        // 6) Validate results – user added, no purchase path used
+        // -------------------------------------
+        final int finalMemberCount = teamDetails.getMemberCount();
+        System.out.println("[Team] Final member count for " + teamName + " = " + finalMemberCount);
+
+        // Member count increased by exactly 1
+        Assert.assertEquals(
+                finalMemberCount,
+                initialMemberCount + 1,
+                "Member count should increase by 1 after adding an existing entitled user from another team."
+        );
+
+        // The entitled user must now appear in the team table
+        teamDetails.waitForMemberByEmail(entitledEmail, Duration.ofSeconds(30));
+
+        String status = teamDetails.getMemberStatusByEmail(entitledEmail);
+        Assert.assertNotNull(status, "Expected a non-null status for the entitled user added to the team.");
+        Assert.assertFalse(status.isBlank(), "Expected a non-blank status for the entitled user added to the team.");
+
+        System.out.println("[Team] Status for existing entitled user " + entitledEmail + " = " + status);
+
+        // Optional: log if any report links exist for evidence
+        boolean hasAnyReportLink = false;
+        try {
+            hasAnyReportLink = teamDetails.memberRowHasAnyReportLink(entitledEmail);
+        } catch (Exception ignore) {
+            // OK if they are pending / no links yet.
+        }
+        System.out.println("[Team] memberRowHasAnyReportLink(" + entitledEmail + ") = " + hasAnyReportLink);
+
+        // Key guarantee for TC13:
+        // - We saw entitlement/retake cards
+        // - There was NO 'Continue to purchase' button
+        // - We added the user via 'Add user' only
+        // → therefore "no purchase if entitled" is enforced while still allowing cross-team add.
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    @Test(groups = {"teams", "add-member", "ux-fix-aug-2025"})
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("TC14 – Email correction prior issue regression")
+    public void testEmailCorrection_NoGhostTtp_NoDuplicate_NoSideEffects() throws Exception {
+
+        String uuid = String.valueOf(System.currentTimeMillis());
+
+        // -------------------------------------
+        // MailSlurp setup – use fixed inbox + alias
+        // -------------------------------------
+        final InboxDto inbox = BaseTest.requireInboxOrSkip();
+        String baseInboxEmail = inbox.getEmailAddress();
+        String aliasTag = "tc14-" + uuid;
+
+        // These both route into the same MailSlurp inbox, but are different addresses
+        String wrongEmail     = MailSlurpUtils.addPlusAlias(baseInboxEmail, aliasTag + "-wrong");
+        String correctedEmail = MailSlurpUtils.addPlusAlias(baseInboxEmail, aliasTag + "-corrected");
+
+        String firstName = "TC14User";
+        String lastName  = "Test";
+
+        // -------------------------------------
+        // 0) Precondition → Create fresh team
+        // -------------------------------------
+        TeamDetailsPage details = createTeamViaShopFlow(
+                "TC14Team-" + uuid,
+                "Base",
+                "User",
+                MailSlurpUtils.addPlusAlias(baseInboxEmail, aliasTag + "-owner")
+        ).waitUntilLoaded();
+
+        Assert.assertTrue(details.isLoaded(), "Team page must be loaded.");
+
+        // -------------------------------------
+        // 1) Add new user (wrong email) → Continue → Purchase TTP
+        // -------------------------------------
+        details.openAddTeamMemberModal();
+
+        details.clickModalCreateNewUser()
+                .fillModalNewUser(firstName, lastName, wrongEmail)
+                .clickModalContinue();
+
+        // Must show product selection
+        Assert.assertTrue(
+                details.isProductSelectionStepVisible(),
+                "Product selection must be visible for new user."
+        );
+
+        details.selectTrueTiltProductForMember();
+        Assert.assertTrue(details.isContinueToPurchaseVisible());
+
+        details.clickContinueToPurchase();
+
+        // Stripe handoff
+        new WebDriverWait(driver(), Duration.ofSeconds(20))
+                .until(ExpectedConditions.urlContains("/dashboard/shop"));
+
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver());
+        OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
+
+        // Get Stripe session + simulate success
+        String checkoutUrl = preview.proceedToStripeAndGetCheckoutUrl();
+        String sessionId   = extractSessionIdFromUrl(checkoutUrl);
+        Assert.assertNotNull(sessionId, "Stripe sessionId must be extracted");
+
+        String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
+        StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
+
+        // redirect to confirmation
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+
+        // -------------------------------------
+        // 2) Navigate back → Team Details → Verify user added
+        // -------------------------------------
+        DashboardPage dash = new DashboardPage(driver())
+                .open(Config.getBaseUrl())
+                .waitUntilLoaded();
+
+        TeamsPage teams = dash.goToTeams().waitUntilLoaded();
+        teams.openTeamDetails("TC14Team-" + uuid);
+
+        TeamDetailsPage post = new TeamDetailsPage(driver()).waitUntilLoaded();
+
+        post.waitForMemberByEmail(wrongEmail, Duration.ofSeconds(20));
+        Assert.assertEquals(post.getMemberStatusByEmail(wrongEmail), "Pending");
+
+        int countBeforeEdit = post.getMemberCount();
+
+        // -------------------------------------
+        // 3) EDIT USER EMAIL
+        // -------------------------------------
+        post.clickEditInfoForMember(wrongEmail);
+        post.waitForEditModal();
+
+        post.fillEditEmail(correctedEmail);
+        post.clickEditSave();
+
+        // -------------------------------------
+        // 4) VALIDATE EMAIL CHANGED CORRECTLY
+        // -------------------------------------
+        post.waitForMemberByEmail(correctedEmail, Duration.ofSeconds(20));
+
+        Assert.assertFalse(
+                post.isMemberListedByEmail(wrongEmail),
+                "Old email should no longer appear after correction."
+        );
+
+        Assert.assertEquals(
+                post.getMemberCount(),
+                countBeforeEdit,
+                "No duplicate or ghost member should be created when editing email."
+        );
+
+        // Status must remain Pending
+        Assert.assertEquals(
+                post.getMemberStatusByEmail(correctedEmail),
+                "Pending",
+                "Status must remain Pending after email correction."
+        );
+
+        // -------------------------------------
+        // 5) VALIDATE NO GHOST TTP / NO NEW REPORT LINKS
+        // -------------------------------------
+        Assert.assertFalse(
+                post.memberRowHasAnyReportLink(correctedEmail),
+                "Corrected user should NOT suddenly get any completed report link."
+        );
+
+        // -------------------------------------
+        // 6) VALIDATE SEND REMINDER MODAL STILL WORKS
+        // -------------------------------------
+        post.clickSendReminderForMember(correctedEmail);
+        Assert.assertTrue(
+                post.isSendReminderModalVisible(),
+                "Send Reminder modal must open normally (regression fix)."
+        );
+        post.clickSendReminderCancel();
+
+        // -------------------------------------
+        // 7) MAILSLURP ASSERTION – NO NEW EMAIL SENT AFTER EDIT
+        // -------------------------------------
+        Email unexpected = MailSlurpUtils.waitForNoNewEmail(
+                inbox.getId(),
+                Duration.ofSeconds(15)
+        );
+
+        Assert.assertNull(
+                unexpected,
+                "No new invitation email should be sent after editing the user email."
+        );
+    }
+
+
 
 
 

@@ -1,11 +1,11 @@
 package pages.teams;
 
 import org.openqa.selenium.*;
+import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import pages.BasePage;
 import pages.reports.ReportSummaryPage;
-
 
 import java.time.Duration;
 import java.util.List;
@@ -14,11 +14,8 @@ import static base.BaseTest.logger;
 
 public class TeamDetailsPage extends BasePage {
 
-
-
     private static final String TTP_TITLE = "True Tilt Personality Profile";
     private static final String AGT_TITLE = "Agility Growth Tracker";
-
 
     // ===== Existing locators =====
 
@@ -59,7 +56,7 @@ public class TeamDetailsPage extends BasePage {
     private static final By SELECTED_MEMBER_NAME =
             By.xpath("(//h2[@class='sc-3d430a05-16 etUKww'])[1]");
 
-    // Optional: selected member Tilt label (not used in SM12 but handy)
+    // Optional: selected member Tilt label
     private static final By SELECTED_MEMBER_TILT =
             By.xpath("(//div[@class='sc-3d430a05-14 ePuJja'])[1]");
 
@@ -74,45 +71,239 @@ public class TeamDetailsPage extends BasePage {
     private static final By NO_DATA_PLACEHOLDER =
             By.xpath("//*[contains(@class,'ant-empty') or contains(@class,'ant-table-placeholder')]");
 
+    // ===== Add Team Member modal locators =====
 
-
-
-    // MODAL LOCATORS
     private static final By MODAL_ROOT = By.xpath("//div[@role='dialog']");
     private static final By MODAL_HEADER_ADD_TEAM_MEMBER = By.xpath("//div[contains(text(),'Add Team Member')]");
     private static final By MODAL_CANCEL_BUTTON1 = By.xpath("(//button[normalize-space()='Cancel'])[1]");
     private static final By MODAL_CANCEL_BUTTON2 = By.xpath("(//button[normalize-space()='Cancel'])[2]");
     private static final By MODAL_CLOSE_BUTTON = By.xpath("//button[@aria-label='Close']");
     private static final By MODAL_CREATE_NEW_USER_BUTTON = By.xpath("//button[normalize-space()='Create New User']");
-    private static final By MODAL_SEARCH_EXISTENT_USER_BY_NAME_INPUT_SEARCHBAR = By.xpath("//input[@placeholder='Click to write user name']");
-    private static final By MODAL_SEARCH_EXISTENT_USER_BY_NAME_LIST_WITH_USER_EXPANDED = By.xpath("//body/div/div/div/div[@role='dialog']/div/div/div/div[@direction='column']/div/div[2]");
-    private static final By MODAL_DELETE_SEARCH_BUTTON = By.xpath("//*[name()='rect' and contains(@width,'21')]");
+    private static final By MODAL_SEARCH_EXISTENT_USER_BY_NAME_INPUT_SEARCHBAR =
+            By.xpath("//input[@placeholder='Click to write user name']");
+    private static final By MODAL_SEARCH_EXISTENT_USER_BY_NAME_LIST_WITH_USER_EXPANDED =
+            By.xpath("//body/div/div/div/div[@role='dialog']/div/div/div/div[@direction='column']/div/div[2]");
+    private static final By MODAL_DELETE_SEARCH_BUTTON =
+            By.xpath("//*[name()='rect' and contains(@width,'21')]");
     private static final By MODAL_FISTNAME_INPUT = By.xpath("//input[@id='firstName']");
     private static final By MODAL_LASTNAME_INPUT = By.xpath("//input[@id='lastName']");
     private static final By MODAL_EMAIL_INPUT = By.xpath("//input[@id='email']");
     private static final By MODAL_PREVIOUS_BUTTON = By.xpath("//button[normalize-space()='Previous']");
     private static final By MODAL_CONTINUE_BUTTON = By.xpath("//button[normalize-space()='Continue']");
     private static final By MODAL_ADD_USER_BUTTON = By.xpath("//button[normalize-space()='Add user']");
-  private static final By MODAL_ADD_MEMBER_BUTTON = By.xpath("//button[normalize-space()='Add Member']");
+    private static final By MODAL_ADD_MEMBER_BUTTON = By.xpath("//button[normalize-space()='Add Member']");
 
     // Product-selection step
-    private static final By MODAL_PRODUCT_CARD_TRUE_TILT = By.xpath("//h3[contains(text(),'True Tilt Personality Profile™')]");
-    private static final By MODAL_PRODUCT_CARD_AGT = By.xpath("//h3[contains(text(),'Agility Growth Tracker™')]");
-    private static final By MODAL_CONTINUE_TO_PURCHASE_BUTTON = By.xpath("//button[normalize-space()='Continue to purchase']");
-    private static final By MODAL_EXISTING_USER_SPINNER = By.cssSelector(".ant-spin-spinning, .ant-spin-dot");
-    // Optional: generic product card inside the modal;
-    // this gives us a content-based wait instead of pure sleep.
+    private static final By MODAL_PRODUCT_CARD_TRUE_TILT =
+            By.xpath("//h3[contains(text(),'True Tilt Personality Profile™')]");
+    private static final By MODAL_PRODUCT_CARD_AGT =
+            By.xpath("//h3[contains(text(),'Agility Growth Tracker™')]");
+    private static final By MODAL_CONTINUE_TO_PURCHASE_BUTTON =
+            By.xpath("//button[normalize-space()='Continue to purchase']");
+    private static final By MODAL_EXISTING_USER_SPINNER =
+            By.cssSelector(".ant-spin-spinning, .ant-spin-dot");
+
+    // Generic product card inside the modal
     private static final By PRODUCT_CARD_IN_MODAL = By.xpath(
             "//div[contains(@class,'ant-modal-body')]//div[contains(@class,'sc-d2610f5f-1')]"
     );
 
     // True Tilt Personality Profile™ card root
-    private static final By TTP_CARD_ROOT = By.xpath("//div[starts-with(@class,'sc-d2610f5f-1') and .//h3[contains(normalize-space(),'True Tilt Personality Profile')]]\n");
+    private static final By TTP_CARD_ROOT =
+            By.xpath("//div[starts-with(@class,'sc-d2610f5f-1') and .//h3[contains(normalize-space(),'True Tilt Personality Profile')]]");
     // Agility Growth Tracker™ card root
-    private static final By AGT_CARD_ROOT = By.xpath("//div[starts-with(@class,'sc-d2610f5f-1') and .//h3[contains(normalize-space(),'Agility Growth Tracker')]]\n");
+    private static final By AGT_CARD_ROOT =
+            By.xpath("//div[starts-with(@class,'sc-d2610f5f-1') and .//h3[contains(normalize-space(),'Agility Growth Tracker')]]");
 
-    private static final By EMAIL_ALREADY_IN_USE_ERROR = By.xpath("//*[contains(normalize-space(),'Email already in use')]");
+    private static final By EMAIL_ALREADY_IN_USE_ERROR =
+            By.xpath("//*[contains(normalize-space(),'Email already in use')]");
 
+    // ===== Row → actions menu / Edit Info / Send reminder =====
+
+    // We reuse the same role='dialog' root for Edit Info / Send Reminder modals.
+    // At any given time only one should be open.
+    private static final By EDIT_MODAL_ROOT = By.xpath("//div[@role='dialog']");
+    private static final By EDIT_FIRSTNAME_INPUT = By.id("firstName");
+    private static final By EDIT_LASTNAME_INPUT = By.id("lastName");
+    private static final By EDIT_EMAIL_INPUT = By.id("email");
+    private static final By EDIT_SAVE_BUTTON = By.xpath("//button[normalize-space()='Save changes']");
+    private static final By EDIT_CANCEL_BUTTON = By.xpath("//button[normalize-space()='Cancel']");
+
+    // Send reminder modal (header/button texts may need tiny tweak if UI changes)
+    private static final By SEND_REMINDER_MODAL = By.xpath("//div[@role='dialog']");
+    private static final By SEND_REMINDER_BUTTON =
+            By.xpath("//button[normalize-space()='Send reminder']");
+    private static final By SEND_REMINDER_CANCEL =
+            By.xpath("//button[normalize-space()='Cancel']");
+
+    private WebElement kebabInTeamRow(WebElement row) {
+        // actions column is the last one in Teams
+        return row.findElement(By.cssSelector("td:last-child .ant-dropdown-trigger"));
+    }
+
+    private void waitForMenuOpen() {
+        By openMenu = By.cssSelector(".ant-dropdown:not(.ant-dropdown-hidden)");
+        try {
+            new WebDriverWait(driver, Duration.ofSeconds(10))
+                    .until(ExpectedConditions.presenceOfElementLocated(openMenu));
+        } catch (TimeoutException ignored) {
+        }
+    }
+
+    /** Open the ⋮ actions menu for a member by email (Teams table). */
+    public boolean openActionsMenuForMember(String email) {
+        WebElement row = findMemberRowByEmail(email, Duration.ofSeconds(10));
+
+        // hover to make the kebab visible
+        try {
+            scrollToElement(row);
+        } catch (Throwable ignore) {
+        }
+        new Actions(driver).moveToElement(row)
+                .pause(Duration.ofMillis(120))
+                .perform();
+
+        WebElement trigger = null;
+        try {
+            trigger = kebabInTeamRow(row);
+        } catch (NoSuchElementException ignored) {
+            // small fallbacks, same style as IndividualsPage
+            try {
+                trigger = row.findElement(By.cssSelector(
+                        "td:last-child [aria-label*='Action' i], " +
+                                "td:last-child [aria-label*='More' i], " +
+                                "td:last-child button, " +
+                                "td:last-child [role='button']"
+                ));
+            } catch (NoSuchElementException ignored2) {
+                trigger = null;
+            }
+        }
+        if (trigger == null) return false;
+
+        try {
+            new Actions(driver).moveToElement(trigger)
+                    .pause(Duration.ofMillis(80))
+                    .click(trigger)
+                    .perform();
+        } catch (Exception e) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", trigger);
+        }
+
+        try {
+            waitForMenuOpen();
+            return true;
+        } catch (Exception firstFail) {
+            // one retry, same pattern as Individuals
+            try {
+                new Actions(driver).moveToElement(trigger)
+                        .pause(Duration.ofMillis(80))
+                        .click(trigger)
+                        .perform();
+            } catch (Exception e2) {
+                try {
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", trigger);
+                } catch (Throwable ignored) {
+                }
+            }
+            try {
+                waitForMenuOpen();
+                return true;
+            } catch (Exception secondFail) {
+                return false;
+            }
+        }
+    }
+
+    /** Generic helper: click an item in the open actions menu (Teams). */
+    public boolean clickActionInMenu(String actionText) {
+        By menuItem = By.xpath(
+                "//div[contains(@class,'ant-dropdown') and contains(@class,'ant-dropdown-open')]" +
+                        "//li[normalize-space()='" + actionText + "']"
+        );
+        try {
+            WebDriverWait wdw = new WebDriverWait(driver, Duration.ofSeconds(10));
+            WebElement item = wdw.until(ExpectedConditions.elementToBeClickable(menuItem));
+            item.click();
+            return true;
+        } catch (TimeoutException e) {
+            return false;
+        }
+    }
+
+    // Convenience wrappers for tests like TC14:
+
+    /** Opens the actions menu for the given email and clicks "Edit info". */
+    public void clickEditInfoForMember(String email) {
+        if (!openActionsMenuForMember(email)) {
+            throw new AssertionError("Could not open actions menu for member: " + email);
+        }
+        if (!clickActionInMenu("Edit info")) {
+            throw new AssertionError("Could not click 'Edit info' in actions menu for: " + email);
+        }
+    }
+
+    public void waitForEditModal() {
+        waitForElementVisible(EDIT_MODAL_ROOT);
+    }
+
+    public void fillEditEmail(String newEmail) {
+        WebElement em = waitForElementVisible(EDIT_EMAIL_INPUT);
+        em.clear();
+        em.sendKeys(newEmail);
+    }
+
+    public void clickEditSave() {
+        safeClick(EDIT_SAVE_BUTTON);
+        waitForElementInvisible(EDIT_MODAL_ROOT);
+    }
+
+    public void clickEditCancel() {
+        safeClick(EDIT_CANCEL_BUTTON);
+        try {
+            waitForElementInvisible(EDIT_MODAL_ROOT);
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Open actions menu and click "Send reminder" for a given member. */
+    public void clickSendReminderForMember(String email) {
+        if (!openActionsMenuForMember(email)) {
+            throw new AssertionError("Could not open actions menu for member: " + email);
+        }
+        if (!clickActionInMenu("Send reminder")) {
+            throw new AssertionError("Could not click 'Send reminder' in actions menu for: " + email);
+        }
+    }
+
+    public void waitForSendReminderModal() {
+        waitForElementVisible(SEND_REMINDER_MODAL);
+    }
+
+    public boolean isSendReminderModalVisible() {
+        return isVisible(SEND_REMINDER_MODAL);
+    }
+
+    public void clickSendReminderConfirm() {
+        safeClick(SEND_REMINDER_BUTTON);
+        // usually triggers a toast + closes modal; we at least wait for modal to disappear
+        try {
+            waitForElementInvisible(SEND_REMINDER_MODAL);
+        } catch (Exception ignored) {
+        }
+    }
+
+    public void clickSendReminderCancel() {
+        safeClick(SEND_REMINDER_CANCEL);
+        try {
+            waitForElementInvisible(SEND_REMINDER_MODAL);
+        } catch (Exception ignored) {
+        }
+    }
+
+    // =====================================================================
+    // ctor + small utils
+    // =====================================================================
 
     private By productCardRoot(String titleFragment) {
         return By.xpath(
@@ -120,9 +311,6 @@ public class TeamDetailsPage extends BasePage {
                         " and .//h3[contains(normalize-space(),'" + titleFragment + "')]]"
         );
     }
-
-
-
 
     public TeamDetailsPage(WebDriver driver) {
         super(driver);
@@ -137,8 +325,6 @@ public class TeamDetailsPage extends BasePage {
             return false;
         }
     }
-
-
 
     // ===== Page readiness =====
 
@@ -187,7 +373,7 @@ public class TeamDetailsPage extends BasePage {
         return By.xpath(".//p[contains(normalize-space(),'Retake available')]");
     }
 
-    // <p>Not available</p> inside the card (AGT case you showed)
+    // <p>Not available</p> inside the card (AGT case)
     private By notAvailableChipInsideCard() {
         return By.xpath(".//p[contains(normalize-space(),'Not available')]");
     }
@@ -238,13 +424,14 @@ public class TeamDetailsPage extends BasePage {
         try {
             ((JavascriptExecutor) driver)
                     .executeScript("arguments[0].setAttribute('target','_self');", link);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
 
         link.click();
         return new ReportSummaryPage(driver).waitUntilLoaded();
     }
 
-    // ===== Analytics / Kite graph helpers (for SM12) =====
+    // ===== Analytics / Kite graph helpers =====
 
     /**
      * Opens the "Analytics"/"Climate" tab if present, then scrolls the Kite graph into view.
@@ -270,7 +457,8 @@ public class TeamDetailsPage extends BasePage {
             WebElement header = driver.findElement(ANALYTICS_HEADER);
             ((JavascriptExecutor) driver)
                     .executeScript("arguments[0].scrollIntoView({block:'center'});", header);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     /** Waits for the Analytics section and Kite graph SVG to be present/visible. */
@@ -299,8 +487,7 @@ public class TeamDetailsPage extends BasePage {
     }
 
     /**
-     * Clicks a Kite node by 1-based index and waits briefly for the side panel
-     * to update its selected name.
+     * Clicks a Kite node by 1-based index and waits briefly for the side panel to update its selected name.
      */
     public void clickKiteNodeByIndex(int index) {
         List<WebElement> nodes = driver.findElements(KITE_NODES);
@@ -341,7 +528,6 @@ public class TeamDetailsPage extends BasePage {
         return text;
     }
 
-    // Optional helper if you ever want the Tilt text:
     public String getKiteSidePanelSelectedTilt() {
         return safeGetText(SELECTED_MEMBER_TILT);
     }
@@ -357,10 +543,8 @@ public class TeamDetailsPage extends BasePage {
         }
     }
 
-
-
-
     // ---------- member assertion helpers ----------
+
     /**
      * Row locator by email – anchored on the <tbody class="ant-table-tbody">,
      * because <table> has no 'ant-table' class.
@@ -405,9 +589,6 @@ public class TeamDetailsPage extends BasePage {
         }
     }
 
-
-
-
     // =====================================================================
     // Add Team Member modal – open / basic assertions
     // =====================================================================
@@ -418,7 +599,7 @@ public class TeamDetailsPage extends BasePage {
         try {
             waitForElementVisible(MODAL_HEADER_ADD_TEAM_MEMBER);
         } catch (TimeoutException e) {
-            // fallback: el header a veces cambia, esperamos el search input
+            // fallback: header sometimes changes; wait for search input instead
             waitForElementVisible(MODAL_SEARCH_EXISTENT_USER_BY_NAME_INPUT_SEARCHBAR);
         }
         logger.info("[TeamDetailsPage] Add Team Member modal opened.");
@@ -438,9 +619,9 @@ public class TeamDetailsPage extends BasePage {
                 w.withTimeout(Duration.ofSeconds(5))
                         .until(d -> !d.findElements(PRODUCT_CARD_IN_MODAL).isEmpty());
             } catch (TimeoutException ignore) {
-                // 2b) Fallback: fixed small delay if cards aren’t easy to detect
+                // 2b) Fallback: small delay if cards aren’t easy to detect
                 try {
-                    Thread.sleep(1500);   // 1.5–2s is usually enough for the spinner to clear
+                    Thread.sleep(1500);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -453,20 +634,23 @@ public class TeamDetailsPage extends BasePage {
     }
 
     public boolean isSearchExistingUserInputVisible() {
-        return exists(MODAL_SEARCH_EXISTENT_USER_BY_NAME_INPUT_SEARCHBAR) & isVisible(MODAL_SEARCH_EXISTENT_USER_BY_NAME_INPUT_SEARCHBAR);
+        return exists(MODAL_SEARCH_EXISTENT_USER_BY_NAME_INPUT_SEARCHBAR)
+                && isVisible(MODAL_SEARCH_EXISTENT_USER_BY_NAME_INPUT_SEARCHBAR);
     }
 
     public boolean isCreateNewUserButtonVisible() {
-        return exists(MODAL_CREATE_NEW_USER_BUTTON) & isVisible(MODAL_CREATE_NEW_USER_BUTTON);
+        return exists(MODAL_CREATE_NEW_USER_BUTTON)
+                && isVisible(MODAL_CREATE_NEW_USER_BUTTON);
     }
 
     public boolean isAddMemberButtonVisible() {
-        return exists(MODAL_ADD_MEMBER_BUTTON) & isVisible(MODAL_ADD_MEMBER_BUTTON);
+        return exists(MODAL_ADD_MEMBER_BUTTON)
+                && isVisible(MODAL_ADD_MEMBER_BUTTON);
     }
 
     /** "Add Member" CTA in step 1 – usually disabled until a user is selected. */
     public boolean isAddMemberButtonEnabled() {
-        List<WebElement> btns = driver.findElements(MODAL_ADD_USER_BUTTON);
+        List<WebElement> btns = driver.findElements(MODAL_ADD_MEMBER_BUTTON);
         if (btns.isEmpty()) return false;
 
         WebElement btn = btns.get(0);
@@ -479,32 +663,27 @@ public class TeamDetailsPage extends BasePage {
     }
 
     public TeamDetailsPage clickModalCancel1() {
-        System.out.printf("test4");
         safeClick(MODAL_CANCEL_BUTTON1);
-//        try {
-//            waitForElementInvisible(MODAL_ROOT);
-//        } catch (Exception ignored) {}
-//        logger.info("[TeamDetailsPage] Add Team Member modal closed with Cancel.");
         return this;
     }
 
     public TeamDetailsPage clickModalCancel2() {
-        System.out.printf("testtttt");
         safeClick(MODAL_CANCEL_BUTTON2);
         try {
             waitForElementInvisible(MODAL_ROOT);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         logger.info("[TeamDetailsPage] Add Team Member modal closed with Cancel.");
         return this;
     }
 
     public TeamDetailsPage clickModalClose() {
-        System.out.printf("testtttt");
         safeClick(MODAL_CLOSE_BUTTON);
         try {
             waitForElementInvisible(MODAL_ROOT);
-        } catch (Exception ignored) {}
-        logger.info("[TeamDetailsPage] Add Team Member modal closed with Cancel.");
+        } catch (Exception ignored) {
+        }
+        logger.info("[TeamDetailsPage] Add Team Member modal closed with Close (X).");
         return this;
     }
 
@@ -516,9 +695,15 @@ public class TeamDetailsPage extends BasePage {
     public TeamDetailsPage typeInExistingUserSearch(String query) {
         WebElement input = waitForElementVisible(MODAL_SEARCH_EXISTENT_USER_BY_NAME_INPUT_SEARCHBAR);
 
-        // clear friendly para Mac/Win
-        try { input.sendKeys(Keys.chord(Keys.CONTROL, "a"), Keys.DELETE); } catch (Exception ignored) {}
-        try { input.sendKeys(Keys.chord(Keys.COMMAND, "a"), Keys.DELETE); } catch (Exception ignored) {}
+        // clear cross-platform
+        try {
+            input.sendKeys(Keys.chord(Keys.CONTROL, "a"), Keys.DELETE);
+        } catch (Exception ignored) {
+        }
+        try {
+            input.sendKeys(Keys.chord(Keys.COMMAND, "a"), Keys.DELETE);
+        } catch (Exception ignored) {
+        }
 
         input.sendKeys(query);
         logger.info("[TeamDetailsPage] Typed '{}' into existing-user search.", query);
@@ -531,15 +716,13 @@ public class TeamDetailsPage extends BasePage {
         return this;
     }
 
-
-
     /**
      * Clicks the main CTA at the bottom of the search step.
      * Prefers "Add Member", falls back to "Add user" (retake flow).
      */
     public TeamDetailsPage clickModalAddMemberOrUser() {
-        if (!driver.findElements(MODAL_ADD_USER_BUTTON).isEmpty()) {
-            safeClick(MODAL_ADD_USER_BUTTON);
+        if (!driver.findElements(MODAL_ADD_MEMBER_BUTTON).isEmpty()) {
+            safeClick(MODAL_ADD_MEMBER_BUTTON);
             logger.info("[TeamDetailsPage] Clicked 'Add Member' in modal.");
         } else {
             safeClick(MODAL_ADD_USER_BUTTON);
@@ -554,7 +737,6 @@ public class TeamDetailsPage extends BasePage {
 
     /** Clicks "+ Create New User" and waits for the First/Last/Email form. */
     public TeamDetailsPage clickModalCreateNewUser() {
-//        click(MODAL_CREATE_NEW_USER_BUTTON);
         safeClick(MODAL_CREATE_NEW_USER_BUTTON);
         waitForElementVisible(MODAL_FISTNAME_INPUT);
         waitForElementVisible(MODAL_LASTNAME_INPUT);
@@ -576,9 +758,12 @@ public class TeamDetailsPage extends BasePage {
         WebElement ln = waitForElementVisible(MODAL_LASTNAME_INPUT);
         WebElement em = waitForElementVisible(MODAL_EMAIL_INPUT);
 
-        fn.clear(); fn.sendKeys(firstName);
-        ln.clear(); ln.sendKeys(lastName);
-        em.clear(); em.sendKeys(email);
+        fn.clear();
+        fn.sendKeys(firstName);
+        ln.clear();
+        ln.sendKeys(lastName);
+        em.clear();
+        em.sendKeys(email);
 
         logger.info("[TeamDetailsPage] Filled new user: {} {} <{}>", firstName, lastName, email);
         return this;
@@ -624,7 +809,6 @@ public class TeamDetailsPage extends BasePage {
         return this;
     }
 
-
     public TeamDetailsPage selectFirstExistingUserFromResults() {
 
         // 1) Wait for the expanded result list to be visible
@@ -639,7 +823,6 @@ public class TeamDetailsPage extends BasePage {
                             .stream()
                             .noneMatch(WebElement::isDisplayed));
         } catch (TimeoutException ignored) {
-            // If it never showed or never disappeared, we'll still try the click
             logger.warn("[TeamDetailsPage] Spinner inside existing-user results did not disappear in time.");
         }
 
@@ -647,12 +830,10 @@ public class TeamDetailsPage extends BasePage {
         WebElement firstOption = listRoot.findElement(
                 By.xpath(".//*[self::div or self::li][1]")
         );
-        safeClick(firstOption); // if you have safeClick, use it instead of raw click
+        safeClick(firstOption);
         logger.info("[TeamDetailsPage] Selected first existing-user result from list.");
         return this;
     }
-
-
 
     public TeamDetailsPage waitForAddMemberModalToClose() {
         // Wait until the modal root becomes invisible or detached
@@ -663,11 +844,6 @@ public class TeamDetailsPage extends BasePage {
     public boolean isContinueToPurchaseVisible() {
         return exists(MODAL_CONTINUE_TO_PURCHASE_BUTTON);
     }
-
-
-
-
-
 
     // ---------- report link helpers per member row ----------
 
@@ -695,7 +871,9 @@ public class TeamDetailsPage extends BasePage {
     /** True if the member row has *any* report link (TTP or AGT). */
     public boolean memberRowHasAnyReportLink(String email) {
         WebElement row = findMemberRowByEmail(email, Duration.ofSeconds(10));
-        List<WebElement> links = row.findElements(By.cssSelector("a[href*='/assess/ttp/'], a[href*='/assess/agt/']"));
+        List<WebElement> links = row.findElements(
+                By.cssSelector("a[href*='/assess/ttp/'], a[href*='/assess/agt/']")
+        );
         return !links.isEmpty();
     }
 
@@ -703,13 +881,14 @@ public class TeamDetailsPage extends BasePage {
         WebElement row = findMemberRowByEmail(email, Duration.ofSeconds(10));
 
         // Find the Status column cell – adjust selector if your UI differs!
-        WebElement statusCell = row.findElement(By.xpath(".//td[contains(@class,'status') or position()=3]"));
+        WebElement statusCell = row.findElement(
+                By.xpath(".//td[contains(@class,'status') or position()=3]")
+        );
 
         return statusCell.getText().trim();
     }
 
-
-    // ---------- simple member table helpers for tests like TC11 ----------
+    // ---------- simple member table helpers for tests like TC11/TC14 ----------
 
     /** Returns the current number of member rows in the team members table. */
     public int getMemberCount() {
@@ -728,7 +907,6 @@ public class TeamDetailsPage extends BasePage {
         logger.info("[TeamDetailsPage] isMemberListedByEmail('{}') = {}", email, present);
         return present;
     }
-
 
     public boolean waitForEmailAlreadyInUseError(Duration timeout) {
         WebDriverWait wait = new WebDriverWait(driver, timeout);
@@ -749,7 +927,7 @@ public class TeamDetailsPage extends BasePage {
 
         WebElement btn = btns.get(0);
         String ariaDisabled = btn.getAttribute("aria-disabled");
-        String disabled     = btn.getAttribute("disabled");
+        String disabled = btn.getAttribute("disabled");
 
         boolean enabled = btn.isDisplayed()
                 && btn.isEnabled()
@@ -760,7 +938,7 @@ public class TeamDetailsPage extends BasePage {
         return enabled;
     }
 
-
-
-
+    public boolean isEmailAlreadyInUseErrorVisible() {
+        return !driver.findElements(EMAIL_ALREADY_IN_USE_ERROR).isEmpty();
+    }
 }

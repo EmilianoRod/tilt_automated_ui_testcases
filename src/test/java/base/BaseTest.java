@@ -2,8 +2,8 @@ package base;
 
 import Utils.Config;
 import Utils.MailSlurpUtils;
-
 import Utils.StripeCheckoutHelper;
+
 import com.mailslurp.models.InboxDto;
 
 import io.qameta.allure.Allure;
@@ -82,9 +82,11 @@ public class BaseTest {
     @BeforeSuite(alwaysRun = true)
     public void mailSlurpSuiteInit() {
 
+        // Ensure mailslurp.debug is visible as a system prop for MailSlurpUtils
         String msDebug = Config.getAny("mailslurp.debug", "MAILSLURP_DEBUG");
         System.setProperty("mailslurp.debug", msDebug == null ? "true" : msDebug);
 
+        // If suite explicitly says "email not required" and not forced, skip
         if (!isEmailRequiredForSuite() && !isMailSlurpForceOn()) {
             logger.info("[MailSlurp][Suite] Email not required → skipping inbox init.");
             fixedInbox = null;
@@ -92,35 +94,70 @@ public class BaseTest {
         }
 
         try {
-            final String fixedIdRaw = Config.getMailSlurpFixedInboxId();
-            final String fixedId = fixedIdRaw == null ? null : fixedIdRaw.trim();
             final boolean allowCreate = Config.getMailSlurpAllowCreate();
 
-            logger.info("[MailSlurp][Suite] allowCreate={} | fixedIdPresent={}{}",
+            // Legacy single fixed inbox ID
+            String singleFixedRaw = Config.getMailSlurpFixedInboxId();
+            String singleFixed = (singleFixedRaw == null || singleFixedRaw.isBlank())
+                    ? null
+                    : singleFixedRaw.trim();
+            boolean hasSingleFixed = singleFixed != null;
+
+            // NEW: any numbered pool inbox MAILSLURP_INBOX_ID_1..10
+            boolean hasPoolFixed = false;
+            int poolMax = 10; // must match resolveApiKeyFromPoolOrNull() loop
+            for (int i = 1; i <= poolMax; i++) {
+                String id = Config.getMailSlurpInboxIdByNumber(i);
+                if (id != null && !id.isBlank()) {
+                    hasPoolFixed = true;
+                    break;
+                }
+            }
+
+            boolean fixedIdPresent = hasSingleFixed || hasPoolFixed;
+
+            String idPrefix = "";
+            if (singleFixed != null) {
+                idPrefix = singleFixed.substring(0, Math.min(8, singleFixed.length()));
+            }
+
+            logger.info(
+                    "[MailSlurp][Suite] allowCreate={} | singleFixedPresent={} | poolFixedPresent={}{}",
                     allowCreate,
-                    (fixedId != null && !fixedId.isBlank()),
-                    fixedId != null ? " | idPrefix=" + fixedId.substring(0, Math.min(8, fixedId.length())) : ""
+                    hasSingleFixed,
+                    hasPoolFixed,
+                    singleFixed != null ? " | singleIdPrefix=" + idPrefix : ""
             );
 
-            if (fixedId != null && !fixedId.isBlank()) {
-                fixedInbox = MailSlurpUtils.getInboxById(UUID.fromString(fixedId));
-                if (fixedInbox != null) {
-                    logger.info("[MailSlurp][Suite] Using fixed inbox {} <{}>",
-                            fixedInbox.getId(), fixedInbox.getEmailAddress());
-                    MailSlurpUtils.clearInboxEmails(fixedInbox.getId());
-                }
-            } else if (allowCreate || isMailSlurpForceOn()) {
-                fixedInbox = MailSlurpUtils.resolveFixedOrCreateInbox();
-                if (fixedInbox != null) {
-                    logger.info("[MailSlurp][Suite] Resolved inbox {} <{}>",
-                            fixedInbox.getId(), fixedInbox.getEmailAddress());
-                }
+            // Hard guard: if we know for sure there is *no* inbox and we are not allowed to create, bail out
+            if (!allowCreate && !fixedIdPresent && !isMailSlurpForceOn()) {
+                logger.warn("[MailSlurp][Suite] No inbox id (single or pool) and inbox creation disabled.");
+                fixedInbox = null;
+                return;
+            }
+
+            // From here, delegate to MailSlurpUtils, which knows about:
+            // - API key pool (MAILSLURP_API_KEY_1..N)
+            // - pool inboxes MAILSLURP_INBOX_ID_1..N
+            // - single fixed inbox (MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID)
+            // - creation fallback (if allowed)
+            InboxDto inbox = MailSlurpUtils.resolveFixedOrCreateInbox();
+            if (inbox != null) {
+                fixedInbox = inbox;
+                logger.info("[MailSlurp][Suite] Resolved inbox {} <{}>",
+                        fixedInbox.getId(), fixedInbox.getEmailAddress());
+                // Clean it once per suite
+                MailSlurpUtils.clearInboxEmails(fixedInbox.getId());
             } else {
-                logger.warn("[MailSlurp][Suite] No inbox id and creation disabled.");
+                logger.warn("[MailSlurp][Suite] resolveFixedOrCreateInbox() returned null.");
                 fixedInbox = null;
             }
+        } catch (SkipException se) {
+            logger.warn("[MailSlurp][Suite] MailSlurp skipped: {}", se.getMessage());
+            fixedInbox = null;
         } catch (Exception e) {
-            logger.warn("[MailSlurp][Suite] MailSlurp unavailable: {} - {}", e.getClass().getSimpleName(), e.getMessage());
+            logger.warn("[MailSlurp][Suite] MailSlurp unavailable: {} - {}",
+                    e.getClass().getSimpleName(), e.getMessage());
             fixedInbox = null;
         }
     }
@@ -528,9 +565,6 @@ public class BaseTest {
         }
     }
 
-
-
-
     /**
      * Creates a team via the Shop flow using Stripe CLI (no UI payment).
      * - Goes through TTP Team purchase
@@ -598,12 +632,4 @@ public class BaseTest {
 
         return new TeamDetailsPage(driver()).waitUntilLoaded();
     }
-
-
-
-
-
-
-
-
 }

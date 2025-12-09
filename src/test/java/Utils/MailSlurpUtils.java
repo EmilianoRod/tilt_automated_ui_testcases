@@ -15,6 +15,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -33,6 +34,11 @@ public class MailSlurpUtils {
 
     // cached fingerprint for logs (optional)
     private static volatile String keyFingerprint;
+
+
+    /** Selected MailSlurp pool index (1..N) when using MAILSLURP_API_KEY_n / MAILSLURP_INBOX_ID_n. */
+    private static volatile Integer selectedPoolNumber = null;
+
 
     /* ------------------------------------------------------------------ */
     /* Public API                                                         */
@@ -55,9 +61,12 @@ public class MailSlurpUtils {
         }
     }
 
+
+
     /**
      * Use fixed inbox if present; create one if allowed; otherwise Skip (if required).
      * Fixed ID lookup precedence:
+     *   - MAILSLURP_INBOX_ID_n (sysprop/env via Config)  [matched to selected API key index]
      *   - MAILSLURP_FIXED_INBOX_ID (sysprop/env)
      *   - MAILSLURP_INBOX_ID (sysprop/env)  [legacy]
      *   - Config.getMailSlurpFixedInboxId()
@@ -65,8 +74,18 @@ public class MailSlurpUtils {
     public static InboxDto resolveFixedOrCreateInbox() throws ApiException {
         ensureClientReadyOrThrow();
 
-        // New: support MAILSLURP_FIXED_INBOX_ID, but keep legacy sources
+        // ★ NEW: try inbox bound to the selected pool number, if any
+        String poolFixedId = null;
+        if (selectedPoolNumber != null) {
+            poolFixedId = Config.getMailSlurpInboxIdByNumber(selectedPoolNumber);
+            if (isDebug()) {
+                logger.info("[MailSlurp] selectedPoolNumber={} -> poolFixedId={}", selectedPoolNumber, poolFixedId);
+            }
+        }
+
+        // ★ CHANGED: put poolFixedId first in precedence
         String fixedIdStr = firstNonBlank(
+                poolFixedId,                                 // 👈 inbox matched to API key n
                 System.getProperty("MAILSLURP_FIXED_INBOX_ID"),
                 System.getenv("MAILSLURP_FIXED_INBOX_ID"),
                 System.getProperty("MAILSLURP_INBOX_ID"),
@@ -88,7 +107,7 @@ public class MailSlurpUtils {
             );
         }
 
-        // 1) Try fixed inbox if configured
+        // 1) Try fixed inbox if configured (pool or global – they all end up here)
         if (hasFixed) {
             try {
                 UUID id = UUID.fromString(fixedIdStr.trim());
@@ -103,7 +122,7 @@ public class MailSlurpUtils {
                 if (!allowCreate) {
                     throw new SkipException(
                             "MailSlurp fixed inbox \"" + fixedIdStr + "\" unavailable and inbox creation disabled " +
-                                    "(set MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID correctly " +
+                                    "(set MAILSLURP_INBOX_ID_n / MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID correctly " +
                                     "or enable MAILSLURP_ALLOW_CREATE_INBOX_FALLBACK=true for local runs)."
                     );
                 }
@@ -112,7 +131,7 @@ public class MailSlurpUtils {
             // 2) No fixed inbox configured and not allowed to create
             throw new SkipException(
                     "MailSlurp inbox creation disabled and no fixed inbox configured. " +
-                            "Set MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID or enable " +
+                            "Set MAILSLURP_INBOX_ID_n / MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID or enable " +
                             "MAILSLURP_ALLOW_CREATE_INBOX_FALLBACK=true for local runs."
             );
         }
@@ -120,6 +139,9 @@ public class MailSlurpUtils {
         // 3) No usable fixed inbox → try to create (if allowed)
         return createInboxReflectiveWithGuards();
     }
+
+
+
 
     /**
      * Poll inbox until an email matching the predicate arrives, or timeout.
@@ -292,8 +314,9 @@ public class MailSlurpUtils {
         }
     }
 
+
     private static String resolveApiKeyOrNull() {
-        // priority: explicit overrides -> sysprop -> env -> Config
+        // 1) Existing single-key mechanisms (keep your current precedence)
         String key = firstNonBlank(
                 System.getProperty("mailslurp.forceKey"),
                 System.getProperty("mailslurp.apiKey"),
@@ -302,9 +325,16 @@ public class MailSlurpUtils {
                 Config.getMailSlurpApiKey(),
                 Config.getAny("mailslurp.apiKey", "MAILSLURP_API_KEY")
         );
-        if (key == null || key.isBlank()) return null;
 
-        // Optional fingerprint enforcement
+        // If no single key configured, try the numbered pool
+        if (key == null || key.isBlank()) {
+            key = resolveApiKeyFromPoolOrNull();
+            if (key == null || key.isBlank()) {
+                return null; // nothing usable
+            }
+        }
+
+        // Optional: fingerprint check (keep whatever you already have)
         String expectedFpRaw = firstNonBlank(
                 System.getProperty("mailslurp.expectedFingerprint"),
                 System.getenv("MAILSLURP_EXPECTED_FINGERPRINT")
@@ -315,8 +345,14 @@ public class MailSlurpUtils {
                 throw new SkipException("MailSlurp API key mismatch. expected=" + expectedFpRaw + " actual=" + actual);
             }
         }
+
         return key.trim();
     }
+
+
+
+
+
 
     private static String basePath() {
         return firstNonBlank(
@@ -596,6 +632,121 @@ public class MailSlurpUtils {
         if (trimmed.length() <= maxLen) return trimmed;
         return trimmed.substring(0, maxLen) + "…";
     }
+
+
+
+    private static boolean hasQuotaForKey(String key) {
+        if (key == null || key.isBlank()) return false;
+
+        try {
+            // ✅ use a fresh client instead of clone()
+            ApiClient tmp = new ApiClient();
+            tmp.setBasePath(basePath());
+            tmp.setApiKey(key.trim());
+            tmp.setConnectTimeout(5_000);
+            tmp.setReadTimeout(5_000);
+            tmp.setWriteTimeout(5_000);
+
+            InboxControllerApi tmpInbox = new InboxControllerApi(tmp);
+            // cheap call just to validate key/quota
+            tmpInbox.getInboxes()
+                    .size(1)
+                    .execute();
+
+            return true;
+        } catch (ApiException ex) {
+            int code = ex.getCode();
+            if (isDebug()) {
+                logger.warn("[MailSlurp] Key probe failed ({}): {}", code, safeMsg(ex));
+            }
+            // 401/402/429 etc => treat as "no quota / invalid"
+            return false;
+        } catch (Exception e) {
+            if (isDebug()) {
+                logger.warn("[MailSlurp] Key probe error: {}", safeMsg(e));
+            }
+            return false;
+        }
+    }
+
+
+
+
+    /**
+     * Try numbered pool MAILSLURP_API_KEY_1..5 (or mailslurp.apiKey.1..5)
+     * and return the first key that passes the quota probe.
+     * Also sets selectedPoolNumber with the chosen index (1..5).
+     */
+    private static String resolveApiKeyFromPoolOrNull() {
+        // You can adjust this range if you want more/less than 5
+        for (int i = 1; i <= 10; i++) {
+            String candidate = Config.getMailSlurpApiKeyByNumber(i);
+            if (candidate == null || candidate.isBlank()) {
+                continue;
+            }
+
+            if (hasQuotaForKey(candidate)) {
+                selectedPoolNumber = i;
+                if (isDebug()) {
+                    logger.info("[MailSlurp] Selected API key #{} from pool (fingerprint={}...)",
+                            i, safeSha12(candidate).substring(0, 12));
+                }
+                return candidate.trim();
+            }
+        }
+        return null;
+    }
+
+
+
+
+
+
+
+    /**
+     * Wait a short time and confirm no *new* email arrives.
+     * Returns the unexpected email if one appears (so the test can fail).
+     */
+    public static Email waitForNoNewEmail(UUID inboxId, Duration timeout) {
+        Objects.requireNonNull(inboxId, "inboxId cannot be null");
+        ensureClientReadyOrThrow();
+
+        long deadline = System.currentTimeMillis() + timeout.toMillis();
+        long pollMs = 1200;
+
+        // Capture current top email ID to detect new arrivals
+        UUID baselineId = null;
+        try {
+            List<EmailPreview> previews =
+                    inboxController.getEmails(inboxId).size(1).execute();
+            if (!previews.isEmpty()) {
+                baselineId = previews.get(0).getId();
+            }
+        } catch (Exception ignored) {}
+
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                List<EmailPreview> previews =
+                        inboxController.getEmails(inboxId).size(1).execute();
+
+                if (!previews.isEmpty()) {
+                    UUID newestId = previews.get(0).getId();
+                    if (baselineId == null || !newestId.equals(baselineId)) {
+                        // New email detected
+                        return emailController.getEmail(newestId).execute();
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            try { Thread.sleep(pollMs); } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        return null; // 👍 No new email arrived
+    }
+
+
 
 
 
