@@ -74,19 +74,6 @@ public class RetryAnalyzer implements IRetryAnalyzer {
 
             String attemptLabel = nextRunNumber + "/" + totalPossibleRuns; // “2/2”, “3/4”, etc.
 
-            // Best-effort: annotate in Allure that a retry is scheduled
-            try {
-                Allure.label("retryScheduled", attemptLabel);
-                Allure.label("flaky", "true"); // mark test as flaky when a retry is used
-                Allure.addAttachment(
-                        "Retry info",
-                        "text/plain",
-                        "Test: " + result.getName() + "\nNext execution: " + attemptLabel +
-                                "\nRetry index: " + retryIndex + " of " + max
-                );
-            } catch (Throwable ignored) {
-                // Never break retries because of reporting
-            }
 
             System.out.printf(
                     "[RetryAnalyzer] Scheduling retry %d/%d → next run %s for test %s%n",
@@ -109,4 +96,5 @@ public class RetryAnalyzer implements IRetryAnalyzer {
         );
         return false;
     }
+
 }

@@ -66,19 +66,6 @@ public class BaseTest {
     @BeforeMethod(alwaysRun = true)
     public void applyAllureSuiteHierarchy(Method method) {
 
-        // Fixed parent container
-        Allure.label("parentSuite", "Tilt – UI Automation");
-
-        // Middle-level suite (allows switching Smoke/Regression from CLI)
-        String suiteName = System.getProperty("allure.suite", "Smoke – Dev");
-        Allure.suite(suiteName);
-
-        // Sub-suite = class name
-        Allure.label("subSuite", getClass().getSimpleName());
-
-        // Optional: add thread + test name context
-        Allure.label("thread", Thread.currentThread().getName());
-        Allure.label("testMethod", method.getName());
     }
 
     // =====================================================================

@@ -1,6 +1,7 @@
 package base;
 
 import Utils.Config;
+import io.github.bonigarcia.wdm.WebDriverManager;
 import org.openqa.selenium.PageLoadStrategy;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.SessionNotCreatedException;
@@ -54,8 +55,8 @@ public final class DriverFactory {
                     // ---- Stage 2: fall back to WebDriverManager with the parsed major (or your override) ----
                     try {
                         if (Config.useWebDriverManager()) {
-                            io.github.bonigarcia.wdm.WebDriverManager wdm =
-                                    io.github.bonigarcia.wdm.WebDriverManager.chromedriver();
+                           WebDriverManager wdm =
+                                    WebDriverManager.chromedriver();
 
                             if (major != null && !major.isBlank()) {
                                 wdm.browserVersion(major + ".0");

@@ -88,6 +88,23 @@ public class TestListener implements ITestListener {
     public void onTestStart(ITestResult result) {
         annotateRetryLabels(result);
 
+        // === NEW: Allure suite hierarchy ===
+        try {
+            Allure.label("parentSuite", "Tilt – UI Automation");
+
+            String suiteName = System.getProperty("allure.suite", "Smoke – Dev");
+            Allure.suite(suiteName);
+
+            String className  = result.getMethod().getRealClass().getSimpleName();
+            String methodName = result.getMethod().getMethodName();
+
+            Allure.label("subSuite", className);
+            Allure.label("thread", Thread.currentThread().getName());
+            Allure.label("testMethod", methodName);
+        } catch (Throwable ignored) {
+            // don't break tests on reporting
+        }
+
         String qName    = qualifiedName(result);
         int invocation  = result.getMethod().getCurrentInvocationCount(); // 0 = first run
 
@@ -96,6 +113,7 @@ public class TestListener implements ITestListener {
                 qName, invocation
         );
     }
+
 
     @Override
     public void onTestFailure(ITestResult result) {

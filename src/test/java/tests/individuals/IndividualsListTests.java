@@ -961,6 +961,10 @@ public class IndividualsListTests extends BaseTest {
     }
     private String safeLower(String s) { return s == null ? null : s.toLowerCase(); }
 
+
+
+
+
     @Test(groups = "ui-only", description = "IND-016: Send reminder: backend error shows error toast")
     @Severity(SeverityLevel.NORMAL)
     public void sendReminder_confirm_showsErrorToast_onBackendFailure(){
@@ -1027,6 +1031,13 @@ public class IndividualsListTests extends BaseTest {
             try { devTools.close(); } catch (Exception ignore) {}
         }
     }
+
+
+
+
+
+
+
 
     @Test(groups = "ui-only", description = "IND-017: Send reminder: cancel modal keeps state unchanged")
     @Severity(SeverityLevel.NORMAL)
