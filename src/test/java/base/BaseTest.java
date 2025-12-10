@@ -84,12 +84,31 @@ public class BaseTest {
     // =====================================================================
     // SUITE INITIALIZATION (MailSlurp)
     // =====================================================================
+
     @BeforeSuite(alwaysRun = true)
     public void mailSlurpSuiteInit() {
+
+        // ✅ Make sure common config is visible to listeners (Allure, etc.)
+        Config.syncToSystemProperties();
 
         // Ensure mailslurp.debug is visible as a system prop for MailSlurpUtils
         String msDebug = Config.getAny("mailslurp.debug", "MAILSLURP_DEBUG");
         System.setProperty("mailslurp.debug", msDebug == null ? "true" : msDebug);
+
+        // Small env summary (helps a LOT when reading Jenkins logs)
+        String envName = Config.getEnvironmentName();
+        String baseUrl = null;
+        try {
+            baseUrl = Config.getBaseUrl();
+        } catch (Exception ignore) {
+            baseUrl = "(unset)";
+        }
+        String msBasePath = Optional.ofNullable(
+                Config.getAny("mailslurp.basePath", "MAILSLURP_BASE_PATH")
+        ).orElse("https://api.mailslurp.com");
+
+        logger.info("[MailSlurp][Suite] env={} | BASE_URL={} | MailSlurp.basePath={}",
+                envName, baseUrl, msBasePath);
 
         // If suite explicitly says "email not required" and not forced, skip
         if (!isEmailRequiredForSuite() && !isMailSlurpForceOn()) {
@@ -110,7 +129,7 @@ public class BaseTest {
 
             // NEW: any numbered pool inbox MAILSLURP_INBOX_ID_1..10
             boolean hasPoolFixed = false;
-            int poolMax = 10; // must match resolveApiKeyFromPoolOrNull() loop
+            int poolMax = 10; // must match MailSlurpUtils.resolveApiKeyFromPoolOrNull()
             for (int i = 1; i <= poolMax; i++) {
                 String id = Config.getMailSlurpInboxIdByNumber(i);
                 if (id != null && !id.isBlank()) {
@@ -145,12 +164,31 @@ public class BaseTest {
             // - API key pool (MAILSLURP_API_KEY_1..N)
             // - pool inboxes MAILSLURP_INBOX_ID_1..N
             // - single fixed inbox (MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID)
-            // - creation fallback (if allowed)
+            // - creation fallback (if allowed; pool failure → single-key)
             InboxDto inbox = MailSlurpUtils.resolveFixedOrCreateInbox();
             if (inbox != null) {
                 fixedInbox = inbox;
-                logger.info("[MailSlurp][Suite] Resolved inbox {} <{}>",
-                        fixedInbox.getId(), fixedInbox.getEmailAddress());
+
+                Integer poolSlot = MailSlurpUtils.getSelectedPoolNumber();
+                String keyFp     = MailSlurpUtils.currentKeyFingerprint();
+
+                if (poolSlot != null) {
+                    logger.info(
+                            "[MailSlurp][Suite] Resolved inbox {} <{}> via POOL slot #{} (key fp={})",
+                            fixedInbox.getId(),
+                            fixedInbox.getEmailAddress(),
+                            poolSlot,
+                            keyFp
+                    );
+                } else {
+                    logger.info(
+                            "[MailSlurp][Suite] Resolved inbox {} <{}> via SINGLE-KEY MailSlurp config (key fp={})",
+                            fixedInbox.getId(),
+                            fixedInbox.getEmailAddress(),
+                            keyFp
+                    );
+                }
+
                 // Clean it once per suite
                 MailSlurpUtils.clearInboxEmails(fixedInbox.getId());
             } else {
@@ -158,7 +196,8 @@ public class BaseTest {
                 fixedInbox = null;
             }
         } catch (SkipException se) {
-            logger.warn("[MailSlurp][Suite] MailSlurp skipped: {}", se.getMessage());
+            // Skip is "expected" control flow → INFO instead of WARN
+            logger.info("[MailSlurp][Suite] MailSlurp skipped: {}", se.getMessage());
             fixedInbox = null;
         } catch (Exception e) {
             logger.warn("[MailSlurp][Suite] MailSlurp unavailable: {} - {}",
@@ -166,6 +205,9 @@ public class BaseTest {
             fixedInbox = null;
         }
     }
+
+
+
 
     // =====================================================================
     // TEST INITIALIZATION

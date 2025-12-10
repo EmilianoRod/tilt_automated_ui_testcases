@@ -18,11 +18,25 @@
     <Loggers>
         <!-- quiet noisy libs if you want -->
         <Logger name="org.openqa.selenium.devtools" level="WARN"/>
+
+        <!-- MailSlurp debug (pool selection, 426/404 behavior, etc.) -->
+        <Logger name="Utils.MailSlurpUtils" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="File"/>
+        </Logger>
+
+        <!-- Allure uuid-not-found spam → only show on real errors -->
+        <Logger name="io.qameta.allure" level="ERROR" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="File"/>
+        </Logger>
+
         <Root level="INFO">
             <AppenderRef ref="Console"/>
             <AppenderRef ref="File"/>
         </Root>
     </Loggers>
+
 </Configuration>
 
 

@@ -63,29 +63,63 @@ public class MailSlurpUtils {
 
 
 
+
     /**
-     * Use fixed inbox if present; create one if allowed; otherwise Skip (if required).
-     * Fixed ID lookup precedence:
-     *   - MAILSLURP_INBOX_ID_n (sysprop/env via Config)  [matched to selected API key index]
-     *   - MAILSLURP_FIXED_INBOX_ID (sysprop/env)
-     *   - MAILSLURP_INBOX_ID (sysprop/env)  [legacy]
-     *   - Config.getMailSlurpFixedInboxId()
+     * Use numbered pool first (MAILSLURP_API_KEY_n + MAILSLURP_INBOX_ID_n).
+     * For each slot:
+     *   - Try fixed inbox
+     *   - If 404 + allowCreate => try createInbox
+     *   - If createInbox hits 426/402/429 => move to next slot
+     *
+     * If no pool slots work, fallback to single-key behavior:
+     *   - MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID / Config.getMailSlurpFixedInboxId()
+     *   - If fixed fails and creation allowed => createInboxReflectiveWithGuards()
      */
     public static InboxDto resolveFixedOrCreateInbox() throws ApiException {
-        ensureClientReadyOrThrow();
+        final boolean allowCreate = isCreateAllowed();
 
-        // ★ NEW: try inbox bound to the selected pool number, if any
-        String poolFixedId = null;
-        if (selectedPoolNumber != null) {
-            poolFixedId = Config.getMailSlurpInboxIdByNumber(selectedPoolNumber);
-            if (isDebug()) {
-                logger.info("[MailSlurp] selectedPoolNumber={} -> poolFixedId={}", selectedPoolNumber, poolFixedId);
+        // -----------------------------------------------------------------
+        // 1) POOL MODE: MAILSLURP_API_KEY_n + MAILSLURP_INBOX_ID_n
+        // -----------------------------------------------------------------
+        java.util.List<Integer> poolSlots = new ArrayList<>();
+        // must match resolveApiKeyFromPoolOrNull() range
+        for (int i = 1; i <= 10; i++) {
+            String key = Config.getMailSlurpApiKeyByNumber(i);
+            if (key != null && !key.isBlank()) {
+                poolSlots.add(i);
             }
         }
 
-        // ★ CHANGED: put poolFixedId first in precedence
+        if (!poolSlots.isEmpty()) {
+            if (isDebug()) {
+                logger.info("[MailSlurp][resolve] Pool slots detected: {} (allowCreate={})",
+                        poolSlots, allowCreate);
+            }
+
+            for (Integer slot : poolSlots) {
+                InboxDto inbox = tryResolveInboxForPoolSlot(slot, allowCreate);
+                if (inbox != null) {
+                    // ✅ success: pool slot selected and global client configured
+                    return inbox;
+                }
+            }
+
+            // If we get here, all pool slots failed (expired / 426 / 401 / etc.)
+            logger.warn(
+                    "[MailSlurp] No usable pool slot. All MAILSLURP_API_KEY_n / MAILSLURP_INBOX_ID_n " +
+                            "combos either expired or hit create limits (426/402/429). " +
+                            "Falling back to single-key / legacy resolution if configured."
+            );
+            // 👈 IMPORTANT: no return / throw here → execution falls through
+        }
+
+
+        // -----------------------------------------------------------------
+        // 2) SINGLE-KEY / LEGACY BEHAVIOR (no pool configured)
+        // -----------------------------------------------------------------
+        ensureClientReadyOrThrow();
+
         String fixedIdStr = firstNonBlank(
-                poolFixedId,                                 // 👈 inbox matched to API key n
                 System.getProperty("MAILSLURP_FIXED_INBOX_ID"),
                 System.getenv("MAILSLURP_FIXED_INBOX_ID"),
                 System.getProperty("MAILSLURP_INBOX_ID"),
@@ -93,21 +127,20 @@ public class MailSlurpUtils {
                 Config.getMailSlurpFixedInboxId()
         );
 
-        final boolean allowCreate = isCreateAllowed();
         final boolean hasFixed = isNonBlank(fixedIdStr);
 
         if (isDebug()) {
             String prefix = hasFixed ? fixedIdStr.trim() : "";
             if (prefix.length() > 8) prefix = prefix.substring(0, 8);
             logger.info(
-                    "[MailSlurp][resolve] allowCreate={} | fixedIdPresent={} | idPrefix={}",
+                    "[MailSlurp][resolve-single] allowCreate={} | fixedIdPresent={} | idPrefix={}",
                     allowCreate,
                     hasFixed,
                     hasFixed ? prefix : "none"
             );
         }
 
-        // 1) Try fixed inbox if configured (pool or global – they all end up here)
+        // 2a) Try fixed inbox (single-key mode)
         if (hasFixed) {
             try {
                 UUID id = UUID.fromString(fixedIdStr.trim());
@@ -122,24 +155,186 @@ public class MailSlurpUtils {
                 if (!allowCreate) {
                     throw new SkipException(
                             "MailSlurp fixed inbox \"" + fixedIdStr + "\" unavailable and inbox creation disabled " +
-                                    "(set MAILSLURP_INBOX_ID_n / MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID correctly " +
-                                    "or enable MAILSLURP_ALLOW_CREATE_INBOX_FALLBACK=true for local runs)."
+                                    "(set MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID correctly " +
+                                    "or enable MAILSLURP_ALLOW_CREATE_INBOX_FALLBACK=true)."
                     );
                 }
             }
         } else if (!allowCreate) {
-            // 2) No fixed inbox configured and not allowed to create
+            // 2b) No fixed inbox configured and not allowed to create
             throw new SkipException(
                     "MailSlurp inbox creation disabled and no fixed inbox configured. " +
-                            "Set MAILSLURP_INBOX_ID_n / MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID or enable " +
-                            "MAILSLURP_ALLOW_CREATE_INBOX_FALLBACK=true for local runs."
+                            "Set MAILSLURP_FIXED_INBOX_ID / MAILSLURP_INBOX_ID or enable " +
+                            "MAILSLURP_ALLOW_CREATE_INBOX_FALLBACK=true."
             );
         }
 
-        // 3) No usable fixed inbox → try to create (if allowed)
+        // 2c) No usable fixed inbox → try to create (legacy behavior)
         return createInboxReflectiveWithGuards();
     }
 
+
+    /**
+     * Configure the shared ApiClient + controllers for a specific API key.
+     * Used by pool slots so that once a slot is chosen, the same client is reused
+     * by waitForEmailMatching, listRecentEmails, etc.
+     */
+    private static void configureClientForKey(String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalArgumentException("apiKey must not be blank");
+        }
+
+        ApiClient client = Configuration.getDefaultApiClient();
+        client.setBasePath(basePath());
+        client.setApiKey(apiKey.trim());
+        client.setConnectTimeout(30_000);
+        client.setReadTimeout(30_000);
+        client.setWriteTimeout(30_000);
+
+        apiClient = client;
+        inboxController = new InboxControllerApi(client);
+        emailController = new EmailControllerApi(client);
+        waitForController = new WaitForControllerApi(client);
+
+        keyFingerprint = safeSha12(apiKey.trim());
+
+        if (isDebug()) {
+            logger.info("[MailSlurp] Configured client for pool key (fingerprint={})",
+                    keyFingerprint);
+            try {
+                inboxController.getInboxes().size(1).execute();
+                logger.info("[MailSlurp] Pool key auth probe OK.");
+            } catch (Exception e) {
+                logger.warn("[MailSlurp] Pool key auth probe failed: {}", safeMsg(e));
+            }
+        }
+    }
+
+    /**
+     * Try to resolve an inbox for a given pool slot:
+     *   1) Configure client for MAILSLURP_API_KEY_n
+     *   2) Try fixed inbox MAILSLURP_INBOX_ID_n
+     *   3) On 404 + allowCreate => try createInbox
+     *   4) On 426/402/429 during createInbox => return null (next slot)
+     *
+     * Returns a usable InboxDto or null if this slot is unusable.
+     */
+    private static InboxDto tryResolveInboxForPoolSlot(int slot, boolean allowCreate) {
+        String apiKey = Config.getMailSlurpApiKeyByNumber(slot);
+        if (apiKey == null || apiKey.isBlank()) {
+            return null;
+        }
+
+        try {
+            configureClientForKey(apiKey);
+        } catch (Exception e) {
+            logger.warn("[MailSlurp] Slot #{}: failed to configure client: {}", slot, safeMsg(e));
+            return null;
+        }
+
+        selectedPoolNumber = slot;
+
+        String fixedIdStr = Config.getMailSlurpInboxIdByNumber(slot);
+        boolean hasFixed = isNonBlank(fixedIdStr);
+
+        if (isDebug()) {
+            String prefix = hasFixed ? fixedIdStr.trim() : "";
+            if (prefix.length() > 8) prefix = prefix.substring(0, 8);
+            logger.info("[MailSlurp][slot {}] allowCreate={} | fixedIdPresent={} | idPrefix={}",
+                    slot, allowCreate, hasFixed, hasFixed ? prefix : "none");
+        }
+
+        // 1) Try fixed inbox for this slot
+        if (hasFixed) {
+            try {
+                UUID id = UUID.fromString(fixedIdStr.trim());
+                InboxDto fixed = inboxController.getInbox(id).execute();
+                logger.info("[MailSlurp][slot {}] Using fixed inbox {} <{}>",
+                        slot, fixed.getId(), fixed.getEmailAddress());
+                return fixed;
+            } catch (ApiException ex) {
+                int code = ex.getCode();
+                if (code == 404) {
+                    logger.warn("[MailSlurp][slot {}] Fixed inbox {} expired/not found (404).",
+                            slot, fixedIdStr);
+                } else {
+                    logger.warn("[MailSlurp][slot {}] getInbox failed (status={}): {}",
+                            slot, code, safeMsg(ex));
+                    if (!allowCreate) {
+                        // Can't create, so this slot is unusable
+                        return null;
+                    }
+                }
+            } catch (Exception ex) {
+                logger.warn("[MailSlurp][slot {}] getInbox unexpected error: {}", slot, safeMsg(ex));
+                if (!allowCreate) {
+                    return null;
+                }
+            }
+        } else if (!allowCreate) {
+            logger.warn("[MailSlurp][slot {}] No fixed inbox id and creation not allowed → skip slot.",
+                    slot);
+            return null;
+        }
+
+        // 2) No usable fixed inbox → try to create, if allowed
+        if (!allowCreate) {
+            return null;
+        }
+
+        try {
+            InboxDto created = createInboxForCurrentSlotNoReuse();
+            if (created != null) {
+                logger.info("[MailSlurp][slot {}] Created inbox {} <{}>",
+                        slot, created.getId(), created.getEmailAddress());
+            }
+            return created;
+        } catch (ApiException ex) {
+            int code = ex.getCode();
+            if (code == 426 || code == 402 || code == 429) {
+                // 👇 THIS IS THE IMPORTANT PART:
+                // Treat plan/quota errors as "slot dead" and move on to next one.
+                logger.warn("[MailSlurp][slot {}] createInbox limited (HTTP {}). Trying next slot.",
+                        slot, code);
+                return null;
+            }
+            logger.warn("[MailSlurp][slot {}] createInbox failed (status={}): {}",
+                    slot, code, safeMsg(ex));
+            return null;
+        } catch (Exception ex) {
+            logger.warn("[MailSlurp][slot {}] createInbox unexpected error: {}",
+                    slot, safeMsg(ex));
+            return null;
+        }
+    }
+
+    /**
+     * Create an inbox for the *current* client/slot.
+     * This variant does NOT try to be clever on 426; it simply throws ApiException
+     * so the caller (tryResolveInboxForPoolSlot) can decide whether to move to next slot.
+     */
+    private static InboxDto createInboxForCurrentSlotNoReuse() throws ApiException {
+        try {
+            if (isDebug()) {
+                logger.info("[MailSlurp] Creating inbox via InboxControllerApi#createInboxWithDefaults (pool slot).");
+            }
+
+            Method m = InboxControllerApi.class.getMethod("createInboxWithDefaults");
+            Object call = m.invoke(inboxController);
+            Method exec = call.getClass().getMethod("execute");
+            Object dto = exec.invoke(call);
+            return (InboxDto) dto;
+
+        } catch (InvocationTargetException ite) {
+            Throwable cause = ite.getTargetException();
+            if (cause instanceof ApiException) {
+                throw (ApiException) cause;
+            }
+            throw new RuntimeException("Reflection failed creating MailSlurp inbox for pool slot: " + safeMsg(cause), cause);
+        } catch (ReflectiveOperationException roe) {
+            throw new RuntimeException("Reflection failed creating MailSlurp inbox for pool slot: " + safeMsg(roe), roe);
+        }
+    }
 
 
 
@@ -326,27 +521,38 @@ public class MailSlurpUtils {
                 Config.getAny("mailslurp.apiKey", "MAILSLURP_API_KEY")
         );
 
-        // If no single key configured, try the numbered pool
-        if (key == null || key.isBlank()) {
+        if (key != null && !key.isBlank()) {
+            // ✅ Single-key mode: make sure we don't pretend a pool slot was used
+            selectedPoolNumber = null;
+        } else {
+            // 2) No single key configured → try the numbered pool
             key = resolveApiKeyFromPoolOrNull();
             if (key == null || key.isBlank()) {
+                if (isDebug()) {
+                    logger.warn("[MailSlurp][Key] No usable API key found (single-key + pool both empty/invalid).");
+                }
+                selectedPoolNumber = null; // be explicit
                 return null; // nothing usable
             }
         }
 
-        // Optional: fingerprint check (keep whatever you already have)
+        key = key.trim();
+
+        // 3) Optional: fingerprint check (keep whatever you already have)
         String expectedFpRaw = firstNonBlank(
                 System.getProperty("mailslurp.expectedFingerprint"),
                 System.getenv("MAILSLURP_EXPECTED_FINGERPRINT")
         );
         if (isNonBlank(expectedFpRaw)) {
-            String actual = safeSha12(key.trim());
+            String actual = safeSha12(key);
             if (!expectedFpRaw.trim().equalsIgnoreCase(actual)) {
-                throw new SkipException("MailSlurp API key mismatch. expected=" + expectedFpRaw + " actual=" + actual);
+                throw new SkipException(
+                        "MailSlurp API key mismatch. expected=" + expectedFpRaw + " actual=" + actual
+                );
             }
         }
 
-        return key.trim();
+        return key;
     }
 
 
@@ -635,8 +841,14 @@ public class MailSlurpUtils {
 
 
 
-    private static boolean hasQuotaForKey(String key) {
-        if (key == null || key.isBlank()) return false;
+// BEFO
+    private static boolean hasQuotaForKey(String key, int slotIndex) {
+        if (key == null || key.isBlank()) {
+            if (isDebug()) {
+                logger.info("[MailSlurp][Pool] slot #{} → empty / blank key, skipping.", slotIndex);
+            }
+            return false;
+        }
 
         try {
             // ✅ use a fresh client instead of clone()
@@ -653,17 +865,23 @@ public class MailSlurpUtils {
                     .size(1)
                     .execute();
 
+            if (isDebug()) {
+                logger.info("[MailSlurp][Pool] slot #{} → probe OK (key fp={})",
+                        slotIndex, safeSha12(key));
+            }
             return true;
         } catch (ApiException ex) {
             int code = ex.getCode();
             if (isDebug()) {
-                logger.warn("[MailSlurp] Key probe failed ({}): {}", code, safeMsg(ex));
+                logger.warn("[MailSlurp][Pool] slot #{} → probe FAILED (HTTP {}): {} → treating as NO-QUOTA",
+                        slotIndex, code, safeMsg(ex));
             }
             // 401/402/429 etc => treat as "no quota / invalid"
             return false;
         } catch (Exception e) {
             if (isDebug()) {
-                logger.warn("[MailSlurp] Key probe error: {}", safeMsg(e));
+                logger.warn("[MailSlurp][Pool] slot #{} → probe ERROR: {} → treating as NO-QUOTA",
+                        slotIndex, safeMsg(e));
             }
             return false;
         }
@@ -673,32 +891,52 @@ public class MailSlurpUtils {
 
 
     /**
-     * Try numbered pool MAILSLURP_API_KEY_1..5 (or mailslurp.apiKey.1..5)
+     * Try numbered pool MAILSLURP_API_KEY_1..10 (or mailslurp.apiKey.1..10)
      * and return the first key that passes the quota probe.
-     * Also sets selectedPoolNumber with the chosen index (1..5).
+     * Also sets selectedPoolNumber with the chosen index (1..10).
      */
     private static String resolveApiKeyFromPoolOrNull() {
-        // You can adjust this range if you want more/less than 5
-        for (int i = 1; i <= 10; i++) {
+        int poolMax = 10; // keep in sync with resolveFixedOrCreateInbox()
+        boolean anyConfigured = false;
+
+        for (int i = 1; i <= poolMax; i++) {
             String candidate = Config.getMailSlurpApiKeyByNumber(i);
             if (candidate == null || candidate.isBlank()) {
+                if (isDebug()) {
+                    logger.info("[MailSlurp][Pool] slot #{} → no key configured.", i);
+                }
                 continue;
             }
 
-            if (hasQuotaForKey(candidate)) {
+            anyConfigured = true;
+            if (isDebug()) {
+                logger.info("[MailSlurp][Pool] slot #{} → found configured key (fp={})",
+                        i, safeSha12(candidate));
+            }
+
+            if (hasQuotaForKey(candidate, i)) {
                 selectedPoolNumber = i;
                 if (isDebug()) {
-                    logger.info("[MailSlurp] Selected API key #{} from pool (fingerprint={}...)",
-                            i, safeSha12(candidate).substring(0, 12));
+                    logger.info("[MailSlurp][Pool] ✅ SELECTED slot #{} (key fp={})",
+                            i, safeSha12(candidate));
                 }
                 return candidate.trim();
+            } else {
+                if (isDebug()) {
+                    logger.info("[MailSlurp][Pool] slot #{} → rejected (no quota / invalid).", i);
+                }
             }
         }
+
+        if (anyConfigured) {
+            logger.warn("[MailSlurp][Pool] All configured pool slots were rejected (no usable key). "
+                    + "Falling back to single-key resolution if available.");
+        } else if (isDebug()) {
+            logger.info("[MailSlurp][Pool] No pool keys configured at all.");
+        }
+
         return null;
     }
-
-
-
 
 
 
@@ -745,6 +983,13 @@ public class MailSlurpUtils {
 
         return null; // 👍 No new email arrived
     }
+
+
+    /** Selected MailSlurp pool index (1..N) when using MAILSLURP_API_KEY_n / MAILSLURP_INBOX_ID_n. */
+    public static Integer getSelectedPoolNumber() {
+        return selectedPoolNumber;
+    }
+
 
 
 

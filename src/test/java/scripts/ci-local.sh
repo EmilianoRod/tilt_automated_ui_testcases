@@ -9,8 +9,7 @@ echo "[ci-local] Running from project root: $REPO_ROOT"
 
 
 # Copy envs from your .env or export manually before running:
-#export MAILSLURP_API_KEY=sk_SGpxMjUdwbPpRDLs_4qruIteMSY2lfYorLHb2paRWmsoM0GLaHcMyY0vaOCKMQXAGJANOBcIYqrGPgvpt
-#export MAILSLURP_INBOX_ID=91072010-c653-408e-884b-48d435345bec
+
 export ADMIN_USER=erodriguez+a@effectussoftware.com
 export ADMIN_PASS=Password#1
 export BASE_URL=https://tilt-dashboard-dev.tilt365.com/
@@ -21,6 +20,10 @@ export CI=true
 export CHROME_MAJOR_PIN="${CHROME_MAJOR_PIN:-142}"
 export CI_EXPLICIT_WAIT_SEC="${CI_EXPLICIT_WAIT_SEC:-60}"
 #export MAILSLURP_EXPECTED_FP="${MAILSLURP_EXPECTED_FP:-579d2267880c}"
+
+
+export MAILSLURP_API_KEY=sk_SGpxMjUdwbPpRDLs_4qruIteMSY2lfYorLHb2paRWmsoM0GLaHcMyY0vaOCKMQXAGJANOBcIYqrGPgvpt
+export MAILSLURP_INBOX_ID=91072010-c653-408e-884b-48d435345bec
 
 # Account 1
 export MAILSLURP_API_KEY_1="sk_ysgWqy3VNqLRNRAU_ruK3xjb7BCqshKWwCGdLQh1N9Lf7AnECZOloLx1YeuiKX1tEzdI0uETJsgkhKeeh"
@@ -65,6 +68,8 @@ export MAILSLURP_INBOX_ID_10="f78743ac-534e-4f83-b036-98df7c54a285"
 
 
 
+
+
 # Optional: reproduce Jenkins timeout etc.
 
 
@@ -78,6 +83,7 @@ mvn -B \
   -DADMIN_PASS="$ADMIN_PASS" \
   -Dtimeout="$CI_EXPLICIT_WAIT_SEC" \
   -Dretry=1 \
+  -DMAILSLURP_ALLOW_CREATE_INBOX_FALLBACK=true \
   clean test
 
 
