@@ -128,7 +128,25 @@ public class Phase1SmokeTests extends BaseTest {
         Assert.assertTrue(shopPage.isLoaded(), "❌ Shop page did not load");
         PurchaseRecipientSelectionPage sel = shopPage.clickBuyNowForTrueTilt();
         sel.selectClientOrIndividual();
-        sel.clickNext();
+
+
+
+
+
+
+
+
+
+//        sel.clickNext();
+
+
+
+
+
+
+
+
+
 
         step("Manual entry for 1 individual (use the aliased MailSlurp address)");
         AssessmentEntryPage entryPage = new AssessmentEntryPage(driver())
