@@ -974,7 +974,6 @@ public class ManualEntryValidationTests extends BaseTest {
         );
     }
 
-
     @Test(description = "QASE 971: Network/API failure on submit → Chrome offline error, no Stripe redirect")
     @Severity(SeverityLevel.CRITICAL)
     @TmsLink("971")
@@ -1018,14 +1017,19 @@ public class ManualEntryValidationTests extends BaseTest {
                 "Pay/Proceed CTA should be enabled on Order Preview before simulating failure."
         );
 
-        // Optional: remember whether Stripe is visible (for logging / branching)
+        // Optional: remember whether Stripe is visible (for logging)
         final boolean stripeVisible = preview.isPayWithStripeVisible();
         System.out.println("[networkFailureOnSubmitGuard] Stripe visible on preview = " + stripeVisible);
 
         final String urlBefore = driver().getCurrentUrl();
 
         // ---- Step: Simulate network/API failure via DevTools offline mode ----
-        DevTools devTools = ((HasDevTools) driver()).getDevTools();
+        WebDriver rawDriver = driver();
+        if (!(rawDriver instanceof HasDevTools)) {
+            Assert.fail("Driver does not support DevTools; cannot emulate offline network conditions.");
+        }
+
+        DevTools devTools = ((HasDevTools) rawDriver).getDevTools();
         devTools.createSession();
 
         devTools.send(Network.enable(
@@ -1036,75 +1040,119 @@ public class ManualEntryValidationTests extends BaseTest {
                 Optional.empty()
         ));
 
-        // Fully offline → all requests (including Stripe) will fail
-        devTools.send(Network.emulateNetworkConditions(
-                true,                         // offline
-                0,                            // latency
-                0,                            // downloadThroughput
-                0,                            // uploadThroughput
-                Optional.of(ConnectionType.NONE),
-                Optional.empty(),
-                Optional.empty(),
-                Optional.empty()
-        ));
+        try {
+            // Fully offline → all requests (including Stripe) will fail
+            devTools.send(Network.emulateNetworkConditions(
+                    true,                         // offline
+                    0,                            // latency
+                    0,                            // downloadThroughput
+                    0,                            // uploadThroughput
+                    Optional.of(ConnectionType.NONE),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty()
+            ));
 
-        // ---- Step: Click payment CTA while offline ----
-        preview.clickPayWithStripe();
-//        if (stripeVisible) {
-//            // Prefer explicit Stripe button when present
-//            preview.clickPayWithStripe();
-//            System.out.printf("<TESTTTTTTTTTTTT");
-//        } else {
-//            // Fallback: generic "Place order / Complete purchase" CTA
-//            System.out.printf("<TESTTTTTTTTTTTT22222222");
-//            preview.clickPrimaryPaymentCta();
-//        }
+            // Tiny pause to allow Chrome to fully apply offline state (helps in CI)
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
 
-        // ---- Wait for Chrome offline error page ----
-        new WebDriverWait(driver(), Duration.ofSeconds(10))
-                .until(d -> {
-                    String source = d.getPageSource().toLowerCase();
-                    String title  = d.getTitle().toLowerCase();
-                    return source.contains("no internet")
+            // ---- Step: Click payment CTA while offline ----
+            if (stripeVisible) {
+                preview.clickPayWithStripe();
+            } else {
+                // Fallback: generic "Place order / Complete purchase" CTA
+                preview.clickPrimaryPaymentCta();
+            }
+
+            // ---- Wait for Chrome offline error / network failure state ----
+            new WebDriverWait(rawDriver, Duration.ofSeconds(25))
+                    .until(d -> {
+                        try {
+                            String url    = d.getCurrentUrl().toLowerCase();
+                            String title  = d.getTitle().toLowerCase();
+                            String source = d.getPageSource().toLowerCase();
+
+                            // Allow:
+                            //  - chrome-error:// offline page
+                            //  - ERR_INTERNET_DISCONNECTED token
+                            //  - "no internet" (EN) variants
+                            //  - "sin conexión" (ES) variants
+                            return url.startsWith("chrome-error://")
+                                    || title.contains("err_internet_disconnected")
+                                    || source.contains("err_internet_disconnected")
+                                    || title.contains("no internet")
+                                    || source.contains("no internet")
+                                    || title.contains("sin conexión")
+                                    || source.contains("sin conexión");
+                        } catch (Exception e) {
+                            // If page temporarily not available / switching, keep waiting
+                            return false;
+                        }
+                    });
+
+            // ---- EXPECTATION #3: Chrome offline error / network error is shown ----
+            String currentUrl = rawDriver.getCurrentUrl().toLowerCase();
+            String title      = rawDriver.getTitle().toLowerCase();
+            String source     = rawDriver.getPageSource().toLowerCase();
+
+            boolean looksOffline =
+                    currentUrl.startsWith("chrome-error://")
+                            || title.contains("err_internet_disconnected")
                             || source.contains("err_internet_disconnected")
-                            || title.contains("no internet");
-                });
+                            || title.contains("no internet")
+                            || source.contains("no internet")
+                            || title.contains("sin conexión")
+                            || source.contains("sin conexión");
 
-        // ---- EXPECTATION #3: Chrome offline error is shown ----
-        String source     = driver().getPageSource().toLowerCase();
-        String title      = driver().getTitle().toLowerCase();
-        String currentUrl = driver().getCurrentUrl();
+            if (!looksOffline) {
+                // Extra logging for CI debugging
+                System.out.println("[networkFailureOnSubmitGuard] OFFLINE CHECK FAILED");
+                System.out.println("URL   = " + currentUrl);
+                System.out.println("Title = " + title);
+                System.out.println("Source snippet = " +
+                        source.substring(0, Math.min(source.length(), 1000)));
+            }
 
-        Assert.assertTrue(
-                source.contains("no internet")
-                        || source.contains("err_internet_disconnected")
-                        || title.contains("no internet"),
-                "Expected Chrome 'No internet / ERR_INTERNET_DISCONNECTED' error page after going offline."
-        );
+            Assert.assertTrue(
+                    looksOffline,
+                    "Expected Chrome offline error (chrome-error:// / ERR_INTERNET_DISCONNECTED / 'no internet' / localized variant) after going offline."
+            );
 
-        // ---- EXPECTATION #4: We never reached Stripe Checkout ----
-        Assert.assertFalse(
-                currentUrl.contains("checkout.stripe.com"),
-                "Did not expect to be redirected to Stripe Checkout when browser is offline. URL = " + currentUrl
-        );
+            // ---- EXPECTATION #4: We never reached Stripe Checkout ----
+            Assert.assertFalse(
+                    currentUrl.contains("checkout.stripe.com"),
+                    "Did not expect to be redirected to Stripe Checkout when browser is offline. URL = " + currentUrl
+            );
 
-        // Optional: still on Tilt origin (same host as before, just in error state)
-        Assert.assertTrue(
-                currentUrl.contains("tilt-dashboard-") || currentUrl.startsWith("https://tilt-dashboard-dev.tilt365.com"),
-                "Expected to remain on Tilt origin; before=" + urlBefore + " | after=" + currentUrl
-        );
+            // Optional: still on Tilt origin OR Chrome error page
+            Assert.assertTrue(
+                    currentUrl.startsWith("chrome-error://")
+                            || currentUrl.contains("tilt-dashboard-")
+                            || currentUrl.startsWith("https://tilt-dashboard-dev.tilt365.com"),
+                    "Expected to remain on Tilt origin or Chrome error page; before=" + urlBefore + " | after=" + currentUrl
+            );
 
-        // ---- Restore network so other tests are not broken ----
-        devTools.send(Network.emulateNetworkConditions(
-                false,                         // online
-                100,                           // latency
-                5_000,                         // downloadThroughput
-                5_000,                         // uploadThroughput
-                Optional.of(ConnectionType.ETHERNET),
-                Optional.empty(),
-                Optional.empty(),
-                Optional.empty()
-        ));
+        } finally {
+            // ---- Restore network so other tests are not broken ----
+            try {
+                devTools.send(Network.emulateNetworkConditions(
+                        false,                        // online
+                        100,                          // latency
+                        5_000,                        // downloadThroughput
+                        5_000,                        // uploadThroughput
+                        Optional.of(ConnectionType.ETHERNET),
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.empty()
+                ));
+            } catch (Exception e) {
+                System.out.println("[networkFailureOnSubmitGuard] Failed to restore network conditions via DevTools: " + e.getMessage());
+            }
+        }
     }
 
 

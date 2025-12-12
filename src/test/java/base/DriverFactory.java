@@ -121,8 +121,12 @@ public final class DriverFactory {
         );
 
         // Window size applied once; headless also needs an explicit size
-        String windowSizeArg = "--window-size=" + Config.getWindowSize();
-        options.addArguments(windowSizeArg);
+        String resolvedWindowSize =
+                Optional.ofNullable(Config.getWindowSize())
+                        .filter(s -> !s.isBlank())
+                        .orElse(IS_CI ? "1440,900" : "1366,768"); // pick your defaults
+
+        options.addArguments("--window-size=" + resolvedWindowSize);
 
         // Headless mode is now controlled ONLY by Config.isHeadless()
         if (headlessEnv) {
@@ -134,6 +138,17 @@ public final class DriverFactory {
         if (IS_CI) {
             options.addArguments("--no-sandbox");
         }
+
+        double scale = Config.getDeviceScale();
+        if (scale <= 0) {
+            scale = 1.0;
+        }
+        if (IS_CI) {
+            // In CI we want a predictable 1:1 scale so layouts don't switch to "tiny" mode
+            scale = 1.0;
+        }
+        options.addArguments("--force-device-scale-factor=" + scale);
+
 
         // Optional custom Chrome binary
         String chromeBinary = Config.getChromeBinaryPath(); // returns null/blank when unset
