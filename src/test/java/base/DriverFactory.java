@@ -117,16 +117,12 @@ public final class DriverFactory {
                 "--disable-pdf-viewer",
                 "--pdfjs-disable",
                 "--no-sandbox",
-                "--remote-allow-origins=*"
+                "--remote-allow-origins=*",
+                "--window-size=1920,1080"
+
         );
 
-        // Window size applied once; headless also needs an explicit size
-        String resolvedWindowSize =
-                Optional.ofNullable(Config.getWindowSize())
-                        .filter(s -> !s.isBlank())
-                        .orElse(IS_CI ? "1440,900" : "1366,768"); // pick your defaults
 
-        options.addArguments("--window-size=" + resolvedWindowSize);
 
         // Headless mode is now controlled ONLY by Config.isHeadless()
         if (headlessEnv) {
