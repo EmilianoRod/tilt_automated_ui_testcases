@@ -54,6 +54,11 @@ public class TeamsPage extends BasePage {
     private final By pageItems   = By.cssSelector(".ant-table-pagination .ant-pagination-item");
     private final By totalText   = By.cssSelector(".ant-table-pagination .ant-pagination-total-text"); //
 
+    private final By pageSizeSelect = By.xpath("//*/ul/li/div[@aria-label='Page Size']/div[1]");
+    private final By pageSizeOption100 = By.xpath("//*[normalize-space()='100 / page' or normalize-space()='100 / page ']");
+    private final By pagingLabel = By.xpath("//span[@class='ant-select-selection-item']");
+
+
     // ===== Sort caret + option container (copied pattern) =====
     private final By sortCaretSvg = By.xpath(
             "(//p[starts-with(normalize-space(),'Sort by:')]/following-sibling::*[name()='svg'][1])[1]"
@@ -65,6 +70,9 @@ public class TeamsPage extends BasePage {
 
     private final By firstColumn = By.xpath("//th[normalize-space()='Organization / Team name']");
 
+    private By nextPageArrow = By.xpath(
+            "//li[@title='Next Page']//button[@type='button']"
+    );
 
     private By sortOptionByFullText(String fullText) {
         return By.xpath(".//p[normalize-space()='" + fullText + "']");
@@ -718,77 +726,186 @@ public class TeamsPage extends BasePage {
     }
 
 
-    /**
-     * Opens Team Details for the first team (across pages) that has at least one
-     * TTP aggregate report. If none is found, throws SkipException so the smoke
-     * test is SKIPPED instead of FAILED.
-     */
+//    /**
+//     * Opens Team Details for the first team (across pages) that has at least one
+//     * TTP aggregate report. If none is found, throws SkipException so the smoke
+//     * test is SKIPPED instead of FAILED.
+//     */
+
     public TeamDetailsPage openFirstTeamWithCompletedAggregateReport() {
-        // Always start from first page to have deterministic behavior
         goToFirstPageIfPossible();
 
-        int pageCount = 0;
+        waitUntilLoaded();
+        waitForTableSettled();
 
-        while (true) {
-            if (pageCount++ > 20) {
-                throw new SkipException("⚠ Safety guard: scanned >20 pages on Teams without finding a TTP aggregate.");
-            }
+        // ✅ Reduce pages
+        setPageSizeTo100IfPossible();
 
+        int maxPages = 10; // with 100/page you’ll likely need very few
+        String teamsUrl = driver.getCurrentUrl();
+
+        for (int page = 1; page <= maxPages; page++) {
+            waitUntilLoaded();
             waitForTableSettled();
 
             List<WebElement> rows = driver.findElements(tableRows);
             if (rows.isEmpty()) {
-                break;
+                System.out.println("[TeamsScan] page=" + page + " rows=0");
+            } else {
+                System.out.println("[TeamsScan] page=" + page + " rows=" + rows.size());
             }
 
+            // ✅ collect hrefs first (stable)
+            List<String> teamUrls = new ArrayList<>();
             for (WebElement row : rows) {
-                String teamName = safeText(() -> teamNameCellInRow(row).getText()).trim();
-                if (teamName.isBlank()) {
-                    continue;
-                }
-
-                // --- Open team details by clicking the real link ("View all") ---
                 WebElement link = teamLinkInRow(row);
+                String href = link.getAttribute("href");
+                if (href != null && !href.isBlank()) teamUrls.add(href);
+            }
 
-                try { scrollToElement(link); } catch (Throwable ignored) {}
-                try {
-                    ((JavascriptExecutor) driver)
-                            .executeScript("arguments[0].scrollIntoView({block:'center'});", link);
-                } catch (Exception ignored) {}
+            // ✅ visit each team directly
+            for (String url : teamUrls) {
+                driver.get(url);
 
-                try {
-                    // force same tab just in case
-                    ((JavascriptExecutor) driver).executeScript("arguments[0].setAttribute('target','_self');", link);
-                } catch (Exception ignored) {}
-
-                try {
-                    link.click();
-                } catch (Exception e) {
-                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", link);
-                }
-
-                // --- On Team Details, check for TTP aggregate ---
                 TeamDetailsPage details = new TeamDetailsPage(driver).waitUntilLoaded();
                 if (details.hasCompletedTrueTiltAggregate()) {
-                    return details; // ✅ found one
+                    return details;
                 }
-
-                // ❌ No TTP here – go back to Teams and continue with next row
-                driver.navigate().back();
-                waitUntilLoaded();
             }
 
-            // No matching team on this page, try next page if available
-            if (!goToNextPageIfPossible()) {
+            // go back to teams list cleanly
+            driver.get(teamsUrl);
+            waitUntilLoaded();
+            waitForTableSettled();
+
+            // next page
+            if (!goToNextPageArrowIfPossible()) {
                 break;
             }
         }
 
-        throw new SkipException("⚠ No team found with completed Team True Tilt Aggregate reports across Teams pages.");
+        throw new SkipException("⚠ No team found with completed Team True Tilt Aggregate reports.");
     }
 
 
 
+
+    public boolean goToNextPageArrowIfPossible() {
+        try {
+            WebElement next = driver.findElement(nextPageArrow);
+
+            if (!next.isDisplayed() || !next.isEnabled()) {
+                System.out.println("[Pagination] Next page disabled or not visible");
+                return false;
+            }
+
+            scrollIntoView(next);
+            next.click();
+
+            waitUntilLoaded();
+            waitForTableSettled();
+
+            System.out.println("[Pagination] Moved to next page");
+            return true;
+
+        } catch (NoSuchElementException e) {
+            System.out.println("[Pagination] Next page arrow not found");
+            return false;
+        }
+    }
+
+
+    private void forceSameTab(WebElement el) {
+        try {
+            ((JavascriptExecutor) driver)
+                    .executeScript("arguments[0].setAttribute('target','_self');", el);
+        } catch (Exception ignored) {}
+    }
+
+
+    public void goToPage(int pageNumber) {
+        final String target = String.valueOf(pageNumber);
+        final WebDriverWait fastWait = new WebDriverWait(driver, java.time.Duration.ofSeconds(3));
+        final WebDriverWait slowWait = new WebDriverWait(driver, java.time.Duration.ofSeconds(6));
+
+        // 0) Already on target? no-op (prevents dead waits)
+        for (WebElement li : driver.findElements(pageItems)) {
+            String text = li.getText().trim();
+            if (!text.matches("\\d+")) continue; // ignore arrows/ellipsis
+            if (target.equals(text)) {
+                String cls = String.valueOf(li.getAttribute("class"));
+                if (cls.contains("ant-pagination-item-active")) return;
+            }
+        }
+
+        // Snapshot cheap "content changed" signal BEFORE clicking (footer)
+        String beforeFooter = getDisplayingRangeTextSafe();
+
+        // Also snapshot first row for staleness fallback
+        WebElement oldFirstRow = null;
+        try { oldFirstRow = driver.findElement(By.cssSelector("table tbody tr")); } catch (Exception ignored) {}
+
+        // 1) Find target LI (numeric) and click tolerant (a/span/button)
+        WebElement targetLi = driver.findElements(pageItems).stream()
+                .filter(li -> {
+                    String txt = li.getText().trim();
+                    return txt.matches("\\d+") && target.equals(txt);
+                })
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("❌ Page number " + pageNumber + " not found in pagination"));
+
+        WebElement clickEl = !targetLi.findElements(By.tagName("a")).isEmpty()
+                ? targetLi.findElement(By.tagName("a"))
+                : (!targetLi.findElements(By.tagName("span")).isEmpty()
+                ? targetLi.findElement(By.tagName("span"))
+                : targetLi);
+
+        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", clickEl);
+        try { clickEl.click(); } catch (Exception e) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", clickEl);
+        }
+
+        // 2) Wait A: active page class flips to target (deterministic & fast)
+        fastWait.until(d -> isActivePage(target));
+
+        // 3) Wait B: content actually changed (footer preferred, row staleness as fallback)
+        boolean footerChanged = false;
+        try {
+            footerChanged = fastWait.until(d -> {
+                String after = getDisplayingRangeTextSafe();
+                return !after.equals(beforeFooter) && !after.isEmpty();
+            });
+        } catch (org.openqa.selenium.TimeoutException ignored) {
+            // ignore and try staleness
+        }
+
+        if (!footerChanged && oldFirstRow != null) {
+            try {
+                slowWait.until(org.openqa.selenium.support.ui.ExpectedConditions.stalenessOf(oldFirstRow));
+            } catch (org.openqa.selenium.TimeoutException ignored) {
+                // Some AntD tables recycle <tr>; if both signals fail, accept active-page change only.
+            }
+        }
+
+        // Do NOT call a generic waitForTableRefreshed() here — it’s the source of the long timeouts.
+    }
+
+    private String getDisplayingRangeTextSafe() {
+        try { return driver.findElement(totalText).getText().trim(); }
+        catch (Exception e) { return ""; }
+    }
+
+    private boolean isActivePage(String target) {
+        for (WebElement li : driver.findElements(pageItems)) {
+            String txt = li.getText().trim();
+            if (!txt.matches("\\d+")) continue;
+            if (target.equals(txt)) {
+                String cls = String.valueOf(li.getAttribute("class"));
+                return cls.contains("ant-pagination-item-active");
+            }
+        }
+        return false;
+    }
 
 
     /** In Teams table, the navigation to Team Details is the "View all" link in the Members column. */
@@ -851,6 +968,38 @@ public class TeamsPage extends BasePage {
         // 4) Now we are on /dashboard/teams/{id}/report → handled by TeamClimatePage
         return new TeamClimatePage(driver).waitUntilLoaded();
     }
+
+
+
+
+    public void setPageSizeTo100IfPossible() {
+        try {
+            String before = safeText(() -> driver.findElement(pagingLabel).getText()).trim();
+
+            WebElement dd = driver.findElement(pageSizeSelect);
+            scrollIntoView(dd);
+            safeClick(dd);
+
+            WebElement opt100 = new WebDriverWait(driver, Duration.ofSeconds(5))
+                    .until(ExpectedConditions.elementToBeClickable(pageSizeOption100));
+            safeClick(opt100);
+
+            // wait for table/paging to update
+            new WebDriverWait(driver, Duration.ofSeconds(10))
+                    .until(d -> {
+                        String now = safeText(() -> driver.findElement(pagingLabel).getText()).trim();
+                        return !now.equals(before);
+                    });
+
+            waitForTableSettled();
+            System.out.println("[TeamsPageSize] set to 100 / page");
+
+        } catch (Throwable t) {
+            System.out.println("[TeamsPageSize] could not set 100/page: " + t.getMessage());
+            // don’t fail the smoke for this
+        }
+    }
+
 
 
 

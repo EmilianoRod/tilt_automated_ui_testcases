@@ -474,4 +474,11 @@ public abstract class BasePage {
             return false;
         }
     }
+
+    protected void scrollIntoView(WebElement el) {
+        try {
+            ((JavascriptExecutor) driver)
+                    .executeScript("arguments[0].scrollIntoView({block:'center'});", el);
+        } catch (Exception ignored) {}
+    }
 }

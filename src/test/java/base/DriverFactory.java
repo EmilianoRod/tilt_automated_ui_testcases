@@ -117,7 +117,7 @@ public final class DriverFactory {
                 "--pdfjs-disable",
                 "--no-sandbox",
                 "--remote-allow-origins=*",
-                "--window-size=1920,1080",
+                "--window-size=1488,930",
                 "--force-device-scale-factor=1"
         );
 
@@ -203,7 +203,7 @@ public final class DriverFactory {
     private static WebDriver bootChrome(ChromeDriverService service, ChromeOptions options) {
         ChromeDriver driver = new ChromeDriver(service, options);
 
-        forceViewport(driver, 1920, 1080);
+        forceViewport(driver, 1488, 930);
 
 
         // Timeouts: prefer explicit waits in parallel runs; keep your knobs
