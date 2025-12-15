@@ -201,7 +201,10 @@ public final class DriverFactory {
      * Actually start ChromeDriver and apply your timeouts.
      */
     private static WebDriver bootChrome(ChromeDriverService service, ChromeOptions options) {
-        WebDriver driver = new ChromeDriver(service, options);
+        ChromeDriver driver = new ChromeDriver(service, options);
+
+        forceViewport(driver, 1920, 1080);
+
 
         // Timeouts: prefer explicit waits in parallel runs; keep your knobs
         long imp = Long.parseLong(Optional.ofNullable(
@@ -264,4 +267,23 @@ public final class DriverFactory {
                 return PageLoadStrategy.NORMAL;
         }
     }
+
+    private static void forceViewport(ChromeDriver driver, int width, int height) {
+        try {
+            // Works across Chrome versions without devtools version imports
+            Map<String, Object> metrics = new HashMap<>();
+            metrics.put("width", width);
+            metrics.put("height", height);
+            metrics.put("deviceScaleFactor", 1);
+            metrics.put("mobile", false);
+
+            driver.executeCdpCommand("Emulation.setDeviceMetricsOverride", metrics);
+            driver.manage().window().setSize(new org.openqa.selenium.Dimension(width, height));
+        } catch (Exception e) {
+            System.out.println("[Viewport] CDP override failed: " + e.getMessage());
+            try { driver.manage().window().setSize(new org.openqa.selenium.Dimension(width, height)); }
+            catch (Exception ignored) {}
+        }
+    }
+
 }
