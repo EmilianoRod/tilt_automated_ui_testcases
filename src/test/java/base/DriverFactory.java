@@ -113,14 +113,14 @@ public final class DriverFactory {
                 "--disable-features=PaintHolding",
                 "--disable-gpu",
                 "--disable-dev-shm-usage",
-                "--force-device-scale-factor=" + Config.getDeviceScale(),
                 "--disable-pdf-viewer",
                 "--pdfjs-disable",
                 "--no-sandbox",
                 "--remote-allow-origins=*",
-                "--window-size=1920,1080"
-
+                "--window-size=1920,1080",
+                "--force-device-scale-factor=1"
         );
+
 
 
 
@@ -134,16 +134,6 @@ public final class DriverFactory {
         if (IS_CI) {
             options.addArguments("--no-sandbox");
         }
-
-        double scale = Config.getDeviceScale();
-        if (scale <= 0) {
-            scale = 1.0;
-        }
-        if (IS_CI) {
-            // In CI we want a predictable 1:1 scale so layouts don't switch to "tiny" mode
-            scale = 1.0;
-        }
-        options.addArguments("--force-device-scale-factor=" + scale);
 
 
         // Optional custom Chrome binary
@@ -201,6 +191,8 @@ public final class DriverFactory {
 
         options.setCapability("goog:loggingPrefs", logs);
         // ---------- end logging ----------
+
+
 
         return options;
     }

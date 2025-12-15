@@ -74,7 +74,7 @@ export MAILSLURP_INBOX_ID_10="f78743ac-534e-4f83-b036-98df7c54a285"
 
 
 mvn -B \
-  -Dheadless=false -Dbrowser=chrome -DskipITs=false \
+  -Dheadless=true -Dbrowser=chrome -DskipITs=false \
   -Dsurefire.suiteXmlFiles=testng-parallel.xml \
   -Dmailslurp.debug=true \
   -DdisableLocalConfig=true \
