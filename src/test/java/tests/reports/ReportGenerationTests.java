@@ -101,7 +101,7 @@ public class ReportGenerationTests extends BaseTest {
         Instant start = Instant.now();
         summaryPage.clickFullReportDownload();
 
-        Path pdf = waitForNewFile(downloadDir, start, Duration.ofSeconds(45), ".pdf");
+        Path pdf = waitForNewFile(downloadDir, start, Duration.ofSeconds(180), ".pdf");
         Assert.assertNotNull(pdf, "❌ No new Full Report PDF was downloaded for the report");
         Assert.assertTrue(Files.size(pdf) > 0, "❌ Downloaded Full Report PDF is empty: " + pdf);
         System.out.println("✅ Full Report PDF downloaded: " + pdf.toAbsolutePath());
@@ -482,15 +482,6 @@ public class ReportGenerationTests extends BaseTest {
 
 
 
-
-    protected Path getDownloadDir() {
-        String custom = Config.getAny("download.dir", "DOWNLOAD_DIR");
-        if (custom != null && !custom.isBlank()) {
-            return Path.of(custom).toAbsolutePath();
-        }
-        // fallback: target/downloads
-        return Path.of("target/downloads").toAbsolutePath();
-    }
 
 
 

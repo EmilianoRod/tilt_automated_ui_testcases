@@ -12,6 +12,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import org.openqa.selenium.*;
+import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.logging.LogEntries;
 import org.openqa.selenium.logging.LogEntry;
@@ -38,6 +39,8 @@ import java.lang.reflect.Method;
 import java.nio.file.*;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;   // ✅ NEW
@@ -254,6 +257,15 @@ public class BaseTest {
         clearCookiesAndStorage(d);
         normalizeViewport(d);
 
+        // 🔥 Enable downloads in headless Chrome (CI-safe)
+        Path downloadDir = getDownloadDir();
+        try {
+            Files.createDirectories(downloadDir);
+        } catch (IOException e) {
+            logger.warn("[Download] Could not create download dir: {}", downloadDir);
+        }
+        enableHeadlessDownloads(d, downloadDir);
+
         START.set(System.currentTimeMillis());
 
         // ✅ NEW: log thread + concurrency on test start
@@ -450,6 +462,20 @@ public class BaseTest {
             logger.warn("[Viewport] setSize failed: {}", e.getMessage());
         }
     }
+
+    private static void enableHeadlessDownloads(WebDriver d, Path downloadDir) {
+        try {
+            if (d instanceof ChromeDriver) {
+                Map<String, Object> params = new HashMap<>();
+                params.put("behavior", "allow");
+                params.put("downloadPath", downloadDir.toAbsolutePath().toString());
+                ((ChromeDriver) d).executeCdpCommand("Page.setDownloadBehavior", params);
+            }
+        } catch (Exception e) {
+            System.out.println("[Download] CDP enable failed: " + e.getMessage());
+        }
+    }
+
 
     private static Duration max(Duration a, Duration b) {
         return a.compareTo(b) >= 0 ? a : b;
@@ -704,4 +730,15 @@ public class BaseTest {
 
         return new TeamDetailsPage(driver()).waitUntilLoaded();
     }
+
+
+    protected Path getDownloadDir() {
+        String custom = Config.getAny("download.dir", "DOWNLOAD_DIR");
+        if (custom != null && !custom.isBlank()) {
+            return Path.of(custom).toAbsolutePath();
+        }
+        // fallback: target/downloads
+        return Path.of("target/downloads").toAbsolutePath();
+    }
+
 }
