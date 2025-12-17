@@ -3,7 +3,7 @@
        verbose="1"
        preserve-order="true"
        parallel="methods"
-       thread-count="16">
+       thread-count="6">
 
     <listeners>
         <!-- Your custom listeners -->
@@ -21,20 +21,22 @@
             </run>
         </groups>
         <classes>
-<!--            <class name="tests.Phase1SmokeTests"/>-->
-<!--            <class name="tests.individuals.IndividualsListTests"/>-->
-<!--            <class name="tests.ManualEntryValidationTests"/>-->
-<!--            <class name="tests.TiltSmokeTest"/>-->
-<!--            <class name="tests.purchases.PurchaseFlowTests"/>-->
-<!--            <class name="tests.shop.TtpRecipientSelectionTest"/>-->
-<!--            <class name="tests.SignUpFlowTests.SignUpFlowTest"/>-->
-<!--            <class name="tests.teams.TeamClimateTests"/>-->
-<!--            <class name="tests.teams.TeamAssessmentPurchaseAndAssignment"/>-->
-<!--            <class name="tests.teams.TeamClimateTests"/>-->
-<!--            <class name="tests.OrderPreviewCouponFlowTests"/>-->
-<!--            <class name="tests.OrderPreviewSmokeTests"/>-->
-<!--            <class name="tests.ManualEntryValidationTests"/>-->
+            <class name="tests.Phase1SmokeTests"/>
+            <class name="tests.individuals.IndividualsListTests"/>
+            <class name="tests.ManualEntryValidationTests"/>
+            <class name="tests.TiltSmokeTest"/>
+            <class name="tests.purchases.PurchaseFlowTests"/>
+            <class name="tests.shop.TtpRecipientSelectionTest"/>
+            <class name="tests.SignUpFlowTests.SignUpFlowTest"/>
+            <class name="tests.teams.TeamClimateTests"/>
+            <class name="tests.teams.TeamAssessmentPurchaseAndAssignment"/>
+            <class name="tests.teams.TeamClimateTests"/>
+            <class name="tests.teams.AddTeamMemberFlows"/>
+            <class name="tests.OrderPreviewCouponFlowTests"/>
+            <class name="tests.OrderPreviewSmokeTests"/>
+            <class name="tests.ManualEntryValidationTests"/>
             <class name="tests.reports.ReportGenerationTests"/>
+            <class name="tests.resources.ResourcesPageTests"/>
 
 
 

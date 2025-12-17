@@ -991,6 +991,50 @@ public class MailSlurpUtils {
     }
 
 
+    /**
+     * Wait until a NEW email arrives in the inbox (newer than the current top email).
+     * Returns the newest email, or null on timeout.
+     */
+    public static Email waitForLatestEmail(UUID inboxId, Duration timeout) {
+        Objects.requireNonNull(inboxId, "inboxId cannot be null");
+        Objects.requireNonNull(timeout, "timeout cannot be null");
+        ensureClientReadyOrThrow();
+
+        long deadline = System.currentTimeMillis() + timeout.toMillis();
+        long pollMs = 1200;
+
+        // Baseline: current newest email id (if any)
+        UUID baselineId = null;
+        try {
+            List<EmailPreview> previews = inboxController.getEmails(inboxId).size(1).execute();
+            if (previews != null && !previews.isEmpty()) {
+                baselineId = previews.get(0).getId();
+            }
+        } catch (Exception ignored) {}
+
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                List<EmailPreview> previews = inboxController.getEmails(inboxId).size(1).execute();
+                if (previews != null && !previews.isEmpty()) {
+                    UUID newestId = previews.get(0).getId();
+                    if (baselineId == null || !newestId.equals(baselineId)) {
+                        return emailController.getEmail(newestId).execute();
+                    }
+                }
+            } catch (Exception e) {
+                logger.warn("[MailSlurp][waitForLatestEmail] poll failed: {}", safeMsg(e));
+            }
+
+            try { Thread.sleep(pollMs); } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+
 
 
 

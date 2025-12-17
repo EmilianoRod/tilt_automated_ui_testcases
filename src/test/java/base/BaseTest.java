@@ -457,7 +457,7 @@ public class BaseTest {
     private static void normalizeViewport(WebDriver driver) {
         try {
             // Always force a deterministic desktop viewport (works in headless too)
-            driver.manage().window().setSize(new Dimension(1920, 1080));
+            driver.manage().window().setSize(new Dimension(1488, 930));
         } catch (Exception e) {
             logger.warn("[Viewport] setSize failed: {}", e.getMessage());
         }

@@ -1,10 +1,7 @@
 package tests.teams;
 
 
-import Utils.Config;
-import Utils.MailSlurpUtils;
-import Utils.StripeCheckoutHelper;
-import Utils.WaitUtils;
+import Utils.*;
 import base.BaseTest;
 import com.mailslurp.models.Email;
 import com.mailslurp.models.InboxDto;
@@ -27,10 +24,12 @@ import pages.teams.TeamDetailsPage;
 import pages.teams.TeamsPage;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
 import static Utils.Config.joinUrl;
+import static Utils.EmailLinkUtils.stripProtocolHost;
 import static Utils.WaitUtils.waitForLoadersToDisappear;
 import static io.qameta.allure.Allure.step;
 import static org.testng.Assert.assertFalse;
@@ -1380,33 +1379,7 @@ public class AddTeamMemberFlows extends BaseTest {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    @Test(groups = {"teams", "add-member", "ux-fix-aug-2025"})
+    @Test(groups = {"teams", "add-member"})
     @Severity(SeverityLevel.CRITICAL)
     @Story("TC14 – Email correction prior issue regression")
     public void testEmailCorrection_NoGhostTtp_NoDuplicate_NoSideEffects() throws Exception {
@@ -1557,6 +1530,397 @@ public class AddTeamMemberFlows extends BaseTest {
                 "No new invitation email should be sent after editing the user email."
         );
     }
+
+
+
+    @Test(groups = {"teams", "add-member"})
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("TC22 – No reminder on add for entitled users")
+    public void testNoReminderSent_WhenAddingEntitledUser() throws Exception {
+
+        String uuid = String.valueOf(System.currentTimeMillis());
+
+        // -------------------------------------
+        // MailSlurp setup – fixed inbox + alias
+        // -------------------------------------
+        final InboxDto inbox = BaseTest.requireInboxOrSkip();
+        String baseInboxEmail = inbox.getEmailAddress();
+        String aliasTag = "tc22-" + uuid;
+
+        // This is the member we will add
+        String memberEmail = MailSlurpUtils.addPlusAlias(baseInboxEmail, aliasTag + "-member");
+
+        // Owner (team creator)
+        String ownerEmail  = MailSlurpUtils.addPlusAlias(baseInboxEmail, aliasTag + "-owner");
+
+        // -------------------------------------
+        // 0) Create fresh team
+        // -------------------------------------
+        TeamDetailsPage details = createTeamViaShopFlow(
+                "TC22Team-" + uuid,
+                "Base",
+                "User",
+                ownerEmail
+        ).waitUntilLoaded();
+
+        Assert.assertTrue(details.isLoaded(), "Team page must be loaded.");
+
+        // Optional: “baseline” mailbox should be quiet before action (guards flakiness)
+        MailSlurpUtils.waitForNoNewEmail(inbox.getId(), Duration.ofSeconds(3));
+
+        // -------------------------------------
+        // 1) Add member and make them "entitled"
+        // -------------------------------------
+        details.openAddTeamMemberModal();
+
+        // Depending on UX fix, this could be:
+        // - Create new user
+        // - Add existing user
+        // Use the one that corresponds to "entitled user" path in your app.
+        details.clickModalCreateNewUser()
+                .fillModalNewUser("TC22User", "Test", memberEmail)
+                .clickModalContinue();
+
+        // This is the key: ensure the flow makes them entitled (seat/product assigned)
+        Assert.assertTrue(details.isProductSelectionStepVisible(),
+                "Product selection must be visible (entitlement step).");
+
+        details.selectTrueTiltProductForMember();
+
+        Assert.assertTrue(details.isContinueToPurchaseVisible(),
+                "Continue button must be visible after selecting product.");
+
+        // If TC22 is ONLY about adding entitled users (no actual Stripe purchase here),
+        // and entitlement is pre-owned, then you may have a different button like:
+        // "Add member" or "Assign" instead of "Continue to purchase".
+        //
+        // Use the correct method for your UX:
+        details.clickContinueToPurchase();
+
+        // If this path sends you to /dashboard/shop, you likely need to complete Stripe like TC14
+        // BUT: TC22’s intent is “no reminder on add for entitled users” —
+        // often this applies after entitlement exists (i.e., after the purchase/assignment is done).
+        //
+        // If your app requires Stripe to finalize entitlement, reuse your TC14 “simulate success” block here.
+        new WebDriverWait(driver(), Duration.ofSeconds(20))
+                .until(ExpectedConditions.urlContains("/dashboard/shop"));
+
+        AssessmentEntryPage entry = new AssessmentEntryPage(driver());
+        OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
+
+        String checkoutUrl = preview.proceedToStripeAndGetCheckoutUrl();
+        String sessionId   = extractSessionIdFromUrl(checkoutUrl);
+        Assert.assertNotNull(sessionId, "Stripe sessionId must be extracted");
+
+        String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
+        StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
+
+        driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+
+        // -------------------------------------
+        // 2) Go back to Team Details and verify member added
+        // -------------------------------------
+        DashboardPage dash = new DashboardPage(driver())
+                .open(Config.getBaseUrl())
+                .waitUntilLoaded();
+
+        TeamsPage teams = dash.goToTeams().waitUntilLoaded();
+        teams.openTeamDetails("TC22Team-" + uuid);
+
+        TeamDetailsPage post = new TeamDetailsPage(driver()).waitUntilLoaded();
+
+        post.waitForMemberByEmail(memberEmail, Duration.ofSeconds(20));
+
+        // The expected status depends on your UI terminology.
+        // If entitled users show “Pending”, keep it.
+        // If they show “Entitled” or “Invited”, update accordingly.
+        String status = post.getMemberStatusByEmail(memberEmail);
+        Assert.assertNotNull(status, "Member status should be present.");
+
+        // -------------------------------------
+        // 3) Critical: NO reminder email is auto-sent on add
+        // -------------------------------------
+        Email unexpected = MailSlurpUtils.waitForNoNewEmail(
+                inbox.getId(),
+                Duration.ofSeconds(15)
+        );
+
+        Assert.assertNull(
+                unexpected,
+                "No reminder/invitation email should be auto-sent when adding an entitled user."
+        );
+
+        // -------------------------------------
+        // 4) Optional: reminder still works ONLY when explicitly clicked
+        // -------------------------------------
+        post.clickSendReminderForMember(memberEmail);
+        Assert.assertTrue(post.isSendReminderModalVisible(),
+                "Send Reminder modal must open when explicitly requested.");
+        post.clickSendReminderConfirm(); // or Cancel, depending what you want to validate
+    }
+
+
+
+    @Test(groups = {"teams", "add-member", "reminder-email"})
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("TC23 – Reminder content + links")
+    public void testReminderEmail_ContentLinksAndLocale() throws Exception {
+
+        String uuid = String.valueOf(System.currentTimeMillis());
+
+        // -------------------------------------
+        // MailSlurp setup – fixed inbox + alias
+        // -------------------------------------
+        final InboxDto inbox = BaseTest.requireInboxOrSkip();
+        String baseInboxEmail = inbox.getEmailAddress();
+        String aliasTag = "tc23-" + uuid;
+
+        String memberEmail = MailSlurpUtils.addPlusAlias(baseInboxEmail, aliasTag + "-member");
+        String ownerEmail  = MailSlurpUtils.addPlusAlias(baseInboxEmail, aliasTag + "-owner");
+
+        String teamName = "TC23Team-" + uuid;
+
+        // Keep inbox quiet (reduces flakiness)
+        MailSlurpUtils.waitForNoNewEmail(inbox.getId(), Duration.ofSeconds(3));
+
+        // -------------------------------------
+        // 0) Create fresh team
+        // -------------------------------------
+        TeamDetailsPage details = createTeamViaShopFlow(
+                teamName,
+                "Base",
+                "User",
+                ownerEmail
+        ).waitUntilLoaded();
+
+        Assert.assertTrue(details.isLoaded(), "Team page must be loaded.");
+
+        // -------------------------------------
+        // 1) Add member
+        // -------------------------------------
+        details.openAddTeamMemberModal();
+        details.clickModalCreateNewUser()
+                .fillModalNewUser("Emiliano", "Test", memberEmail)   // name doesn't matter; email does
+                .clickModalContinue();
+
+        // If entitlement requires product selection / purchase, complete it
+        if (details.isProductSelectionStepVisible()) {
+            details.selectTrueTiltProductForMember();
+            details.clickContinueToPurchase();
+
+            new WebDriverWait(driver(), Duration.ofSeconds(20))
+                    .until(ExpectedConditions.urlContains("/dashboard/shop"));
+
+            AssessmentEntryPage entry = new AssessmentEntryPage(driver());
+            OrderPreviewPage preview = entry.clickProceedToPayment().waitUntilLoaded();
+
+            String checkoutUrl = preview.proceedToStripeAndGetCheckoutUrl();
+            String sessionId   = extractSessionIdFromUrl(checkoutUrl);
+            Assert.assertNotNull(sessionId, "Stripe sessionId must be extracted");
+
+            String bodyJson = StripeCheckoutHelper.fetchCheckoutBodyFromStripe(sessionId);
+            StripeCheckoutHelper.triggerCheckoutCompletedWithBody(bodyJson);
+
+            driver().navigate().to(joinUrl(Config.getBaseUrl(), "/dashboard/orders/confirmation"));
+        }
+
+        // Back to team details
+        DashboardPage dash = new DashboardPage(driver())
+                .open(Config.getBaseUrl())
+                .waitUntilLoaded();
+
+        TeamsPage teams = dash.goToTeams().waitUntilLoaded();
+        teams.openTeamDetails(teamName);
+
+        TeamDetailsPage post = new TeamDetailsPage(driver()).waitUntilLoaded();
+        post.waitForMemberByEmail(memberEmail, Duration.ofSeconds(20));
+
+        // -------------------------------------
+        // 2) Trigger reminder explicitly
+        // -------------------------------------
+        post.clickSendReminderForMember(memberEmail);
+        Assert.assertTrue(post.isSendReminderModalVisible(), "Send Reminder modal must open.");
+        post.clickSendReminderConfirm();
+
+        // -------------------------------------
+        // 3) MailSlurp: fetch reminder email
+        // -------------------------------------
+        Email reminder = MailSlurpUtils.waitForLatestEmail(inbox.getId(), Duration.ofSeconds(60));
+        Assert.assertNotNull(reminder, "Reminder email must arrive.");
+
+        // SUBJECT (exact from your template)
+        String subject = reminder.getSubject();
+        Assert.assertNotNull(subject, "Email subject must be present.");
+        Assert.assertEquals(subject.trim(), "Reminder: Complete Your Assessment",
+                "Subject must match reminder template.");
+
+        // BODY (often HTML)
+        String bodyHtml = reminder.getBody();
+        Assert.assertNotNull(bodyHtml, "Email body must be present.");
+
+        String bodyText = EmailLinkUtils.htmlToText(bodyHtml);
+
+        // -------------------------------------
+        // 4) Content + locale assertions (EN template)
+        // -------------------------------------
+        Assert.assertTrue(
+                bodyText.contains("Don't Forget to Complete Your Tilt365 Assessment"),
+                "Must contain expected header/title."
+        );
+
+        Assert.assertTrue(
+                bodyText.contains("This is a friendly reminder that you have a pending Tilt365 assessment waiting to be completed."),
+                "Must contain the friendly reminder paragraph."
+        );
+
+        Assert.assertTrue(
+                bodyText.contains("Remember, this link is only for starting your assessment."),
+                "Must contain the 'link is only for starting your assessment' note."
+        );
+
+        Assert.assertTrue(
+                bodyText.contains("Username:"),
+                "Must contain Username label."
+        );
+
+        Assert.assertTrue(
+                bodyText.contains(memberEmail),
+                "Must contain the expected username/email. Expected=" + memberEmail
+        );
+
+        Assert.assertTrue(
+                bodyText.contains("By accepting this assessment, you acknowledge and agree that the person who invited you will have access to your results."),
+                "Must contain results-access disclaimer."
+        );
+
+        Assert.assertTrue(
+                bodyText.contains("Please note that the assessment must be completed in one session."),
+                "Must contain one-session warning."
+        );
+
+        Assert.assertTrue(
+                bodyText.contains("If the session times out, your progress may not be saved correctly."),
+                "Must contain timeout warning."
+        );
+
+        Assert.assertTrue(
+                bodyText.contains("Complete Assessment"),
+                "Must contain CTA text 'Complete Assessment'."
+        );
+
+        Assert.assertTrue(
+                bodyText.contains("Best regards,") && bodyText.contains("The Tilt365 Team"),
+                "Must contain signature."
+        );
+
+        // -------------------------------------
+        // 5) CTA link assertions (anchor text based)
+        // -------------------------------------
+        String ctaHref = EmailLinkUtils.extractHrefForAnchorText(bodyHtml, "Complete Assessment");
+        Assert.assertNotNull(ctaHref, "CTA href must exist for 'Complete Assessment'.");
+        Assert.assertFalse(ctaHref.isBlank(), "CTA href must not be blank.");
+        Assert.assertTrue(ctaHref.startsWith("https://"), "CTA href must be https. href=" + ctaHref);
+
+        // Allow SendGrid tracking OR direct app link (depending on environment)
+        String baseHost = stripProtocolHost(Config.getBaseUrl());
+        Assert.assertTrue(
+                ctaHref.contains("sendgrid.net/ls/click") || ctaHref.contains(baseHost),
+                "CTA href must be SendGrid tracking or app host. href=" + ctaHref
+        );
+
+        // OPTIONAL (recommended): resolve redirects and validate final destination is NOT login/dashboard
+        // String finalUrl = EmailLinkUtils.followRedirects(ctaHref, 6);
+        // Assert.assertFalse(finalUrl.contains("/dashboard"), "CTA must not land on dashboard. finalUrl=" + finalUrl);
+        // Assert.assertFalse(finalUrl.contains("/auth/sign-in"), "CTA must not land on login. finalUrl=" + finalUrl);
+    }
+
+
+
+
+
+
+
+//
+//    @Test(groups = {"teams", "add-member"})
+//    @Severity(SeverityLevel.CRITICAL)
+//    @Story("TC24 – Add to existing team selection")
+//    public void testAddToExistingTeamSelection_UpdatesRulesAndPrice() throws Exception {
+//
+//        String uuid = String.valueOf(System.currentTimeMillis());
+//
+//        // MailSlurp only for owner emails (doesn't matter for this UI-only test)
+//        final InboxDto inbox = BaseTest.requireInboxOrSkip();
+//        String baseInboxEmail = inbox.getEmailAddress();
+//        String ownerEmail = MailSlurpUtils.addPlusAlias(baseInboxEmail, "tc24-" + uuid + "-owner");
+//
+//        String teamA = "TC24TeamA-" + uuid;
+//        String teamB = "TC24TeamB-" + uuid;
+//
+//        // -------------------------------------
+//        // 0) Create two teams
+//        // -------------------------------------
+//        TeamDetailsPage detailsA = createTeamViaShopFlow(teamA, "Base", "User", ownerEmail).waitUntilLoaded();
+//        Assert.assertTrue(detailsA.isLoaded(), "Team A must be loaded.");
+//
+//        TeamDetailsPage detailsB = createTeamViaShopFlow(teamB, "Base", "User", ownerEmail).waitUntilLoaded();
+//        Assert.assertTrue(detailsB.isLoaded(), "Team B must be loaded.");
+//
+//        // Go back to Team A where we will open the modal
+//        DashboardPage dash = new DashboardPage(driver()).open(Config.getBaseUrl()).waitUntilLoaded();
+//        TeamsPage teams = dash.goToTeams().waitUntilLoaded();
+//        teams.openTeamDetails(teamA);
+//
+//        TeamDetailsPage page = new TeamDetailsPage(driver()).waitUntilLoaded();
+//
+//        // -------------------------------------
+//        // 1) Open Add Team Member modal
+//        // -------------------------------------
+//        page.openAddTeamMemberModal();
+//        Assert.assertTrue(page.isAddTeamMemberModalOpen(), "Add Team Member modal must be open.");
+//
+//        // -------------------------------------
+//        // 2) Switch to “Add to existing team” mode (if your modal has it)
+//        // -------------------------------------
+//        page.modalSelectAddToExistingTeamIfPresent();
+//
+//        // -------------------------------------
+//        // 3) Capture initial (Team A) rules + price
+//        // -------------------------------------
+//        String selectedTeamBefore = page.modalGetSelectedTeamNameSafe();
+//        Assert.assertTrue(selectedTeamBefore.toLowerCase().contains(teamA.toLowerCase()),
+//                "Modal should start pointing to Team A. Actual=" + selectedTeamBefore);
+//
+//        String rulesBefore = page.modalGetRulesTextNormalized();
+//        String priceBefore = page.modalGetPriceTextNormalized();
+//
+//        Assert.assertFalse(rulesBefore.isBlank(), "Rules must not be blank before switch.");
+//        Assert.assertFalse(priceBefore.isBlank(), "Price must not be blank before switch.");
+//
+//        // -------------------------------------
+//        // 4) Switch to Team B inside modal
+//        // -------------------------------------
+//        page.modalSelectTeamByName(teamB);
+//
+//        page.modalWaitSelectedTeam(teamB);
+//
+//        // Wait for recalculation: rules and/or price should change (or at least re-render)
+//        page.modalWaitRulesOrPriceChange(rulesBefore, priceBefore);
+//
+//        String rulesAfter = page.modalGetRulesTextNormalized();
+//        String priceAfter = page.modalGetPriceTextNormalized();
+//
+//        Assert.assertFalse(rulesAfter.isBlank(), "Rules must not be blank after switch.");
+//        Assert.assertFalse(priceAfter.isBlank(), "Price must not be blank after switch.");
+//
+//        // Main UX fix expectation: rule block and price must update
+//        Assert.assertNotEquals(rulesAfter, rulesBefore, "Rules must update after switching teams.");
+//        Assert.assertNotEquals(priceAfter, priceBefore, "Price must update after switching teams.");
+//    }
+//
+
+
+
+
 
 
 

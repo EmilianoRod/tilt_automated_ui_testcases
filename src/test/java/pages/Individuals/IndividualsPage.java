@@ -945,13 +945,7 @@ public class IndividualsPage extends BasePage {
         waitForTableSettled();
     }
 
-    private String safeText(SupplierWithException<String> supplier) {
-        try {
-            return supplier.get();
-        } catch (Throwable t){
-            return "";
-        }
-    }
+
 
 
 

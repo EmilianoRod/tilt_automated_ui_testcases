@@ -136,6 +136,8 @@ public class TeamDetailsPage extends BasePage {
     private static final By SEND_REMINDER_CANCEL =
             By.xpath("//button[normalize-space()='Cancel']");
 
+
+
     private WebElement kebabInTeamRow(WebElement row) {
         // actions column is the last one in Teams
         return row.findElement(By.cssSelector("td:last-child .ant-dropdown-trigger"));
@@ -216,20 +218,31 @@ public class TeamDetailsPage extends BasePage {
     }
 
     /** Generic helper: click an item in the open actions menu (Teams). */
+    /** Generic helper: click an item in the open actions menu (Teams). */
     public boolean clickActionInMenu(String actionText) {
+        // AntD dropdown is often: div.ant-dropdown (and when closed it gets ant-dropdown-hidden)
         By menuItem = By.xpath(
-                "//div[contains(@class,'ant-dropdown') and contains(@class,'ant-dropdown-open')]" +
-                        "//li[normalize-space()='" + actionText + "']"
+                "//div[contains(@class,'ant-dropdown') and not(contains(@class,'ant-dropdown-hidden'))]" +
+                        "//*[self::li or self::button or self::a][@role='menuitem' or self::li]" +
+                        "[.//*[normalize-space()='" + actionText + "'] or normalize-space(.)='" + actionText + "']"
         );
+
         try {
             WebDriverWait wdw = new WebDriverWait(driver, Duration.ofSeconds(10));
             WebElement item = wdw.until(ExpectedConditions.elementToBeClickable(menuItem));
-            item.click();
+
+            // Click with fallback (AntD overlays sometimes intercept)
+            try {
+                item.click();
+            } catch (Exception e) {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", item);
+            }
             return true;
         } catch (TimeoutException e) {
             return false;
         }
     }
+
 
     // Convenience wrappers for tests like TC14:
 

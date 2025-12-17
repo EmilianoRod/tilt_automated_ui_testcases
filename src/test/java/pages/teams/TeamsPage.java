@@ -141,13 +141,7 @@ public class TeamsPage extends BasePage {
     }
 
 
-    private String safeText(IndividualsPage.SupplierWithException<String> supplier) {
-        try {
-            return supplier.get();
-        } catch (Throwable t){
-            return "";
-        }
-    }
+
 
     @FunctionalInterface private interface SupplierWithException<T> {
         T get() throws Exception;

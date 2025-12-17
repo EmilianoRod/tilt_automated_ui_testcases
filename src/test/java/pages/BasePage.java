@@ -12,6 +12,7 @@ import org.openqa.selenium.support.ui.ExpectedCondition;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
+import pages.Individuals.IndividualsPage;
 import pages.menuPages.ResourcesPage;
 
 import java.io.ByteArrayInputStream;
@@ -481,4 +482,14 @@ public abstract class BasePage {
                     .executeScript("arguments[0].scrollIntoView({block:'center'});", el);
         } catch (Exception ignored) {}
     }
+
+    public String safeText(IndividualsPage.SupplierWithException<String> supplier) {
+        try {
+            return supplier.get();
+        } catch (Throwable t){
+            return "";
+        }
+    }
+
+
 }
