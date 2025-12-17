@@ -2717,14 +2717,6 @@ public class IndividualsListTests extends BaseTest {
 
 
 
-
-
-
-
-
-
-
-
     /**
      * Calls /api/v2/individuals via BackendApi, and extracts only the top-level added_at
      * fields (the ones that belong to each individual, not the nested user_assessments).

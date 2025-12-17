@@ -123,6 +123,12 @@ public class OrderPreviewPage extends BasePage {
                     "   or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'try again')]"
     );
 
+
+    private static final By FREE_RETAKE_BANNER = By.xpath("//td[normalize-space()=\"Free Retake Available\"]");
+
+
+
+
     // Any row that has a checkbox-ish control (native or ARIA)
 
 
@@ -1188,6 +1194,29 @@ public class OrderPreviewPage extends BasePage {
         return isElementVisible(BTN_PAY_WITH_STRIPE);
     }
 
+
+
+    @Step("Check if Free Retake is available on Order Preview")
+    public boolean hasFreeRetakeAvailable() {
+        waitForOverlayGone(Duration.ofSeconds(3));
+
+        for (WebElement el : driver.findElements(FREE_RETAKE_BANNER)) {
+            try {
+                if (el.isDisplayed() && !el.getText().trim().isEmpty()) {
+                    return true;
+                }
+            } catch (StaleElementReferenceException ignored) {
+            }
+        }
+        return false;
+    }
+
+
+    @Step("Read total price amount as BigDecimal")
+    public BigDecimal getTotalPriceAmount() {
+        waitTotalsStable();
+        return getTotal();
+    }
 
 
 

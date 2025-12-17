@@ -24,4 +24,12 @@ public class TtpIntroPage extends AbstractAssessmentPage {
     public void clickLetsGetStarted() {
         click(LETS_GET_STARTED_BUTTON);
     }
+
+
+    public TtpSurveyPage startSurvey() {
+        click(LETS_GET_STARTED_BUTTON);
+        return new TtpSurveyPage(driver).waitUntilLoaded();
+    }
+
+
 }

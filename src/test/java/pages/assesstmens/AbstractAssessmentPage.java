@@ -11,8 +11,10 @@ public class AbstractAssessmentPage extends BasePage {
     }
 
     @Override
-    public BasePage waitUntilLoaded() {
-        return null;
+    public AbstractAssessmentPage waitUntilLoaded() {
+        wait.waitForDocumentReady();
+        wait.waitForLoadersToDisappear();
+        return this;
     }
 
     // Common generic helpers if you want them later…

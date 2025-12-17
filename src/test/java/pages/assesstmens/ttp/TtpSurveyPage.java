@@ -21,4 +21,14 @@ public class TtpSurveyPage extends AbstractAssessmentPage {
         return isElementDisplayed(PROGRESS_STEP) && isElementDisplayed(NEXT_BUTTON);
     }
 
+    @Override
+    public AbstractAssessmentPage waitUntilLoaded() {
+        wait.waitForDocumentReady();
+        wait.waitForLoadersToDisappear();
+        waitForElementVisible(PROGRESS_STEP);
+        waitForElementVisible(NEXT_BUTTON);
+        return this;
+    }
+
+
 }
