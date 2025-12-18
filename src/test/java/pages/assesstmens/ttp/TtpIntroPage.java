@@ -26,10 +26,10 @@ public class TtpIntroPage extends AbstractAssessmentPage {
     }
 
 
-    public TtpSurveyPage startSurvey() {
-        click(LETS_GET_STARTED_BUTTON);
-        return new TtpSurveyPage(driver).waitUntilLoaded();
-    }
+//    public TtpSurveyPage startSurvey() {
+//        click(LETS_GET_STARTED_BUTTON);
+//        return new TtpSurveyPage(driver).waitUntilLoaded();
+//    }
 
 
 }
